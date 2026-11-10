@@ -282,6 +282,31 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transpa
 .history-table td:first-child a { text-decoration: none; }
 .history-table tr.nodata td { color: var(--text-3); }
 
+/* --- help view -------------------------------------------------------- */
+.help-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 1500px; }
+@media (max-width: 1099px) { .help-grid { grid-template-columns: minmax(0, 1fr); } }
+.help-col { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.help-card h2 { margin-bottom: 8px; }
+.help-card h3 { margin: 16px 0 4px; color: var(--text); }
+.help-card p, .help-card ol { margin: 0 0 8px; color: var(--text-2); }
+.help-card ol { padding-left: 1.4em; }
+.help-card li { margin-bottom: 2px; }
+.help-card b { color: var(--text); font-weight: 600; }
+code { font: .88em ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+kbd {
+  font: .82em ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  display: inline-block; min-width: 1.6em; text-align: center; padding: 1px 5px;
+  background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px;
+  color: var(--text);
+}
+.keys-table td:first-child { white-space: nowrap; width: 1%; padding-right: 20px; }
+.keys-table tr:last-child td, .help-table tr:last-child td { border-bottom: 0; }
+.help-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 20px; margin: 12px 0 0; }
+.help-dl dt { color: var(--text-2); }
+.help-dl dd { margin: 0; }
+.help-table { max-width: 480px; }
+.help-table tbody tr:hover td { background: transparent; }
+
 .tooltip {
   position: fixed; z-index: 50; pointer-events: none;
   background: var(--surface); color: var(--text); border: 1px solid var(--border);

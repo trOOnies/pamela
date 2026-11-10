@@ -28,6 +28,8 @@ Or without `make`: `pamela --reload` (options: `--host`, `--port`).
   entries, because each entry stores a snapshot of its macros.
 - **History**: daily kcal and protein charts against your targets, averages, and a
   per-day table (click a day to open it).
+- **Help**: how each tab works, keyboard shortcuts, and your current settings from
+  `info/config.toml` (targets, meals, activity types with estimated kcal/hour). Press `?` to open it.
 
 ## Folders
 

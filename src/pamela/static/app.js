@@ -1,5 +1,5 @@
 // Pamela frontend - vanilla JS, no build step.
-// Views are routed by URL hash: #/ (today), #/day/YYYY-MM-DD, #/foods, #/history
+// Views are routed by URL hash: #/ (today), #/day/YYYY-MM-DD, #/foods, #/history, #/help
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -153,16 +153,18 @@ function defaultMeal() {
 
 // --- routing -----------------------------------------------------------------
 
+const VIEWS = ["day", "foods", "history", "help"];
+
 function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
   let view = parts[0] || "day";
-  if (!["day", "foods", "history"].includes(view)) view = "day";
+  if (!VIEWS.includes(view)) view = "day";
   state.view = view;
   if (view === "day") {
     const d = parts[1];
     state.day = d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : todayISO();
   }
-  for (const v of ["day", "foods", "history"]) $(`#view-${v}`).hidden = v !== view;
+  for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   for (const a of $$("[data-nav]")) {
     if (a.dataset.nav === view) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -176,6 +178,7 @@ function render() {
   if (state.view === "day") return loadDay();
   if (state.view === "foods") return loadFoods();
   if (state.view === "history") return loadHistory();
+  if (state.view === "help") return renderHelp();
 }
 
 function goDay(iso) {
@@ -774,6 +777,34 @@ function drawChart(el) {
   });
 }
 
+// --- help view ---------------------------------------------------------------
+
+function renderHelp() {
+  document.title = "Help · Pamela";
+  const { profile, targets, meals, activity_types } = state.config;
+  const tgt = [["kcal", "kcal", ""], ...MACROS.map((m) => [m.key, m.label, " g"])]
+    .map(([k, label, unit]) => `<tr><td>${label}</td><td class="n">${targets[k] ? fmt(targets[k]) + unit : "—"}</td></tr>`)
+    .join("");
+  const types = activity_types
+    .map((t) => {
+      const perHour = t.met * profile.weight_kg;
+      return `<tr><td>${esc(t.name)}</td><td class="n">${fmtQty(t.met)}</td><td class="n">${fmt(perHour)}</td><td>${t.distance ? "yes" : ""}</td></tr>`;
+    })
+    .join("");
+  $("#help-settings").innerHTML = `
+    <dl class="help-dl">
+      <dt>Body weight</dt><dd>${fmtQty(profile.weight_kg)} kg</dd>
+      <dt>Meals</dt><dd>${meals.names.map(esc).join(", ")}</dd>
+    </dl>
+    <h3>Daily targets</h3>
+    <table class="help-table"><tbody>${tgt}</tbody></table>
+    <h3>Activity types</h3>
+    <table class="help-table">
+      <thead><tr><th>Type</th><th class="n">MET</th><th class="n" title="Estimated at your body weight">kcal / hour</th><th>Distance</th></tr></thead>
+      <tbody>${types}</tbody>
+    </table>`;
+}
+
 // --- wiring ------------------------------------------------------------------
 
 function wire() {
@@ -785,8 +816,10 @@ function wire() {
   $("#today-btn").addEventListener("click", () => goDay(todayISO()));
   $("#day-input").addEventListener("change", (e) => e.target.value && goDay(e.target.value));
   document.addEventListener("keydown", (e) => {
-    if (state.view !== "day" || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest("input, select, textarea")) return;
+    if (e.key === "?") location.hash = "#/help";
+    if (state.view !== "day") return;
     if (e.key === "[") goDay(addDays(state.day, -1));
     if (e.key === "]") goDay(addDays(state.day, 1));
   });

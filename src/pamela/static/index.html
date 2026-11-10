@@ -15,6 +15,7 @@
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
       <a href="#/history" data-nav="history">History</a>
+      <a href="#/help" data-nav="help" title="Help ( ? )">Help</a>
     </nav>
     <div class="daynav" id="daynav">
       <button type="button" class="icon-btn" id="prev-day" title="Previous day ( [ )" aria-label="Previous day">&#8249;</button>
@@ -159,6 +160,75 @@
           </table>
         </div>
       </section>
+    </section>
+
+    <!-- Help ------------------------------------------------------------ -->
+    <section id="view-help" class="view help-grid" hidden>
+      <section class="card help-card" aria-labelledby="help-day-h">
+        <h2 id="help-day-h">Day</h2>
+        <p>Log what you eat and the activities you do. Use the arrows or date picker in the
+          top bar to move between days, or <kbd>[</kbd> / <kbd>]</kbd>.</p>
+        <h3>Logging food from the catalog</h3>
+        <ol>
+          <li>Pick the meal (it defaults to the one for the current time of day).</li>
+          <li>Type in <b>Food</b> to search, then <kbd>↑</kbd> / <kbd>↓</kbd> and <kbd>Enter</kbd> to choose.</li>
+          <li>Type the amount and press <kbd>Enter</kbd>. The preview below the form shows the macros you're adding.</li>
+        </ol>
+        <p>If the food isn't in the catalog yet, choose the <i>Create</i> option at the end of the
+          list. It opens the Foods tab with the name filled in.</p>
+        <h3>Quick add</h3>
+        <p>Switch to <b>Quick add</b> to type kcal and macros directly, without a catalog food.
+          Good for one-offs like a restaurant meal.</p>
+        <h3>Editing the log</h3>
+        <p>Click an amount to change it (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels).
+          Use <b>+ add</b> on a meal heading to log straight into that meal, and <b>✕</b> to delete a row.</p>
+        <h3>Activity</h3>
+        <p>Choose a type and enter the minutes. If you leave <b>kcal</b> empty it's estimated as
+          <code>MET × body weight (kg) × hours</code>; the placeholder shows the estimate.
+          Distance is asked only for types that use it.</p>
+        <h3>Summary</h3>
+        <p>Shows kcal and each macro against your daily targets. Values over target turn amber.
+          <b>Net kcal</b> is eaten minus burned.</p>
+      </section>
+
+      <div class="help-col">
+        <section class="card help-card" aria-labelledby="help-foods-h">
+          <h2 id="help-foods-h">Foods</h2>
+          <p>Your catalog. Each food stores its macros per a basis amount, e.g. <i>per 100 g</i> or
+            <i>per 1 slice</i>; logging scales them to the amount you eat.</p>
+          <p>While you fill in the form, a hint shows the kcal your macros add up to
+            (4 kcal/g protein and carbs, 9 kcal/g fat), handy for catching typos.</p>
+          <p>Foods you've logged most in the last 90 days are listed (and suggested) first.
+            Editing or deleting a food never changes past log entries: each entry keeps a copy of
+            the macros it was logged with.</p>
+        </section>
+
+        <section class="card help-card" aria-labelledby="help-history-h">
+          <h2 id="help-history-h">History</h2>
+          <p>Daily kcal and protein over the last 7, 30 or 90 days, with your target as a dashed line.
+            Calorie and macro averages count only days with food logged. Click a bar or a row to open that day.</p>
+        </section>
+
+        <section class="card help-card" aria-labelledby="help-keys-h">
+          <h2 id="help-keys-h">Keyboard</h2>
+          <table class="keys-table">
+            <tbody>
+              <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next day (Day tab)</td></tr>
+              <tr><td><kbd>↑</kbd> / <kbd>↓</kbd>, <kbd>Enter</kbd></td><td>Choose a food in the search list</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>Close the search list, cancel an amount edit</td></tr>
+              <tr><td><kbd>?</kbd></td><td>Open this help</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="card help-card" aria-labelledby="help-settings-h">
+          <h2 id="help-settings-h">Your settings</h2>
+          <p>These come from <code>info/config.toml</code>. Edit that file and switch back to this
+            tab to see the changes; no restart needed. If the file has a mistake, a red banner
+            at the top explains it.</p>
+          <div id="help-settings"></div>
+        </section>
+      </div>
     </section>
   </main>
 
