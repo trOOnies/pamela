@@ -15,6 +15,7 @@ from .schemas import (
     DIET_FIELDS,
     DIET_TAGS,
     FEELING_GROUPS,
+    GENDERS,
     MACRO_FIELDS,
     MOODS,
     TARGETS,
@@ -26,6 +27,8 @@ from .schemas import (
     Day,
     DayMetrics,
     DayMetricsIn,
+    DayNote,
+    DayNoteIn,
     Entry,
     EntryBatchIn,
     EntryIn,
@@ -33,6 +36,8 @@ from .schemas import (
     FoodIn,
     HistoryDay,
     Macros,
+    Profile,
+    ProfileIn,
     SavedMeal,
     SavedMealIn,
     Target,
@@ -44,6 +49,7 @@ from .tracking import estimate_kcal, scale_macros, target_on
 router = APIRouter(prefix="/api")
 
 MAX_HISTORY_DAYS = 366
+METRIC_FIELDS = ("steps", "sleep_min", "mood", "weight_kg", "body_fat_pct")
 UNPROCESSABLE = 422
 BAD_GATEWAY = 502
 
@@ -68,6 +74,11 @@ def _not_found(what: str) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, f"{what} not found")
 
 
+def _not_future(day: dt.date) -> None:
+    if day > dt.date.today():
+        raise HTTPException(UNPROCESSABLE, "days in the future can't be logged yet")
+
+
 def _like(word: str) -> str:
     return "%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
@@ -90,7 +101,49 @@ def read_vocab() -> dict:
         for group, members in FEELING_GROUPS.items()
         for k, label in members.items()
     ]
-    return {"diet_tags": choices(DIET_TAGS), "moods": choices(MOODS), "feelings": feelings}
+    return {
+        "diet_tags": choices(DIET_TAGS),
+        "moods": choices(MOODS),
+        "feelings": feelings,
+        "genders": choices(GENDERS),
+    }
+
+
+# --- profile -----------------------------------------------------------------
+
+
+def _last_weight(conn: sqlite3.Connection, iso: str, before: bool = False) -> dict | None:
+    """The latest weight logged on or before ``iso`` (strictly before, with ``before``)."""
+    op = "<" if before else "<="
+    return conn.execute(
+        f"SELECT day, weight_kg FROM day_metrics WHERE weight_kg IS NOT NULL AND day {op} ? "
+        "ORDER BY day DESC LIMIT 1",
+        (iso,),
+    ).fetchone()
+
+
+def _estimate_weight(last: dict | None, config: AppConfig) -> float:
+    return last["weight_kg"] if last else config.profile.weight_kg
+
+
+def _profile(conn: sqlite3.Connection, config: AppConfig) -> dict:
+    row = conn.execute("SELECT gender, height_cm FROM profile WHERE id = 1").fetchone()
+    last = _last_weight(conn, dt.date.today().isoformat())
+    return {**row, "last_weight": last, "estimate_weight_kg": _estimate_weight(last, config)}
+
+
+@router.get("/profile", response_model=Profile)
+def read_profile(conn: Conn, config: Config) -> dict:
+    return _profile(conn, config)
+
+
+@router.put("/profile", response_model=Profile)
+def update_profile(profile: ProfileIn, conn: Conn, config: Config) -> dict:
+    conn.execute(
+        "UPDATE profile SET gender = ?, height_cm = ? WHERE id = 1",
+        (profile.gender, profile.height_cm),
+    )
+    return _profile(conn, config)
 
 
 # --- targets -----------------------------------------------------------------
@@ -380,6 +433,7 @@ def _entry_values(entry: EntryIn, conn: sqlite3.Connection, config: AppConfig) -
             UNPROCESSABLE,
             f"unknown meal {entry.meal!r}; configured meals: {', '.join(config.meals.names)}",
         )
+    _not_future(entry.day)
     values: dict = {"day": entry.day.isoformat(), "meal": entry.meal}
     if entry.food_id is not None:
         food = conn.execute("SELECT * FROM foods WHERE id = ?", (entry.food_id,)).fetchone()
@@ -526,6 +580,7 @@ def delete_activity_type(type_id: int, conn: Conn) -> Response:
 
 
 def _activity_values(activity: ActivityIn, conn: sqlite3.Connection, config: AppConfig) -> dict:
+    _not_future(activity.day)
     values = activity.model_dump()
     values["day"] = activity.day.isoformat()
     if activity.kcal is None:
@@ -538,9 +593,8 @@ def _activity_values(activity: ActivityIn, conn: sqlite3.Connection, config: App
                 f"unknown activity type {activity.type!r}: enter kcal manually "
                 "or add the type in Settings",
             )
-        values["kcal"] = estimate_kcal(
-            atype["met"], config.profile.weight_kg, activity.duration_min
-        )
+        weight = _estimate_weight(_last_weight(conn, values["day"]), config)
+        values["kcal"] = estimate_kcal(atype["met"], weight, activity.duration_min)
         values["kcal_estimated"] = 1
     else:
         values["kcal_estimated"] = 0
@@ -591,6 +645,8 @@ def _metrics(conn: sqlite3.Connection, iso: str) -> dict:
         "sleep_min": row["sleep_min"],
         "mood": row["mood"],
         "feelings": [f for f in row["feelings"].split(",") if f],
+        "weight_kg": row["weight_kg"],
+        "body_fat_pct": row["body_fat_pct"],
     }
 
 
@@ -601,29 +657,64 @@ def read_day_metrics(day: dt.date, conn: Conn) -> dict:
 
 @router.put("/days/{day}/metrics", response_model=DayMetrics)
 def update_day_metrics(day: dt.date, metrics: DayMetricsIn, conn: Conn) -> dict:
-    """Steps, sleep and mood for a day; send every field (empty ones are cleared)."""
+    """Steps, sleep, mood, weight and body fat for a day; send every field (empty ones
+    are cleared)."""
+    _not_future(day)
     iso = day.isoformat()
     m = metrics
-    if m.steps is None and m.sleep_min is None and m.mood is None and not m.feelings:
+    values = (m.steps, m.sleep_min, m.mood, m.weight_kg, m.body_fat_pct)
+    if all(v is None for v in values) and not m.feelings:
         conn.execute("DELETE FROM day_metrics WHERE day = ?", (iso,))
     else:
         conn.execute(
-            """INSERT INTO day_metrics (day, steps, sleep_min, mood, feelings)
-               VALUES (?, ?, ?, ?, ?)
+            """INSERT INTO day_metrics (day, steps, sleep_min, mood, weight_kg, body_fat_pct,
+                                        feelings)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (day) DO UPDATE SET
                  steps = excluded.steps, sleep_min = excluded.sleep_min,
-                 mood = excluded.mood, feelings = excluded.feelings,
+                 mood = excluded.mood, weight_kg = excluded.weight_kg,
+                 body_fat_pct = excluded.body_fat_pct, feelings = excluded.feelings,
                  updated_at = datetime('now')""",
-            (iso, m.steps, m.sleep_min, m.mood, ",".join(m.feelings)),
+            (iso, *values, ",".join(m.feelings)),
         )
     return _metrics(conn, iso)
+
+
+# --- day notes ---------------------------------------------------------------
+
+
+def _note(conn: sqlite3.Connection, iso: str) -> str:
+    row = conn.execute("SELECT text FROM day_notes WHERE day = ?", (iso,)).fetchone()
+    return row["text"] if row else ""
+
+
+@router.get("/days/{day}/note", response_model=DayNote)
+def read_day_note(day: dt.date, conn: Conn) -> dict:
+    return {"text": _note(conn, day.isoformat())}
+
+
+@router.put("/days/{day}/note", response_model=DayNote)
+def update_day_note(day: dt.date, note: DayNoteIn, conn: Conn) -> dict:
+    """A few words on how the day went. Empty text deletes the note."""
+    _not_future(day)
+    iso = day.isoformat()
+    if not note.text:
+        conn.execute("DELETE FROM day_notes WHERE day = ?", (iso,))
+    else:
+        conn.execute(
+            """INSERT INTO day_notes (day, text) VALUES (?, ?)
+               ON CONFLICT (day) DO UPDATE SET text = excluded.text,
+                 updated_at = datetime('now')""",
+            (iso, note.text),
+        )
+    return {"text": _note(conn, iso)}
 
 
 # --- aggregates --------------------------------------------------------------
 
 
 @router.get("/days/{day}", response_model=Day)
-def read_day(day: dt.date, conn: Conn) -> dict:
+def read_day(day: dt.date, conn: Conn, config: Config) -> dict:
     iso = day.isoformat()
     entries = conn.execute(
         "SELECT * FROM food_entries WHERE day = ? ORDER BY created_at, id", (iso,)
@@ -632,6 +723,7 @@ def read_day(day: dt.date, conn: Conn) -> dict:
         "SELECT * FROM activities WHERE day = ? ORDER BY created_at, id", (iso,)
     ).fetchall()
     totals = Macros(**{k: sum(e[k] for e in entries) for k in MACRO_FIELDS})
+    last = _last_weight(conn, iso)
     return {
         "day": day,
         "entries": entries,
@@ -640,6 +732,9 @@ def read_day(day: dt.date, conn: Conn) -> dict:
         "burned_kcal": sum(a["kcal"] for a in activities),
         "active_min": sum(a["duration_min"] for a in activities),
         "metrics": _metrics(conn, iso),
+        "note": _note(conn, iso),
+        "previous_weight": _last_weight(conn, iso, before=True),
+        "estimate_weight_kg": _estimate_weight(last, config),
         "targets": _targets_on(_target_periods(conn), iso),
     }
 
@@ -678,8 +773,14 @@ def read_history(
     metrics = {
         r["day"]: r
         for r in conn.execute(
-            "SELECT day, steps, sleep_min, mood FROM day_metrics WHERE day BETWEEN ? AND ?", span
+            "SELECT day, steps, sleep_min, mood, weight_kg, body_fat_pct FROM day_metrics "
+            "WHERE day BETWEEN ? AND ?",
+            span,
         )
+    }
+    noted = {
+        r["day"]
+        for r in conn.execute("SELECT day FROM day_notes WHERE day BETWEEN ? AND ?", span)
     }
     periods = _target_periods(conn)
     out = []
@@ -694,7 +795,8 @@ def read_history(
                 burned_kcal=a["kcal"] if a else 0,
                 active_min=a["mins"] if a else 0,
                 **({k: f[k] for k in MACRO_FIELDS} if f else {}),
-                **({k: m[k] for k in ("steps", "sleep_min", "mood")} if m else {}),
+                **({k: m[k] for k in METRIC_FIELDS} if m else {}),
+                has_note=iso in noted,
                 targets=_targets_on(periods, iso),
             )
         )

@@ -21,9 +21,13 @@
     </nav>
     <div class="daynav" id="daynav">
       <button type="button" class="icon-btn" id="prev-day" title="Previous day ( [ )" aria-label="Previous day">&#8249;</button>
-      <input type="date" id="day-input" aria-label="Day" required>
+      <div class="daypick" id="daypick">
+        <button type="button" class="btn ghost" id="day-btn" title="Pick a day" aria-describedby="day-today"><span class="wd" id="day-weekday"></span><span id="day-label"></span></button>
+        <input type="date" id="day-input" tabindex="-1" aria-hidden="true">
+      </div>
       <button type="button" class="icon-btn" id="next-day" title="Next day ( ] )" aria-label="Next day">&#8250;</button>
-      <button type="button" class="btn ghost" id="today-btn">Today</button>
+      <button type="button" class="btn ghost" id="today-btn" title="Go to today">Today</button>
+      <span class="sr" id="day-today" aria-live="polite"></span>
     </div>
   </header>
 
@@ -130,12 +134,29 @@
             <input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal" title="Hours, as 7:30, 7.5 or 7h30"></label>
           <div class="metric-meter"><div class="meter" style="--c:var(--c-sleep)"><span id="sleep-bar"></span></div><span class="metric-sub" id="sleep-sub"></span></div>
         </div>
+        <div class="body-row">
+          <label class="field num"><span>⚖️ Weight (kg)</span>
+            <input type="text" id="weight-input" inputmode="decimal" maxlength="6" placeholder="–" title="Kilograms, like 72.5"></label>
+          <label class="field num"><span>Body fat (%)</span>
+            <input type="text" id="bodyfat-input" inputmode="decimal" maxlength="5" placeholder="–" title="Percent, like 18.5"></label>
+          <span class="body-sub" id="body-sub"></span>
+        </div>
         <div class="mood-block">
           <span class="mini-label" id="mood-label">Mood</span>
           <div class="mood-scale" id="mood-scale" role="radiogroup" aria-labelledby="mood-label"></div>
           <span class="mini-label" id="feelings-label">Feelings <small>(any that apply)</small></span>
           <div class="feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
         </div>
+      </section>
+
+      <section class="card notes-card" aria-labelledby="notes-h">
+        <div class="card-head">
+          <h2 id="notes-h">Notes <small>(optional)</small></h2>
+          <span class="status-note" id="notes-status" aria-live="polite"></span>
+        </div>
+        <textarea id="notes-input" maxlength="2000" aria-labelledby="notes-h"
+                  placeholder="A few words on how the day went…"></textarea>
+        <div class="notes-foot"><span>Saves when you click away.</span><span id="notes-count"></span></div>
       </section>
 
       <section class="card activity" aria-labelledby="act-h">
@@ -256,15 +277,17 @@
       </div>
       <div class="tiles" id="history-tiles"></div>
       <div class="charts">
-        <section class="card"><h3>Calories eaten</h3><div class="chart" id="chart-kcal"></div></section>
-        <section class="card"><h3>Protein (g)</h3><div class="chart" id="chart-protein"></div></section>
-        <section class="card"><h3>Steps</h3><div class="chart" id="chart-steps"></div></section>
-        <section class="card"><h3>Sleep (hours)</h3><div class="chart" id="chart-sleep"></div></section>
+        <section class="card" style="--series:var(--c-kcal)"><h3>Calories eaten (kcal)</h3><div class="chart" id="chart-kcal"></div></section>
+        <section class="card" style="--series:var(--c-protein)"><h3>Protein (g)</h3><div class="chart" id="chart-protein"></div></section>
+        <section class="card" style="--series:var(--c-steps)"><h3>Steps</h3><div class="chart" id="chart-steps"></div></section>
+        <section class="card" style="--series:var(--c-sleep)"><h3>Sleep (hours)</h3><div class="chart" id="chart-sleep"></div></section>
+        <section class="card" style="--series:var(--c-weight)"><h3>Body weight (kg)</h3><div class="chart" id="chart-weight"></div></section>
+        <section class="card" style="--series:var(--c-bodyfat)"><h3>Body fat (%)</h3><div class="chart" id="chart-bodyfat"></div></section>
       </div>
       <section class="card">
         <div class="table-wrap">
           <table class="history-table">
-            <thead><tr><th>Day</th><th class="n">kcal</th><th class="n">Protein</th><th class="n">Carbs</th><th class="n">Fat</th><th class="n">Fiber</th><th class="n">Burned</th><th class="n">Active min</th><th class="n">Steps</th><th class="n">Sleep</th><th>Mood</th></tr></thead>
+            <thead><tr><th>Day</th><th class="n">kcal</th><th class="n">Protein</th><th class="n">Carbs</th><th class="n">Fat</th><th class="n">Fiber</th><th class="n">Burned</th><th class="n">Active min</th><th class="n">Steps</th><th class="n">Sleep</th><th class="n">Weight</th><th class="n">Body fat</th><th>Mood</th></tr></thead>
             <tbody id="history-body"></tbody>
           </table>
         </div>
@@ -273,6 +296,19 @@
 
     <!-- Settings -------------------------------------------------------- -->
     <section id="view-settings" class="view settings-grid" hidden>
+      <section class="card" aria-labelledby="profile-h">
+        <div class="card-head"><h2 id="profile-h">Profile</h2></div>
+        <form id="profile-form" class="profile-form" autocomplete="off">
+          <label class="field span2"><span>Gender</span><select name="gender" id="profile-gender"></select></label>
+          <label class="field"><span>Height</span>
+            <span class="with-unit"><input type="number" name="height_cm" min="50" max="280" step="0.1" inputmode="decimal"><span class="unit">cm</span></span></label>
+          <button class="btn primary span2" type="submit">Save profile</button>
+        </form>
+        <dl class="profile-stats" id="profile-stats"></dl>
+        <p class="hint at-explain">Log your weight and body fat in the Day tab's check-in. Calorie
+          estimates use the latest weight logged on or before each day.</p>
+      </section>
+
       <section class="card targets-card" aria-labelledby="targets-h">
         <div class="card-head">
           <h2 id="targets-h">Daily targets</h2>
@@ -325,7 +361,9 @@
       <section class="card help-card" aria-labelledby="help-day-h">
         <h2 id="help-day-h">📅 Day</h2>
         <p>This is where you log your day: what you eat, how you move, and how you feel.
-          Use the arrows or the date at the top to change day, or press <kbd>[</kbd> and <kbd>]</kbd>.</p>
+          Use the arrows or the date at the top to change day, or press <kbd>[</kbd> and <kbd>]</kbd>.
+          Dates are shown as year-month-day. The <b>Today</b> button is highlighted when you're on today,
+          and days in the future can't be opened yet.</p>
 
         <h3>🍽️ Logging a food</h3>
         <ol>
@@ -357,9 +395,18 @@
           that fit. They're grouped by kind: 😊 content, ⚡ driven, 😬 tense, 🌧️ down and 🪫 drained.
           Everything saves on its own.</p>
 
+        <h3>⚖️ Weight and body fat</h3>
+        <p>Also in the check-in: your weight in kg and body fat in %, whenever you measure them.
+          Below them you'll see the change since your previous weigh-in and, if your height is
+          set in Settings, your BMI.</p>
+
+        <h3>📝 Notes</h3>
+        <p>An optional space for a few words on how the day went. It saves when you click away,
+          and days with a note show 📝 in History.</p>
+
         <h3>🏃 Activity</h3>
         <p>Choose what you did and for how long. Leave <b>kcal</b> empty and it's estimated for you
-          from your body weight (the box shows the guess). Types you use often appear at the top.</p>
+          from your latest logged body weight (the box shows the guess). Types you use often appear at the top.</p>
 
         <h3>📊 Summary</h3>
         <p>Calories and macros against that day's targets. Anything over target turns amber.
@@ -395,7 +442,7 @@
 
         <section class="card help-card" aria-labelledby="help-history-h">
           <h2 id="help-history-h">📈 History</h2>
-          <p>Calories, protein, steps and sleep for the last 7, 30 or 90 days. The dashed line is
+          <p>Calories, protein, steps, sleep, body weight and body fat for the last 7, 30 or 90 days. The dashed line is
             your target, and it steps up or down where a target changed. Click a bar or a row to
             jump to that day.</p>
         </section>
@@ -406,6 +453,8 @@
             for every day, or <i>custom periods</i> if your goal changed over time. Each day uses
             the target from its own period, so old days keep their old goals. Going back to a single
             value deletes the periods (you'll be asked first).</p>
+          <p>🧍 <b>Profile</b>: your gender and height (cm). Height is used for BMI; gender is
+            only stored and isn't used in any calculation.</p>
           <p>🏋️ <b>Exercise types</b>: about 75 built in, from CrossFit to padel. Add your own
             or adjust how many calories each one burns.</p>
         </section>
@@ -424,12 +473,26 @@
 
         <section class="card help-card" aria-labelledby="help-settings-h">
           <h2 id="help-settings-h">🗂️ Your setup</h2>
-          <p>Body weight and meal names still live in <code>info/config.toml</code>. Edit the file,
+          <p>Meal names still live in <code>info/config.toml</code>, along with a fallback body weight
+            used for calorie estimates until you log your first weigh-in. Edit the file,
             come back to this tab, and the changes show up. No restart needed. If something in it is
             wrong, a red banner at the top tells you what.</p>
           <div id="help-settings"></div>
         </section>
       </div>
+
+      <section class="card help-card disclaimer" aria-labelledby="help-disclaimer-h">
+        <h2 id="help-disclaimer-h">Important information</h2>
+        <p>Pamela is a personal tracking tool. It does not recommend any particular amount of
+          physical activity, calorie or nutrient intake, sleep, body weight or body composition,
+          and nothing it shows should be taken as such a recommendation.</p>
+        <p>Pamela does not provide medical, nutritional or physical health advice, and it is not a
+          substitute for consulting a physician, specialist, registered dietitian or nutritionist, or
+          any other qualified health professional. For advice about your health, please consult the
+          appropriate professional.</p>
+        <p>Any targets, goals and habits recorded in Pamela are chosen solely by you, at your own
+          discretion.</p>
+      </section>
     </section>
   </main>
 

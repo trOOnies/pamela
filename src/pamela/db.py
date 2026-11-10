@@ -205,6 +205,28 @@ MIGRATIONS: list[str] = [
         UNIQUE (key, start_day)
     );
     """,
+    # 4: body weight and body fat in the daily check-in, a free-text note per day,
+    # and the profile (gender, height) in the database.
+    """
+    ALTER TABLE day_metrics ADD COLUMN weight_kg REAL
+        CHECK (weight_kg > 0 AND weight_kg <= 500);
+    ALTER TABLE day_metrics ADD COLUMN body_fat_pct REAL
+        CHECK (body_fat_pct > 0 AND body_fat_pct < 100);
+
+    CREATE TABLE day_notes (
+        day        TEXT    PRIMARY KEY,             -- YYYY-MM-DD
+        text       TEXT    NOT NULL,
+        updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- A single row.
+    CREATE TABLE profile (
+        id         INTEGER PRIMARY KEY CHECK (id = 1),
+        gender     TEXT    NOT NULL DEFAULT 'unspecified',
+        height_cm  REAL    CHECK (height_cm >= 50 AND height_cm <= 280)
+    );
+    INSERT INTO profile (id) VALUES (1);
+    """,
 ]
 
 

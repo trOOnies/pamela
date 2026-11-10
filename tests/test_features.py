@@ -318,6 +318,8 @@ def test_day_metrics_roundtrip(client):
         "sleep_min": None,
         "mood": None,
         "feelings": [],
+        "weight_kg": None,
+        "body_fat_pct": None,
     }
     r = client.put(
         f"/api/days/{DAY}/metrics",
@@ -328,7 +330,14 @@ def test_day_metrics_roundtrip(client):
     assert client.get(f"/api/days/{DAY}").json()["metrics"]["steps"] == 9500
 
     r = client.put(f"/api/days/{DAY}/metrics", json={"steps": 10000, "mood": 5})
-    assert r.json() == {"steps": 10000, "sleep_min": None, "mood": 5, "feelings": []}
+    assert r.json() == {
+        "steps": 10000,
+        "sleep_min": None,
+        "mood": 5,
+        "feelings": [],
+        "weight_kg": None,
+        "body_fat_pct": None,
+    }
 
     days = client.get("/api/history", params={"start": DAY, "end": "2026-11-10"}).json()
     assert (days[0]["steps"], days[0]["mood"], days[0]["sleep_min"]) == (10000, 5, None)

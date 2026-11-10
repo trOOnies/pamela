@@ -35,6 +35,18 @@ FEELING_GROUPS = {
 }
 FEELINGS = {k: label for group in FEELING_GROUPS.values() for k, label in group.items()}
 
+# Stored for the profile only; no calculation uses it.
+GENDERS = {
+    "male_cis": "Male (cis)",
+    "female_cis": "Female (cis)",
+    "male_trans": "Male (trans)",
+    "female_trans": "Female (trans)",
+    "other": "Other",
+    "unspecified": "Prefer not to say",
+}
+
+NOTE_MAX = 2000
+
 # Daily targets: key -> (label, unit, max). Values are positive integers.
 TARGETS = {
     "kcal": ("Calories", "kcal", None),
@@ -262,6 +274,8 @@ class DayMetricsIn(_In):
     sleep_min: float | None = Field(None, ge=0, le=24 * 60)
     mood: int | None = Field(None, ge=1, le=5, description="1 awful ... 5 great")
     feelings: list[str] = Field(default_factory=list, max_length=len(FEELINGS))
+    weight_kg: float | None = Field(None, gt=0, le=500)
+    body_fat_pct: float | None = Field(None, gt=0, lt=100)
 
     @field_validator("feelings")
     @classmethod
@@ -277,6 +291,48 @@ class DayMetrics(BaseModel):
     sleep_min: float | None = None
     mood: int | None = None
     feelings: list[str] = Field(default_factory=list)
+    weight_kg: float | None = None
+    body_fat_pct: float | None = None
+
+
+class DayNoteIn(_In):
+    text: str = Field("", max_length=NOTE_MAX, description="Empty deletes the note")
+
+
+class DayNote(BaseModel):
+    text: str = ""
+
+
+class LastWeight(BaseModel):
+    day: dt.date
+    weight_kg: float
+
+
+# --- profile -----------------------------------------------------------------
+
+
+class ProfileIn(_In):
+    gender: str = Field("unspecified", description=f"One of: {', '.join(GENDERS)}")
+    height_cm: float | None = Field(None, ge=50, le=280)
+
+    @field_validator("gender")
+    @classmethod
+    def _known_gender(cls, v: str) -> str:
+        if v not in GENDERS:
+            raise ValueError(f"unknown gender {v!r}")
+        return v
+
+
+class Profile(BaseModel):
+    gender: str
+    height_cm: float | None
+    last_weight: LastWeight | None = Field(
+        description="The latest weight logged in a check-in, if any"
+    )
+    estimate_weight_kg: float = Field(
+        description="Weight used for calorie estimates today: the latest logged one, "
+        "else the one in info/config.toml"
+    )
 
 
 # --- aggregates --------------------------------------------------------------
@@ -290,6 +346,11 @@ class Day(BaseModel):
     burned_kcal: float
     active_min: float
     metrics: DayMetrics
+    note: str = ""
+    previous_weight: LastWeight | None = Field(
+        None, description="The latest weight logged before this day"
+    )
+    estimate_weight_kg: float = Field(description="Weight used for calorie estimates this day")
     targets: dict[str, int | None] = Field(description="Targets in force on this day")
 
 
@@ -301,6 +362,9 @@ class HistoryDay(Macros):
     steps: int | None = None
     sleep_min: float | None = None
     mood: int | None = None
+    weight_kg: float | None = None
+    body_fat_pct: float | None = None
+    has_note: bool = False
     targets: dict[str, int | None] = Field(default_factory=dict)
 
 
@@ -353,3 +417,4 @@ class Vocabulary(BaseModel):
     diet_tags: list[Choice]
     moods: list[Choice]
     feelings: list[Choice]
+    genders: list[Choice]

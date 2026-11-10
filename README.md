@@ -29,8 +29,12 @@ Or without `make`: `pamela --reload` (options: `--host`, `--port`).
   The summary shows kcal and macros against your targets, plus burned and net kcal.
   Foods with a serving or package size offer quick portions (*1 serving*, *½ pack*…).
   *Saved meal* mode loads a saved meal as an editable draft that is only logged when you
-  press *Log*. The *Check-in* card holds daily steps, sleep and mood (with feelings).
+  press *Log*. The *Check-in* card holds daily steps, sleep, body weight (kg), body fat (%)
+  and mood (with feelings); *Notes* holds a few optional words on how the day went.
+  Calorie estimates for activities use the latest weight logged on or before that day.
   Activity types are grouped by category, recently used first.
+  The top bar shows the weekday and the date (always `YYYY-MM-DD`); *Today* is highlighted
+  and disabled on today, and future days can't be opened or logged (the API refuses them too).
   Keys `[` / `]` move to the previous or next day.
 - **Foods**: catalog of foods with macros per *N* units (e.g. per 100 g, per 1 slice),
   optional serving and package sizes, and diet tags (vegetarian, vegan, kosher, lactose-free,
@@ -40,15 +44,18 @@ Or without `make`: `pamela --reload` (options: `--host`, `--port`).
   Foods you log often are listed first. Editing or deleting a food doesn't change past log
   entries, because each entry stores a snapshot of its macros.
 - **Saved meals**: fixed mixes of catalog foods (or *☆ save* a meal from the Day tab).
-- **History**: daily kcal, protein, steps and sleep charts against your targets, averages,
-  and a per-day table with mood (click a day to open it).
-- **Settings**: daily targets (kcal, macros, steps, sleep), each either one value for all
+- **History**: daily kcal, protein, steps and sleep charts against your targets, body weight
+  and body fat line charts, averages, and a per-day table with mood and notes (click a day
+  to open it). Each chart has its own color.
+- **Settings**: your profile (gender, default *Prefer not to say*, and height in cm, used
+  for BMI), daily targets (kcal, macros, steps, sleep), each either one value for all
   history or custom periods ("from this date on"), so past days keep the target they had.
   Going back to a single value resets the periods after a confirmation. Targets are positive
   whole numbers; sleep is at most 24 h. Also the exercise types (about 75 built in, with MET
   values), editable.
 - **Help**: how each tab works, keyboard shortcuts, and your current settings from
-  `info/config.toml` (targets and meals). Press `?` to open it.
+  `info/config.toml` (targets and meals), and a note that Pamela gives no health advice.
+  Press `?` to open it.
 
 ## Folders
 
@@ -62,7 +69,8 @@ You can point them somewhere else with the `PAMELA_LOCAL_DIR` / `PAMELA_INFO_DIR
 
 ### `info/config.toml`
 
-Holds the profile (body weight for calorie estimates) and meal names. Daily targets and
+Holds the meal names and a fallback body weight, used for calorie estimates until you log
+a weigh-in. Daily targets and
 activity types used to live here; they are now in the database (Settings tab). An old
 `[targets]` table or `[[activity_types]]` list is imported once on the first start after
 upgrading and ignored afterwards, so you can delete them.

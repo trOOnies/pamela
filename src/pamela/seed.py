@@ -19,7 +19,7 @@ from .config import ConfigStore, Settings
 from .schemas import DIET_FIELDS, FEELING_GROUPS
 from .tracking import estimate_kcal, scale_macros
 
-USER_TABLES = ("foods", "food_entries", "activities", "day_metrics", "saved_meals")
+USER_TABLES = ("foods", "food_entries", "activities", "day_metrics", "day_notes", "saved_meals")
 
 # name, brand, basis_qty, unit, kcal, protein, carbs, fat, fiber, serving, package, tags
 FOODS = [
@@ -123,6 +123,16 @@ WORKOUTS = [
 ]
 
 
+# A few words on the day, picked by mood (1 awful ... 5 great).
+NOTES = {
+    5: ["Great day, lots of energy.", "Hit a new best on my run!", "Lovely dinner with friends."],
+    4: ["Good day overall.", "Workout felt easy today.", "Productive at work, nice walk after."],
+    3: ["Normal day, nothing special.", "A bit busy, ate on the go.", "Rainy, stayed in."],
+    2: ["Stressful deadline at work.", "Slept badly, dragged through the day."],
+    1: ["Felt unwell, rested most of the day.", "Rough day."],
+}
+
+
 def _is_empty(conn: sqlite3.Connection) -> bool:
     return not any(
         conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() for table in USER_TABLES
@@ -182,7 +192,10 @@ def seed(conn: sqlite3.Connection, meal_names: list[str], weight_kg: float,
     }
     known_feelings = {k for group in FEELING_GROUPS.values() for k in group}
 
-    counts = dict.fromkeys(("foods", "saved meals", "entries", "activities", "check-ins"), 0)
+    counts = dict.fromkeys(
+        ("foods", "saved meals", "entries", "activities", "check-ins", "weigh-ins", "notes"), 0
+    )
+    logged_weight = weight_kg  # what calorie estimates use until the first weigh-in
     counts["foods"], counts["saved meals"] = len(foods), len(SAVED_MEALS)
 
     for offset in range(days):
@@ -191,6 +204,16 @@ def seed(conn: sqlite3.Connection, meal_names: list[str], weight_kg: float,
         is_today = day == today
         if not is_today and rng.random() < 0.05:
             continue  # a day off from logging, as happens
+
+        # Weight drifts down slowly and is logged most mornings; body fat on Mondays.
+        checkin = rng.random() >= 0.1
+        weight = body_fat = None
+        if checkin and (is_today or rng.random() < 0.6):
+            weight = round(82.0 - 0.035 * offset + rng.gauss(0, 0.35), 1)
+            logged_weight = weight
+            counts["weigh-ins"] += 1
+        if checkin and day.weekday() == 0:
+            body_fat = round(24.5 - 0.02 * offset + rng.gauss(0, 0.3), 1)
 
         # Today only has the first meals, as if it were midday.
         names = meal_names[:2] if is_today else meal_names
@@ -223,13 +246,14 @@ def seed(conn: sqlite3.Connection, meal_names: list[str], weight_kg: float,
             conn.execute(
                 """INSERT INTO activities (day, type, duration_min, distance_km, kcal,
                      kcal_estimated) VALUES (?, ?, ?, ?, ?, 1)""",
-                (iso, wtype, duration, distance, estimate_kcal(mets[wtype], weight_kg, duration)),
+                (iso, wtype, duration, distance,
+                 estimate_kcal(mets[wtype], logged_weight, duration)),
             )
             counts["activities"] += 1
             active = active or wtype != "Walking the dog"
 
-        if rng.random() < 0.1:
-            continue  # no check-in that day
+        if not checkin:
+            continue
         sleep_min = round(rng.gauss(445, 45) / 5) * 5
         steps = max(1500, round(rng.gauss(9500 if active else 6500, 2200)))
         mood = round(3.2 + (sleep_min - 445) / 60 + (0.5 if active else 0) + rng.gauss(0, 0.7))
@@ -237,11 +261,20 @@ def seed(conn: sqlite3.Connection, meal_names: list[str], weight_kg: float,
         feelings = rng.sample(feelings_by_mood[mood], k=rng.randint(0, 2))
         feelings = [f for f in feelings if f in known_feelings]
         conn.execute(
-            "INSERT INTO day_metrics (day, steps, sleep_min, mood, feelings) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (iso, None if is_today else steps, sleep_min, mood, ",".join(feelings)),
+            "INSERT INTO day_metrics (day, steps, sleep_min, mood, feelings, weight_kg, "
+            "body_fat_pct) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (iso, None if is_today else steps, sleep_min, mood, ",".join(feelings), weight,
+             body_fat),
         )
         counts["check-ins"] += 1
+        if not is_today and rng.random() < 0.3:
+            conn.execute(
+                "INSERT INTO day_notes (day, text) VALUES (?, ?)", (iso, rng.choice(NOTES[mood]))
+            )
+            counts["notes"] += 1
+
+    # A height, so BMI shows up; gender stays "Prefer not to say".
+    conn.execute("UPDATE profile SET height_cm = 178 WHERE id = 1 AND height_cm IS NULL")
 
     # One target with a mid-history change, so the chart target line steps.
     change = (start + dt.timedelta(days=days // 2)).isoformat()

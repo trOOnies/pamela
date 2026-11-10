@@ -21,6 +21,7 @@ const state = {
   vocab: null,          // diet tags, moods and feelings (labels come from the backend)
   activityTypes: [],
   savedMeals: [],
+  profile: null,        // { gender, height_cm, last_weight, estimate_weight_kg }
   targets: [],          // per target: { key, label, unit, max, periods: [{ start, value }] }
   targetEdit: null,     // target being edited: { key, mode: "single" | "periods", periods }
   view: "day",
@@ -55,9 +56,18 @@ function addDays(iso, n) {
   d.setDate(d.getDate() + n);
   return toISO(d);
 }
-const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
+// Dates are always shown as YYYY-MM-DD; weekday names follow the app's language.
+const weekdayShort = new Intl.DateTimeFormat("en", { weekday: "short" });
+const weekdayLong = new Intl.DateTimeFormat("en", { weekday: "long" });
 function fmtDay(iso) {
-  return dayFmt.format(parseISO(iso));
+  return iso;
+}
+/** "Tue 2026-11-10" */
+function fmtDayWd(iso) {
+  return `${weekdayShort.format(parseISO(iso))} ${iso}`;
+}
+function isISODate(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && toISO(parseISO(s)) === s;
 }
 function fmt(n, digits = 0) {
   if (n == null || Number.isNaN(n)) return "–";
@@ -238,13 +248,18 @@ function buildVocabControls() {
 const VIEWS = ["day", "foods", "meals", "history", "settings", "help"];
 
 function route() {
+  flushNote(); // the textarea still holds the previous day's note
   const parts = location.hash.replace(/^#\/?/, "").split("/");
   let view = parts[0] || "day";
   if (!VIEWS.includes(view)) view = "day";
   state.view = view;
   if (view === "day") {
     const d = parts[1];
-    state.day = d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : todayISO();
+    if (d && isISODate(d) && d > todayISO()) {
+      toast("Days in the future can't be opened yet", true);
+      return location.replace("#/");
+    }
+    state.day = d && isISODate(d) ? d : todayISO();
   }
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   for (const a of $$("[data-nav]")) {
@@ -262,11 +277,36 @@ function render() {
   if (state.view === "meals") return loadMealsView();
   if (state.view === "history") return loadHistory();
   if (state.view === "settings") return loadSettings();
-  if (state.view === "help") return loadTargets().then(renderHelp, showError);
+  if (state.view === "help") return Promise.all([loadTargets(), loadProfile()]).then(renderHelp, showError);
 }
 
 function goDay(iso) {
+  if (iso > todayISO()) return; // the future can't be logged yet
   location.hash = iso === todayISO() ? "#/" : `#/day/${iso}`;
+}
+
+/** Top bar: weekday + date, and Today / next disabled when on today. */
+function renderDayNav() {
+  const today = todayISO();
+  const isToday = state.day === today;
+  $("#day-input").value = state.day;
+  $("#day-input").max = today;
+  $("#day-weekday").textContent = weekdayLong.format(parseISO(state.day));
+  $("#day-label").textContent = state.day;
+  $("#daypick").classList.toggle("is-today", isToday);
+  $("#next-day").disabled = isToday;
+  $("#today-btn").disabled = isToday;
+  $("#today-btn").title = isToday ? "You're on today" : "Go to today";
+  $("#day-today").textContent = isToday ? "This is today" : "";
+}
+
+function openDayPicker() {
+  const input = $("#day-input");
+  try {
+    input.showPicker();
+  } catch {
+    input.focus(); // older browsers: no showPicker()
+  }
 }
 
 // --- food search combobox (shared) ------------------------------------------------
@@ -476,8 +516,8 @@ function itemsTable({ tbody, tfoot, getItems, fiber, empty, onChange }) {
 // --- day view ----------------------------------------------------------------
 
 async function loadDay() {
-  $("#day-input").value = state.day;
-  document.title = `${fmtDay(state.day)} · Pamela`;
+  renderDayNav();
+  document.title = `${fmtDayWd(state.day)} · Pamela`;
   const day = state.day;
   try {
     const data = await api("GET", `/days/${day}`);
@@ -486,6 +526,7 @@ async function loadDay() {
     renderSummary();
     renderLog();
     renderCheckin();
+    renderNote();
     renderActivities();
     renderDraft();
   } catch (err) {
@@ -635,10 +676,14 @@ function renderCheckin() {
   const m = state.dayData.metrics;
   const t = state.dayData.targets;
   const steps = $("#steps-input"), sleep = $("#sleep-input");
+  const weight = $("#weight-input"), fat = $("#bodyfat-input");
   // don't clobber what the user is typing
   if (document.activeElement !== steps) steps.value = m.steps ?? "";
   if (document.activeElement !== sleep) sleep.value = m.sleep_min != null ? fmtSleep(m.sleep_min) : "";
-  sleep.classList.remove("invalid");
+  if (document.activeElement !== weight) weight.value = m.weight_kg ?? "";
+  if (document.activeElement !== fat) fat.value = m.body_fat_pct ?? "";
+  for (const el of [sleep, weight, fat]) el.classList.remove("invalid");
+  renderBodySub();
 
   $("#steps-bar").style.width = `${meterPct(m.steps ?? 0, t.steps)}%`;
   $("#steps-sub").textContent = t.steps ? `${fmt(m.steps ?? 0)} of ${fmt(t.steps)}` : "";
@@ -670,6 +715,41 @@ function renderCheckin() {
     .join("");
 }
 
+/** Under weight / body fat: change since the previous weigh-in, or the last one; and BMI. */
+function renderBodySub() {
+  const { metrics: m, previous_weight: prev } = state.dayData;
+  const bits = [];
+  if (m.weight_kg != null && prev) {
+    const d = m.weight_kg - prev.weight_kg;
+    const sign = d > 0 ? "+" : d < 0 ? "−" : "±";
+    bits.push(`${sign}${fmt(Math.abs(d), 1)} kg since ${fmtDay(prev.day)}`);
+  } else if (m.weight_kg == null && prev) {
+    bits.push(`Last: ${fmt(prev.weight_kg, 1)} kg on ${fmtDay(prev.day)}`);
+  }
+  const w = m.weight_kg ?? prev?.weight_kg;
+  const h = state.profile?.height_cm;
+  if (w && h) bits.push(`BMI ${fmt(w / (h / 100) ** 2, 1)}`);
+  $("#body-sub").textContent = bits.join(" · ");
+}
+
+/** A decimal input within (lo, hi]; "" -> null; anything else -> NaN. */
+function parseDecimal(raw, lo, hi) {
+  raw = raw.trim().replace(",", ".");
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > lo && n <= hi ? Math.round(n * 10) / 10 : NaN;
+}
+
+function commitBody(input, key, lo, hi, msg) {
+  const v = parseDecimal(input.value, lo, hi);
+  if (Number.isNaN(v)) {
+    input.classList.add("invalid");
+    return toast(msg, true);
+  }
+  input.classList.remove("invalid");
+  if (v !== state.dayData.metrics[key]) saveCheckin({ [key]: v });
+}
+
 let checkinStatusTimer;
 async function saveCheckin(patch) {
   const day = state.day;
@@ -679,6 +759,12 @@ async function saveCheckin(patch) {
     const saved = await api("PUT", `/days/${day}/metrics`, body);
     if (day !== state.day) return;
     state.dayData.metrics = saved;
+    if ("weight_kg" in patch) {
+      // the weight used for calorie estimates may have changed
+      const day = await api("GET", `/days/${state.day}`);
+      state.dayData.estimate_weight_kg = day.estimate_weight_kg;
+      updateActivityForm();
+    }
     renderCheckin();
     status.textContent = "Saved";
     clearTimeout(checkinStatusTimer);
@@ -705,6 +791,57 @@ function commitSleep() {
   input.classList.remove("invalid");
   if (min !== state.dayData.metrics.sleep_min) saveCheckin({ sleep_min: min });
   else if (min != null) input.value = fmtSleep(min);
+}
+
+// notes ----------------------------------------------------------------------------
+
+let noteShownDay = null; // the day whose note is in the textarea
+
+function renderNote() {
+  const input = $("#notes-input");
+  // keep what's being typed, unless the textarea still shows another day's note
+  if (document.activeElement !== input || noteShownDay !== state.day) input.value = state.dayData.note;
+  noteShownDay = state.day;
+  updateNoteCount();
+}
+
+function updateNoteCount() {
+  const n = $("#notes-input").value.length;
+  $("#notes-count").textContent = n ? `${n} / 2000` : "";
+}
+
+let notesStatusTimer, noteTimer;
+let notePending = null; // day with unsaved typing in the textarea
+
+function noteTyped() {
+  notePending = noteShownDay;
+  updateNoteCount();
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(flushNote, 1500);
+}
+
+/** Saves unsaved typing now; called on blur and before showing another day. */
+function flushNote() {
+  clearTimeout(noteTimer);
+  if (!notePending) return;
+  const day = notePending;
+  notePending = null;
+  saveNote(day, $("#notes-input").value.trim());
+}
+
+async function saveNote(day, text) {
+  if (state.dayData?.day === day && text === state.dayData.note) return;
+  const status = $("#notes-status");
+  try {
+    const saved = await api("PUT", `/days/${day}/note`, { text });
+    if (day !== state.day) return;
+    state.dayData.note = saved.text;
+    status.textContent = "Saved";
+    clearTimeout(notesStatusTimer);
+    notesStatusTimer = setTimeout(() => (status.textContent = ""), 1500);
+  } catch (err) {
+    showError(err);
+  }
 }
 
 // entry form -------------------------------------------------------------------
@@ -955,7 +1092,8 @@ function updateActivityForm() {
   $("#act-distance").hidden = !(t && t.distance);
   const mins = num($("#activity-form").elements.duration_min.value);
   const kcal = $("#act-kcal");
-  if (t && mins) kcal.placeholder = `≈ ${fmt((t.met * state.config.profile.weight_kg * mins) / 60)}`;
+  const w = state.dayData?.estimate_weight_kg ?? estimateWeight();
+  if (t && mins) kcal.placeholder = `≈ ${fmt((t.met * w * mins) / 60)}`;
   else kcal.placeholder = "auto";
 }
 
@@ -1286,10 +1424,46 @@ function useSavedMealToday(id) {
 
 // --- settings view (exercise types) ------------------------------------------------
 
+async function loadProfile() {
+  state.profile = await api("GET", "/profile");
+}
+
+/** Weight for calorie estimates today: the latest logged one, else info/config.toml's. */
+function estimateWeight() {
+  return state.profile?.estimate_weight_kg ?? state.config.profile.weight_kg;
+}
+
+function renderProfile() {
+  const p = state.profile;
+  const form = $("#profile-form");
+  form.elements.gender.value = p.gender;
+  form.elements.height_cm.value = p.height_cm ?? "";
+  const lw = p.last_weight;
+  const rows = [
+    ["Latest weight", lw ? `${fmt(lw.weight_kg, 1)} kg <small>on ${fmtDay(lw.day)}</small>` : `<span class="muted">none logged yet</span>`],
+    ["Used for estimates", `${fmt(p.estimate_weight_kg, 1)} kg${lw ? "" : " <small>(from info/config.toml)</small>"}`],
+  ];
+  if (lw && p.height_cm) rows.push(["BMI", fmt(lw.weight_kg / (p.height_cm / 100) ** 2, 1)]);
+  $("#profile-stats").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+
+async function submitProfile(ev) {
+  ev.preventDefault();
+  const v = formValues(ev.currentTarget);
+  try {
+    state.profile = await api("PUT", "/profile", { gender: v.gender, height_cm: num(v.height_cm) });
+    renderProfile();
+    toast("Profile saved");
+  } catch (err) {
+    showError(err);
+  }
+}
+
 async function loadSettings() {
   document.title = "Settings · Pamela";
   try {
-    await Promise.all([loadActivityTypes(), loadTargets()]);
+    await Promise.all([loadActivityTypes(), loadTargets(), loadProfile()]);
+    renderProfile();
     renderTargets();
     renderTypes();
   } catch (err) {
@@ -1303,7 +1477,7 @@ function renderTypes() {
   const rows = all.filter((t) => words.every((w) => `${t.name} ${t.category}`.toLowerCase().includes(w)));
   $("#at-count").textContent = rows.length === all.length ? `(${all.length})` : `(${rows.length} of ${all.length})`;
   $("#at-categories").innerHTML = [...new Set(all.map((t) => t.category))].map((c) => `<option value="${esc(c)}">`).join("");
-  const w = state.config.profile.weight_kg;
+  const w = estimateWeight();
   let html = "", cat = null;
   for (const t of rows) {
     if (t.category !== cat) {
@@ -1321,7 +1495,8 @@ function renderTypes() {
 
 function updateTypeHint() {
   const met = num($("#at-form").elements.met.value);
-  $("#at-hint").textContent = met ? `≈ ${fmt(met * state.config.profile.weight_kg)} kcal per hour at your weight (${fmtQty(state.config.profile.weight_kg)} kg)` : "";
+  const w = estimateWeight();
+  $("#at-hint").textContent = met ? `≈ ${fmt(met * w)} kcal per hour at your weight (${fmtQty(w)} kg)` : "";
 }
 
 function resetTypeForm() {
@@ -1433,7 +1608,7 @@ function targetEditor(t, ed) {
       .map((p, i) => {
         const next = ed.periods[i + 1];
         const until = next?.start ? fmtDay(addDays(next.start, -1)) : next ? "…" : "onwards";
-        const from = i === 0 ? `<span class="muted">The beginning</span>` : `<input type="date" value="${p.start ?? ""}" data-tstart="${i}" aria-label="Period ${i + 1} starts on" required>`;
+        const from = i === 0 ? `<span class="muted">The beginning</span>` : `<input type="text" class="date-text" value="${p.start ?? ""}" data-tstart="${i}" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric" aria-label="Period ${i + 1} starts on (YYYY-MM-DD)" required>`;
         const del = i === 0 ? "" : `<button type="button" class="row-btn del" data-tdel="${i}" title="Remove period" aria-label="Remove period ${i + 1}">✕</button>`;
         return `<tr><td>${from}</td><td class="muted">${until}</td><td>${valueInput(i, p.value)}</td><td class="act">${del}</td></tr>`;
       })
@@ -1497,6 +1672,7 @@ function validTargetPeriods(t, ed) {
   };
   const [first, ...rest] = ed.periods;
   if (rest.some((p) => !p.start)) return err("Every period after the first needs a start date.");
+  if (rest.some((p) => !isISODate(p.start))) return err("Start dates must be real dates written as YYYY-MM-DD.");
   const sorted = [first, ...rest.sort((a, b) => (a.start < b.start ? -1 : 1))];
   const starts = rest.map((p) => p.start);
   if (new Set(starts).size !== starts.length) return err("Two periods start on the same day.");
@@ -1613,6 +1789,13 @@ function renderHistory(days) {
   const activeDays = days.filter((d) => d.active_min > 0).length;
   const sleepAvg = avg("sleep_min", withKey("sleep_min"));
   const moodAvg = avg("mood", withKey("mood"));
+  const lastOf = (key) => withKey(key).at(-1);
+  const weightChange = () => {
+    const w = withKey("weight_kg");
+    if (w.length < 2) return w.length ? fmtDay(w[0].day) : "";
+    const d = w.at(-1).weight_kg - w[0].weight_kg;
+    return `${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt(Math.abs(d), 1)} kg in range`;
+  };
   $("#history-tiles").innerHTML = [
     ["Avg kcal / logged day", fmt(avg("kcal")), t.kcal ? `target ${fmt(t.kcal)}` : ""],
     ["Avg protein", `${fmt(avg("protein_g"))} g`, t.protein_g ? `target ${fmt(t.protein_g)} g` : ""],
@@ -1621,6 +1804,8 @@ function renderHistory(days) {
     ["Avg burned / day", fmt(avg("burned_kcal", days)), "kcal"],
     ["Avg steps", fmt(avg("steps", withKey("steps"))), t.steps ? `target ${fmt(t.steps)}` : ""],
     ["Avg sleep", sleepAvg != null ? fmtSleep(sleepAvg) : "–", t.sleep_h ? `target ${fmtSleep(t.sleep_h * 60)} h` : "h"],
+    ["Latest weight", lastOf("weight_kg") ? `${fmt(lastOf("weight_kg").weight_kg, 1)} kg` : "–", weightChange()],
+    ["Latest body fat", lastOf("body_fat_pct") ? `${fmt(lastOf("body_fat_pct").body_fat_pct, 1)} %` : "–", lastOf("body_fat_pct") ? fmtDay(lastOf("body_fat_pct").day) : ""],
     ["Avg mood", moodAvg != null ? `${MOOD_EMOJI[Math.round(moodAvg)]}` : "–", moodAvg != null ? `${moodLabel(Math.round(moodAvg))} · ${fmt(moodAvg, 1)} / 5` : ""],
   ]
     .map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v} <small>${s}</small></div></div>`)
@@ -1630,16 +1815,19 @@ function renderHistory(days) {
   barChart($("#chart-protein"), days, "protein_g", "g");
   barChart($("#chart-steps"), days, "steps", "steps");
   barChart($("#chart-sleep"), days, "sleep_h", "h", 1);
+  lineChart($("#chart-weight"), days, "weight_kg", "kg", 1);
+  lineChart($("#chart-bodyfat"), days, "body_fat_pct", "%", 1);
 
   $("#history-body").innerHTML = [...days]
     .reverse()
     .map(
-      (d) => `<tr class="${d.entry_count || d.active_min || d.steps != null || d.sleep_min != null || d.mood != null ? "" : "nodata"}">
-      <td><a href="#/day/${d.day}">${fmtDay(d.day)}</a></td>
+      (d) => `<tr class="${d.entry_count || d.active_min || d.has_note || ["steps", "sleep_min", "mood", "weight_kg", "body_fat_pct"].some((k) => d[k] != null) ? "" : "nodata"}">
+      <td><a href="#/day/${d.day}">${fmtDayWd(d.day)}</a>${d.has_note ? `<span class="note-flag" title="Has a note">📝</span>` : ""}</td>
       <td class="n">${fmt(d.kcal)}</td>
       ${MACROS.map((m) => `<td class="n">${fmt(d[m.key])}</td>`).join("")}
       <td class="n">${fmt(d.burned_kcal)}</td><td class="n">${fmt(d.active_min)}</td>
       <td class="n">${fmt(d.steps)}</td><td class="n">${fmtSleep(d.sleep_min)}</td>
+      <td class="n">${d.weight_kg != null ? fmt(d.weight_kg, 1) : "–"}</td><td class="n">${d.body_fat_pct != null ? `${fmt(d.body_fat_pct, 1)} %` : "–"}</td>
       <td>${d.mood != null ? `<span title="${esc(moodLabel(d.mood))}">${MOOD_EMOJI[d.mood]} ${esc(moodLabel(d.mood))}</span>` : ""}</td>
     </tr>`
     )
@@ -1654,7 +1842,13 @@ const chartData = new WeakMap();
  * each day's target (same key), so it steps where a target period changes.
  */
 function barChart(el, days, key, unit, digits = 0) {
-  chartData.set(el, { days, key, unit, digits });
+  chartData.set(el, { days, key, unit, digits, line: false });
+  drawChart(el);
+}
+
+/** Dots joined by a line, for measurements (weight, body fat) whose axis shouldn't start at 0. */
+function lineChart(el, days, key, unit, digits = 1) {
+  chartData.set(el, { days, key, unit, digits, line: true });
   drawChart(el);
 }
 
@@ -1668,21 +1862,32 @@ function niceMax(v) {
 function drawChart(el) {
   const spec = chartData.get(el);
   if (!spec) return;
-  const { days, key, unit, digits } = spec;
+  const { days, key, unit, digits, line } = spec;
   const tgt = (d) => d.targets?.[key] ?? null;
   const W = el.clientWidth, H = el.clientHeight;
   if (!W || !H) return;
   const m = { top: 14, right: 8, bottom: 22, left: 44 };
   const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
-  const maxV = niceMax(Math.max(...days.map((d) => tgt(d) ?? 0), ...days.map((d) => d[key] ?? 0)) * 1.05);
-  const y = (v) => m.top + ih - (v / maxV) * ih;
+  let minV = 0, maxV;
+  if (line) {
+    // a padded range around the values, in whole steps
+    const vals = days.map((d) => d[key]).filter((v) => v != null);
+    const lo = vals.length ? Math.min(...vals) : 0, hi = vals.length ? Math.max(...vals) : 1;
+    const raw = Math.max(hi - lo, 1) / 4, pow = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((k) => k * pow).find((v) => v >= raw); // round steps
+    minV = Math.max(0, Math.floor(lo / step) * step - step);
+    maxV = minV + step * Math.max(4, Math.ceil((hi - minV) / step) + 1);
+  } else {
+    maxV = niceMax(Math.max(...days.map((d) => tgt(d) ?? 0), ...days.map((d) => d[key] ?? 0)) * 1.05);
+  }
+  const y = (v) => m.top + ih - ((v - minV) / (maxV - minV)) * ih;
   const band = iw / days.length;
   const gap = Math.min(2, band * 0.25);
   const bw = Math.max(1, band - gap);
 
   let s = `<g class="grid axis">`;
   for (let i = 0; i <= 4; i++) {
-    const v = (maxV / 4) * i;
+    const v = minV + ((maxV - minV) / 4) * i;
     s += `<line x1="${m.left}" x2="${W - m.right}" y1="${y(v)}" y2="${y(v)}"/>`;
     s += `<text x="${m.left - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v, digits)}</text>`;
   }
@@ -1690,12 +1895,20 @@ function drawChart(el) {
   const every = Math.ceil(days.length / Math.max(1, Math.floor(iw / 64)));
   days.forEach((d, i) => {
     if ((days.length - 1 - i) % every) return;
-    const dd = parseISO(d.day);
-    s += `<text x="${m.left + i * band + band / 2}" y="${H - 6}" text-anchor="middle">${dd.getDate()}/${dd.getMonth() + 1}</text>`;
+    // MM-DD: the year is the same for nearly every label
+    s += `<text x="${m.left + i * band + band / 2}" y="${H - 6}" text-anchor="middle">${d.day.slice(5)}</text>`;
   });
   s += `</g><g>`;
+  if (line) {
+    const pts = days.map((d, i) => [d[key], m.left + i * band + band / 2]).filter(([v]) => v != null);
+    if (pts.length > 1) s += `<path class="line" d="${pts.map(([v, x], j) => `${j ? "L" : "M"}${x},${y(v)}`).join("")}"/>`;
+  }
   days.forEach((d, i) => {
     const v = d[key];
+    if (line) {
+      if (v != null) s += `<circle class="dot" data-i="${i}" cx="${m.left + i * band + band / 2}" cy="${y(v)}" r="3.5"/>`;
+      return;
+    }
     if (!v) return;
     const x = m.left + i * band + gap / 2, top = y(v), h = m.top + ih - top;
     const r = Math.min(4, bw / 2, h);
@@ -1721,7 +1934,7 @@ function drawChart(el) {
     const last = tgt(days[days.length - 1]);
     if (last != null) s += `<text class="target-lbl" x="${W - m.right}" y="${y(last) - 5}" text-anchor="end">target ${fmt(last, digits)}</text>`;
   }
-  if (!days.some((d) => d[key])) {
+  if (!days.some((d) => d[key] != null && d[key] !== 0)) {
     s += `<text class="empty-msg" x="${m.left + iw / 2}" y="${m.top + ih / 2}" text-anchor="middle">No data in this range</text>`;
   }
   // full-height hit targets, wider than the bars
@@ -1735,14 +1948,14 @@ function drawChart(el) {
   const tip = $("#tooltip");
   svg.addEventListener("mousemove", (e) => {
     const hit = e.target.closest(".hit");
-    $$(".bar.hot", svg).forEach((b) => b.classList.remove("hot"));
+    $$(".bar.hot, .dot.hot", svg).forEach((b) => b.classList.remove("hot"));
     if (!hit) return (tip.hidden = true);
     const i = Number(hit.dataset.i);
     const d = days[i];
-    $(`.bar[data-i="${i}"]`, svg)?.classList.add("hot");
+    $(`.bar[data-i="${i}"], .dot[data-i="${i}"]`, svg)?.classList.add("hot");
     const v = d[key];
     const target = tgt(d);
-    tip.innerHTML = `<b>${fmtDay(d.day)}</b>${fmt(v, digits)} ${unit}${target && v != null ? ` · ${fmt((v / target) * 100)}% of target ${fmt(target, digits)}` : ""}`;
+    tip.innerHTML = `<b>${fmtDayWd(d.day)}</b>${fmt(v, digits)} ${unit}${target && v != null ? ` · ${fmt((v / target) * 100)}% of target ${fmt(target, digits)}` : ""}`;
     tip.hidden = false;
     const tw = tip.offsetWidth;
     tip.style.left = `${Math.min(e.clientX + 12, window.innerWidth - tw - 8)}px`;
@@ -1750,7 +1963,7 @@ function drawChart(el) {
   });
   svg.addEventListener("mouseleave", () => {
     tip.hidden = true;
-    $$(".bar.hot", svg).forEach((b) => b.classList.remove("hot"));
+    $$(".bar.hot, .dot.hot", svg).forEach((b) => b.classList.remove("hot"));
   });
   svg.addEventListener("click", (e) => {
     const hit = e.target.closest(".hit");
@@ -1776,7 +1989,12 @@ function renderHelp() {
     .join("");
   $("#help-settings").innerHTML = `
     <dl class="help-dl">
-      <dt>⚖️ Body weight</dt><dd>${fmtQty(profile.weight_kg)} kg</dd>
+      <dt>⚖️ Body weight</dt><dd>${
+        state.profile.last_weight
+          ? `${fmt(state.profile.last_weight.weight_kg, 1)} kg, logged ${fmtDay(state.profile.last_weight.day)}`
+          : `${fmtQty(profile.weight_kg)} kg, from <code>info/config.toml</code> until you log a weigh-in`
+      }</dd>
+      <dt>📏 Height</dt><dd>${state.profile.height_cm != null ? `${fmt(state.profile.height_cm, 1)} cm` : "not set"}, in <a href="#/settings">Settings</a></dd>
       <dt>🍽️ Meals</dt><dd>${meals.names.map(esc).join(", ")}</dd>
       <dt>🏃 Exercise types</dt><dd>${state.activityTypes.length}, in <a href="#/settings">Settings</a></dd>
     </dl>
@@ -1794,14 +2012,24 @@ function wire() {
   $("#prev-day").addEventListener("click", () => goDay(addDays(state.day, -1)));
   $("#next-day").addEventListener("click", () => goDay(addDays(state.day, 1)));
   $("#today-btn").addEventListener("click", () => goDay(todayISO()));
-  $("#day-input").addEventListener("change", (e) => e.target.value && goDay(e.target.value));
+  $("#day-btn").addEventListener("click", openDayPicker);
+  $("#day-input").addEventListener("change", (e) => {
+    const v = e.target.value;
+    if (!v) return;
+    if (v > todayISO()) {
+      toast("Days in the future can't be opened yet", true);
+      e.target.value = state.day;
+      return;
+    }
+    goDay(v);
+  });
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest("input, select, textarea")) return;
     if (e.key === "?") location.hash = "#/help";
     if (state.view !== "day") return;
     if (e.key === "[") goDay(addDays(state.day, -1));
-    if (e.key === "]") goDay(addDays(state.day, 1));
+    if (e.key === "]") goDay(addDays(state.day, 1)); // ignored on today
   });
 
   // entry form
@@ -1858,7 +2086,13 @@ function wire() {
   // check-in
   $("#steps-input").addEventListener("change", commitSteps);
   $("#sleep-input").addEventListener("change", commitSleep);
-  for (const id of ["#steps-input", "#sleep-input"]) {
+  $("#weight-input").addEventListener("change", (e) =>
+    commitBody(e.target, "weight_kg", 0, 500, "Weight: type kilograms, like 72.5")
+  );
+  $("#bodyfat-input").addEventListener("change", (e) =>
+    commitBody(e.target, "body_fat_pct", 0, 99.9, "Body fat: type a percentage, like 18.5")
+  );
+  for (const id of ["#steps-input", "#sleep-input", "#weight-input", "#bodyfat-input"]) {
     $(id).addEventListener("keydown", (e) => e.key === "Enter" && e.target.blur());
   }
   $("#mood-scale").addEventListener("click", (e) => {
@@ -1875,6 +2109,11 @@ function wire() {
     else cur.add(b.dataset.feeling);
     saveCheckin({ feelings: [...cur] });
   });
+
+  // notes
+  $("#notes-input").addEventListener("input", noteTyped);
+  $("#notes-input").addEventListener("change", flushNote);
+  window.addEventListener("pagehide", flushNote);
 
   // log table
   $("#log-body").addEventListener("click", async (e) => {
@@ -1985,6 +2224,7 @@ function wire() {
 
   // settings
   wireTargets();
+  $("#profile-form").addEventListener("submit", submitProfile);
   $("#at-form").addEventListener("submit", submitType);
   $("#at-form").elements.met.addEventListener("input", updateTypeHint);
   $("#at-cancel").addEventListener("click", resetTypeForm);
@@ -2004,7 +2244,9 @@ function wire() {
     });
   }
   const ro = new ResizeObserver((entries) => entries.forEach((en) => drawChart(en.target)));
-  for (const id of ["#chart-kcal", "#chart-protein", "#chart-steps", "#chart-sleep"]) ro.observe($(id));
+  for (const id of ["#chart-kcal", "#chart-protein", "#chart-steps", "#chart-sleep", "#chart-weight", "#chart-bodyfat"]) {
+    ro.observe($(id));
+  }
 
   // Pick up hand edits to info/config.toml when coming back to the tab.
   window.addEventListener("focus", async () => {
@@ -2026,11 +2268,12 @@ async function init() {
     return; // banner already explains the problem
   }
   try {
-    [state.vocab] = await Promise.all([api("GET", "/vocab"), loadActivityTypes(), loadSavedMeals(), loadTargets()]);
+    [state.vocab] = await Promise.all([api("GET", "/vocab"), loadActivityTypes(), loadSavedMeals(), loadTargets(), loadProfile()]);
   } catch (err) {
     return showError(err);
   }
   buildVocabControls();
+  $("#profile-gender").innerHTML = state.vocab.genders.map((g) => `<option value="${g.key}">${esc(g.label)}</option>`).join("");
   fillConfigControls();
   updateFormUnit();
   route();
