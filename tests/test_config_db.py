@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import os
+import sqlite3
+
+import pytest
+
+from pamela import db
+from pamela.config import (
+    ConfigError,
+    ConfigStore,
+    Settings,
+    default_config_text,
+    ensure_config_file,
+    parse_config,
+)
+from pamela.tracking import estimate_kcal, scale_macros
+
+
+def test_default_config_is_valid():
+    cfg = parse_config(default_config_text())
+    assert cfg.targets.kcal > 0
+    assert cfg.meals.names[0] == "Breakfast"
+    assert cfg.activity_type("running").met == pytest.approx(9.8)
+    assert cfg.activity_type("nope") is None
+
+
+def test_ensure_config_creates_file_once(tmp_path):
+    path = tmp_path / "info" / "config.toml"
+    ensure_config_file(path)
+    assert path.read_text() == default_config_text()
+    path.write_text("[targets]\nkcal = 1\n")
+    ensure_config_file(path)  # must not overwrite user edits
+    assert "kcal = 1" in path.read_text()
+
+
+def test_config_store_reloads_on_change(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[targets]\nkcal = 1800\n")
+    store = ConfigStore(path)
+    assert store.get().targets.kcal == 1800
+    path.write_text("[targets]\nkcal = 2000.5\n")
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+    assert store.get().targets.kcal == 2000.5
+
+
+@pytest.mark.parametrize(
+    ("text", "msg"),
+    [
+        ("[targets\n", "invalid TOML"),
+        ("[targets]\nkcal = -5\n", "targets.kcal"),
+        ("[meals]\nnames = []\n", "at least one meal"),
+        ("[meals]\nnames = ['A', 'A']\n", "unique"),
+        ("[[activity_types]]\nname = 'Run'\nmet = 0\n", "activity_types.0.met"),
+    ],
+)
+def test_invalid_config_reports_location(text, msg):
+    with pytest.raises(ConfigError, match=msg):
+        parse_config(text)
+
+
+def test_settings_from_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("PAMELA_LOCAL_DIR", str(tmp_path / "x"))
+    monkeypatch.setenv("PAMELA_INFO_DIR", str(tmp_path / "y"))
+    s = Settings.from_env()
+    assert s.db_path == tmp_path / "x" / "pamela.sqlite3"
+    assert s.config_path == tmp_path / "y" / "config.toml"
+
+
+def test_migrate_is_idempotent(tmp_path):
+    path = tmp_path / "db.sqlite3"
+    assert db.migrate(path) == len(db.MIGRATIONS)
+    assert db.migrate(path) == len(db.MIGRATIONS)
+    with db.session(path) as conn:
+        tables = {
+            r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    assert {"foods", "food_entries", "activities"} <= tables
+
+
+def test_session_rolls_back_on_error(tmp_path):
+    path = tmp_path / "db.sqlite3"
+    db.migrate(path)
+    with pytest.raises(sqlite3.IntegrityError), db.session(path) as conn:
+        conn.execute("INSERT INTO foods (name) VALUES ('kept?')")
+        conn.execute("INSERT INTO foods (name, basis_qty) VALUES ('bad', 0)")  # CHECK fails
+    with db.session(path) as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM foods").fetchone()["n"] == 0
+
+
+def test_scale_and_estimate():
+    food = {"basis_qty": 100, "kcal": 200, "protein_g": 10, "carbs_g": 20, "fat_g": 5, "fiber_g": 2}
+    assert scale_macros(food, 50) == {
+        "kcal": 100,
+        "protein_g": 5,
+        "carbs_g": 10,
+        "fat_g": 2.5,
+        "fiber_g": 1,
+    }
+    assert estimate_kcal(met=8, weight_kg=75, duration_min=30) == pytest.approx(300)

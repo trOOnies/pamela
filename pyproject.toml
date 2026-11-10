@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pamela"
+version = "0.1.0"
+description = "Personal physical activity and macro tracker app"
+readme = "README.md"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.121",
+    "uvicorn>=0.30",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "httpx",
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
+[project.scripts]
+pamela = "pamela.web:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pamela = ["static/*", "defaults/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["pamela"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

@@ -1,0 +1,61 @@
+# Pamela - manual configuration
+#
+# This file lives in info/config.toml and is meant to be edited by hand.
+# Changes are picked up automatically on the next request (no restart needed).
+# Over time these settings will move into the app itself.
+
+[profile]
+name = "Me"
+# Body weight in kg, used to estimate calories burned from an activity's MET value
+# when you don't enter the calories yourself.
+weight_kg = 75.0
+
+# Daily intake targets.
+[targets]
+kcal = 2200
+protein_g = 150
+carbs_g = 230
+fat_g = 70
+fiber_g = 30
+
+# Meals shown in the daily log, in this order.
+[meals]
+names = ["Breakfast", "Lunch", "Snack", "Dinner"]
+
+# Activity types offered in the activity form.
+# met: metabolic equivalent (kcal per kg per hour); used for calorie estimates.
+# distance: whether the form should ask for a distance (km).
+[[activity_types]]
+name = "Walking"
+met = 3.5
+distance = true
+
+[[activity_types]]
+name = "Running"
+met = 9.8
+distance = true
+
+[[activity_types]]
+name = "Cycling"
+met = 7.5
+distance = true
+
+[[activity_types]]
+name = "Swimming"
+met = 6.0
+distance = true
+
+[[activity_types]]
+name = "Strength training"
+met = 5.0
+distance = false
+
+[[activity_types]]
+name = "Yoga"
+met = 2.5
+distance = false
+
+[[activity_types]]
+name = "Other"
+met = 4.0
+distance = false

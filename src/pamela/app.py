@@ -1,0 +1,55 @@
+"""FastAPI application factory."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from importlib import resources
+
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from . import __version__, db
+from .api import router
+from .config import ConfigError, ConfigStore, Settings, ensure_config_file
+
+STATIC_DIR = resources.files("pamela") / "static"
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        ensure_config_file(settings.config_path)
+        db.migrate(settings.db_path)
+        yield
+
+    app = FastAPI(title="Pamela", version=__version__, lifespan=lifespan)
+    app.state.settings = settings
+    app.state.config_store = ConfigStore(settings.config_path)
+
+    @app.exception_handler(ConfigError)
+    async def _config_error(request: Request, exc: ConfigError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=500)
+
+    @app.middleware("http")
+    async def _revalidate_static(request: Request, call_next):
+        # Without an explicit policy Firefox caches heuristically and can serve a
+        # stale app.js after an update; "no-cache" still allows cheap 304s.
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    app.include_router(router)
+
+    static_dir = str(STATIC_DIR)
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        # no-cache: always revalidate, so a new frontend shows up on reload.
+        return FileResponse(f"{static_dir}/index.html", headers={"Cache-Control": "no-cache"})
+
+    return app

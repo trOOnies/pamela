@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pamela</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M7 20h5l3-9 4 13 3-7h3' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">Pamela</a>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#/" data-nav="day">Day</a>
+      <a href="#/foods" data-nav="foods">Foods</a>
+      <a href="#/history" data-nav="history">History</a>
+    </nav>
+    <div class="daynav" id="daynav">
+      <button type="button" class="icon-btn" id="prev-day" title="Previous day ( [ )" aria-label="Previous day">&#8249;</button>
+      <input type="date" id="day-input" aria-label="Day" required>
+      <button type="button" class="icon-btn" id="next-day" title="Next day ( ] )" aria-label="Next day">&#8250;</button>
+      <button type="button" class="btn ghost" id="today-btn">Today</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden></div>
+
+  <main>
+    <!-- Day ------------------------------------------------------------- -->
+    <section id="view-day" class="view day-grid" hidden>
+      <aside class="card summary" id="summary" aria-label="Daily summary"></aside>
+
+      <section class="card food-log" aria-labelledby="food-h">
+        <div class="card-head">
+          <h2 id="food-h">Food</h2>
+          <div class="seg" role="radiogroup" aria-label="Entry mode">
+            <label><input type="radio" name="entry-mode" value="catalog" checked><span>Catalog</span></label>
+            <label><input type="radio" name="entry-mode" value="quick"><span>Quick add</span></label>
+          </div>
+        </div>
+
+        <form id="entry-form" class="entry-form" autocomplete="off">
+          <label class="field meal-field">
+            <span>Meal</span>
+            <select name="meal" id="entry-meal"></select>
+          </label>
+
+          <div class="catalog-only field food-field">
+            <span id="food-search-label">Food</span>
+            <div class="combo">
+              <input type="search" id="food-search" placeholder="Search foods…"
+                     role="combobox" aria-expanded="false" aria-controls="food-suggest"
+                     aria-autocomplete="list" aria-labelledby="food-search-label">
+              <ul id="food-suggest" class="suggest" role="listbox" hidden></ul>
+            </div>
+          </div>
+          <label class="catalog-only field qty-field">
+            <span>Amount</span>
+            <span class="with-unit">
+              <input type="number" name="quantity" id="entry-qty" min="0" step="any" inputmode="decimal">
+              <span class="unit" id="entry-unit">g</span>
+            </span>
+          </label>
+
+          <label class="quick-only field grow"><span>Name</span>
+            <input type="text" name="name" id="quick-name" maxlength="200" placeholder="e.g. Coffee with milk"></label>
+          <label class="quick-only field num"><span>kcal</span><input type="number" name="kcal" min="0" step="any"></label>
+          <label class="quick-only field num"><span>Protein</span><input type="number" name="protein_g" min="0" step="any"></label>
+          <label class="quick-only field num"><span>Carbs</span><input type="number" name="carbs_g" min="0" step="any"></label>
+          <label class="quick-only field num"><span>Fat</span><input type="number" name="fat_g" min="0" step="any"></label>
+          <label class="quick-only field num"><span>Fiber</span><input type="number" name="fiber_g" min="0" step="any"></label>
+
+          <button class="btn primary" type="submit">Add</button>
+          <p class="preview catalog-only" id="entry-preview" aria-live="polite"></p>
+        </form>
+
+        <table class="log-table" id="log-table">
+          <thead>
+            <tr><th>Item</th><th class="n">Amount</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="n">Fib</th><th class="act"><span class="sr">Actions</span></th></tr>
+          </thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card activity" aria-labelledby="act-h">
+        <div class="card-head"><h2 id="act-h">Activity</h2></div>
+        <form id="activity-form" class="activity-form" autocomplete="off">
+          <label class="field type-field"><span>Type</span><select name="type" id="act-type"></select></label>
+          <label class="field num"><span>Minutes</span><input type="number" name="duration_min" min="1" step="any" required></label>
+          <label class="field num" id="act-distance"><span>Km</span><input type="number" name="distance_km" min="0" step="any"></label>
+          <label class="field num"><span>kcal</span><input type="number" name="kcal" min="0" step="any" id="act-kcal" placeholder="auto"></label>
+          <label class="field grow"><span>Notes</span><input type="text" name="notes" maxlength="1000"></label>
+          <button class="btn primary" type="submit">Add</button>
+        </form>
+        <ul class="act-list" id="act-list"></ul>
+      </section>
+    </section>
+
+    <!-- Foods ----------------------------------------------------------- -->
+    <section id="view-foods" class="view foods-grid" hidden>
+      <section class="card" aria-labelledby="food-form-h">
+        <div class="card-head">
+          <h2 id="food-form-h">New food</h2>
+          <button type="button" class="btn ghost" id="food-cancel" hidden>Cancel edit</button>
+        </div>
+        <form id="food-form" class="food-form" autocomplete="off">
+          <label class="field span2"><span>Name</span><input type="text" name="name" required maxlength="200"></label>
+          <label class="field span2"><span>Brand <small>(optional)</small></span><input type="text" name="brand" maxlength="200"></label>
+          <label class="field"><span>Values per</span><input type="number" name="basis_qty" min="0" step="any" value="100" required></label>
+          <label class="field"><span>Unit</span>
+            <input type="text" name="unit" value="g" required maxlength="20" list="unit-options">
+            <datalist id="unit-options"><option value="g"><option value="ml"><option value="unit"><option value="serving"><option value="slice"><option value="cup"><option value="tbsp"></datalist>
+          </label>
+          <label class="field"><span>kcal</span><input type="number" name="kcal" min="0" step="any" required></label>
+          <label class="field"><span>Protein (g)</span><input type="number" name="protein_g" min="0" step="any" value="0"></label>
+          <label class="field"><span>Carbs (g)</span><input type="number" name="carbs_g" min="0" step="any" value="0"></label>
+          <label class="field"><span>Fat (g)</span><input type="number" name="fat_g" min="0" step="any" value="0"></label>
+          <label class="field"><span>Fiber (g)</span><input type="number" name="fiber_g" min="0" step="any" value="0"></label>
+          <p class="hint span2" id="food-kcal-hint"></p>
+          <button class="btn primary span2" type="submit" id="food-submit">Save food</button>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="foods-h">
+        <div class="card-head">
+          <h2 id="foods-h">Catalog <span class="count" id="foods-count"></span></h2>
+          <input type="search" id="foods-filter" placeholder="Filter…" aria-label="Filter foods">
+        </div>
+        <div class="table-wrap">
+          <table class="foods-table">
+            <thead><tr><th>Name</th><th>Brand</th><th class="n">Per</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="n">Fib</th><th class="n" title="Times logged in the last 90 days">Uses</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+            <tbody id="foods-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- History --------------------------------------------------------- -->
+    <section id="view-history" class="view" hidden>
+      <div class="history-head">
+        <h2>History</h2>
+        <div class="seg" role="radiogroup" aria-label="Range">
+          <label><input type="radio" name="range" value="7"><span>7 days</span></label>
+          <label><input type="radio" name="range" value="30" checked><span>30 days</span></label>
+          <label><input type="radio" name="range" value="90"><span>90 days</span></label>
+        </div>
+      </div>
+      <div class="tiles" id="history-tiles"></div>
+      <div class="charts">
+        <section class="card"><h3>Calories eaten</h3><div class="chart" id="chart-kcal"></div></section>
+        <section class="card"><h3>Protein (g)</h3><div class="chart" id="chart-protein"></div></section>
+      </div>
+      <section class="card">
+        <div class="table-wrap">
+          <table class="history-table">
+            <thead><tr><th>Day</th><th class="n">kcal</th><th class="n">Protein</th><th class="n">Carbs</th><th class="n">Fat</th><th class="n">Fiber</th><th class="n">Burned</th><th class="n">Active min</th></tr></thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
