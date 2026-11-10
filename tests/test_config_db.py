@@ -112,6 +112,14 @@ def test_session_rolls_back_on_error(tmp_path):
         assert conn.execute("SELECT COUNT(*) AS n FROM foods").fetchone()["n"] == 0
 
 
+def test_target_on():
+    from pamela.tracking import target_on
+
+    periods = [(None, 1), ("2026-01-10", 2), ("2026-02-01", 3)]
+    assert [target_on(periods, d) for d in ("2025-12-31", "2026-01-10", "2026-03-01")] == [1, 2, 3]
+    assert target_on([], "2026-01-01") is None
+
+
 def test_scale_and_estimate():
     food = {"basis_qty": 100, "kcal": 200, "protein_g": 10, "carbs_g": 20, "fat_g": 5, "fiber_g": 2}
     assert scale_macros(food, 50) == {

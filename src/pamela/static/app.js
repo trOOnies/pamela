@@ -12,12 +12,17 @@ const MACROS = [
   { key: "fiber_g", label: "Fiber", short: "Fib", color: "var(--c-fiber)" },
 ];
 const MOOD_EMOJI = { 1: "😣", 2: "🙁", 3: "😐", 4: "🙂", 5: "😄" };
+const FEELING_GROUP_EMOJI = { Content: "😊", Driven: "⚡", Tense: "😬", Down: "🌧️", Drained: "🪫" };
+const TARGET_EMOJI = { kcal: "🔥", protein_g: "💪", carbs_g: "🍞", fat_g: "🥑", fiber_g: "🌾", steps: "👟", sleep_h: "😴" };
+const PENCIL = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M13.3 3.3a1.9 1.9 0 0 1 2.7 0l.7.7a1.9 1.9 0 0 1 0 2.7L7.4 16 3.5 16.9l.9-3.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.8 4.8l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
 
 const state = {
   config: null,
   vocab: null,          // diet tags, moods and feelings (labels come from the backend)
   activityTypes: [],
   savedMeals: [],
+  targets: [],          // per target: { key, label, unit, max, periods: [{ start, value }] }
+  targetEdit: null,     // target being edited: { key, mode: "single" | "periods", periods }
   view: "day",
   day: todayISO(),
   dayData: null,
@@ -172,6 +177,20 @@ async function loadActivityTypes() {
   fillActivitySelect();
 }
 
+async function loadTargets() {
+  state.targets = await api("GET", "/targets");
+}
+
+/** The value in force on ``iso``; periods are sorted with the open-ended one first. */
+function targetOn(periods, iso) {
+  let v = null;
+  for (const p of periods) {
+    if (p.start == null || p.start <= iso) v = p.value;
+    else break;
+  }
+  return v;
+}
+
 async function loadSavedMeals() {
   state.savedMeals = await api("GET", "/saved-meals");
   fillSavedPick();
@@ -243,7 +262,7 @@ function render() {
   if (state.view === "meals") return loadMealsView();
   if (state.view === "history") return loadHistory();
   if (state.view === "settings") return loadSettings();
-  if (state.view === "help") return renderHelp();
+  if (state.view === "help") return loadTargets().then(renderHelp, showError);
 }
 
 function goDay(iso) {
@@ -481,7 +500,7 @@ function meterPct(value, target) {
 
 function renderSummary() {
   const { totals, burned_kcal, active_min } = state.dayData;
-  const t = state.config.targets;
+  const t = state.dayData.targets;
   const left = t.kcal - totals.kcal;
   const sub = t.kcal
     ? left >= 0
@@ -614,7 +633,7 @@ function renderActivities() {
 
 function renderCheckin() {
   const m = state.dayData.metrics;
-  const t = state.config.targets;
+  const t = state.dayData.targets;
   const steps = $("#steps-input"), sleep = $("#sleep-input");
   // don't clobber what the user is typing
   if (document.activeElement !== steps) steps.value = m.steps ?? "";
@@ -634,8 +653,20 @@ function renderCheckin() {
         <span class="emoji" aria-hidden="true">${MOOD_EMOJI[md.key] ?? ""}</span><span class="lbl">${esc(md.label)}</span></button>`;
     })
     .join("");
-  $("#feelings").innerHTML = state.vocab.feelings
-    .map((f) => `<button type="button" class="chip" data-feeling="${f.key}" aria-pressed="${m.feelings.includes(f.key)}">${esc(f.label)}</button>`)
+  const groups = new Map();
+  for (const f of state.vocab.feelings) {
+    if (!groups.has(f.group)) groups.set(f.group, []);
+    groups.get(f.group).push(f);
+  }
+  $("#feelings").innerHTML = [...groups]
+    .map(
+      ([group, list]) => `<div class="feel-row" role="group" aria-label="${esc(group)}">
+        <span class="feel-group"><span aria-hidden="true">${FEELING_GROUP_EMOJI[group] ?? ""}</span> ${esc(group)}</span>
+        <div class="chips">${list
+          .map((f) => `<button type="button" class="chip" data-feeling="${f.key}" aria-pressed="${m.feelings.includes(f.key)}">${esc(f.label)}</button>`)
+          .join("")}</div>
+      </div>`
+    )
     .join("");
 }
 
@@ -1258,7 +1289,8 @@ function useSavedMealToday(id) {
 async function loadSettings() {
   document.title = "Settings · Pamela";
   try {
-    await loadActivityTypes();
+    await Promise.all([loadActivityTypes(), loadTargets()]);
+    renderTargets();
     renderTypes();
   } catch (err) {
     showError(err);
@@ -1281,7 +1313,7 @@ function renderTypes() {
     html += `<tr class="${t.id === state.editingTypeId ? "editing" : ""}">
       <td>${esc(t.name)}</td><td class="n">${fmtQty(t.met)}</td><td class="n">${fmt(t.met * w)}</td>
       <td>${t.distance ? "yes" : ""}</td><td class="n">${t.uses || ""}</td>
-      <td class="act"><button type="button" class="row-btn" data-edit-type="${t.id}">Edit</button><button type="button" class="row-btn del" data-del-type="${t.id}" aria-label="Delete ${esc(t.name)}">✕</button></td>
+      <td class="act"><button type="button" class="row-btn icon" data-edit-type="${t.id}" title="Edit" aria-label="Edit ${esc(t.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-type="${t.id}" aria-label="Delete ${esc(t.name)}">✕</button></td>
     </tr>`;
   }
   $("#at-body").innerHTML = html || `<tr class="empty"><td colspan="6">No matches</td></tr>`;
@@ -1352,6 +1384,208 @@ async function deleteType(id) {
   }
 }
 
+// --- settings view (targets) ------------------------------------------------------
+
+function fmtTarget(t, v) {
+  return t.key === "sleep_h" ? `${v} h` : `${fmt(v)} ${t.unit}`;
+}
+
+/** "Until 2 Nov: 2,000 · 3 Nov – 4 Nov: 2,400 · From 5 Nov: 1,800" */
+function periodsSummary(t) {
+  if (t.periods.length === 1) return `<span class="muted">Same every day</span>`;
+  return t.periods
+    .map((p, i) => {
+      const next = t.periods[i + 1];
+      const end = next ? fmtDay(addDays(next.start, -1)) : null;
+      const when = p.start == null ? `Until ${end}` : end ? `${fmtDay(p.start)} – ${end}` : `From ${fmtDay(p.start)}`;
+      return `<span class="period">${when}: <b>${fmtTarget(t, p.value)}</b></span>`;
+    })
+    .join("");
+}
+
+function renderTargets() {
+  const today = todayISO();
+  const ed = state.targetEdit;
+  $("#targets-body").innerHTML = state.targets
+    .map((t) => {
+      const v = targetOn(t.periods, today);
+      let html = `<tr class="${ed?.key === t.key ? "editing" : ""}">
+        <td><span aria-hidden="true">${TARGET_EMOJI[t.key] ?? ""}</span> ${esc(t.label)}</td>
+        <td class="n"><b>${v == null ? "—" : fmtTarget(t, v)}</b></td>
+        <td class="periods">${periodsSummary(t)}</td>
+        <td class="act"><button type="button" class="row-btn icon" data-edit-target="${t.key}" title="Edit" aria-label="Edit the ${esc(t.label)} target">${PENCIL}</button></td>
+      </tr>`;
+      if (ed?.key === t.key) html += `<tr class="target-editor"><td colspan="4">${targetEditor(t, ed)}</td></tr>`;
+      return html;
+    })
+    .join("");
+}
+
+function targetEditor(t, ed) {
+  const unit = t.key === "sleep_h" ? "h" : t.unit;
+  const valueInput = (i, v) =>
+    `<span class="with-unit"><input type="number" min="1" step="1" ${t.max ? `max="${t.max}"` : ""} inputmode="numeric" value="${v ?? ""}" data-tval="${i}" aria-label="${esc(t.label)} target"><span class="unit">${esc(unit)}</span></span>`;
+  let body;
+  if (ed.mode === "single") {
+    body = `<div class="tsingle">${valueInput(0, ed.periods[0].value)}<span class="hint">Used for every day, past and future.</span></div>`;
+  } else {
+    const rows = ed.periods
+      .map((p, i) => {
+        const next = ed.periods[i + 1];
+        const until = next?.start ? fmtDay(addDays(next.start, -1)) : next ? "…" : "onwards";
+        const from = i === 0 ? `<span class="muted">The beginning</span>` : `<input type="date" value="${p.start ?? ""}" data-tstart="${i}" aria-label="Period ${i + 1} starts on" required>`;
+        const del = i === 0 ? "" : `<button type="button" class="row-btn del" data-tdel="${i}" title="Remove period" aria-label="Remove period ${i + 1}">✕</button>`;
+        return `<tr><td>${from}</td><td class="muted">${until}</td><td>${valueInput(i, p.value)}</td><td class="act">${del}</td></tr>`;
+      })
+      .join("");
+    body = `<table class="tperiods"><thead><tr><th>From</th><th>Until</th><th>Target</th><th class="act"><span class="sr">Actions</span></th></tr></thead><tbody>${rows}</tbody></table>
+      <button type="button" class="btn ghost" data-tadd>+ Add period</button>`;
+  }
+  return `<div class="tedit">
+    <div class="seg" role="radiogroup" aria-label="How the ${esc(t.label)} target is set">
+      <label><input type="radio" name="tmode" value="single" ${ed.mode === "single" ? "checked" : ""}><span>Single value</span></label>
+      <label><input type="radio" name="tmode" value="periods" ${ed.mode === "periods" ? "checked" : ""}><span>Custom periods</span></label>
+    </div>
+    ${body}
+    <p class="hint error" id="target-error" aria-live="polite"></p>
+    <div class="tactions"><button type="button" class="btn ghost" data-tcancel>Cancel</button><button type="button" class="btn primary" data-tsave>Save</button></div>
+  </div>`;
+}
+
+function editTarget(key) {
+  const t = state.targets.find((x) => x.key === key);
+  state.targetEdit = {
+    key,
+    mode: t.periods.length > 1 ? "periods" : "single",
+    periods: t.periods.map((p) => ({ ...p })),
+  };
+  renderTargets();
+  $("#targets-body [data-tval]")?.focus();
+}
+
+function setTargetMode(mode) {
+  const ed = state.targetEdit;
+  const today = todayISO();
+  if (mode === "single") {
+    // keep the value in force today
+    const [first, ...rest] = ed.periods;
+    const dated = rest.filter((p) => p.start).sort((a, b) => (a.start < b.start ? -1 : 1));
+    ed.periods = [{ start: null, value: targetOn([first, ...dated], today) }];
+  } else if (ed.periods.length === 1) {
+    // start with "until yesterday" + "from today", both with the current value
+    ed.periods.push({ start: today, value: ed.periods[0].value });
+  }
+  ed.mode = mode;
+  renderTargets();
+}
+
+function addTargetPeriod() {
+  const ed = state.targetEdit;
+  const last = ed.periods[ed.periods.length - 1];
+  const today = todayISO();
+  const start = last.start && last.start >= today ? addDays(last.start, 1) : today;
+  ed.periods.push({ start, value: last.value });
+  renderTargets();
+  $(`#targets-body [data-tstart="${ed.periods.length - 1}"]`)?.focus();
+}
+
+/** Checks the edited periods; returns them sorted, or shows why not and returns null. */
+function validTargetPeriods(t, ed) {
+  const err = (msg) => {
+    $("#target-error").textContent = msg;
+    return null;
+  };
+  const [first, ...rest] = ed.periods;
+  if (rest.some((p) => !p.start)) return err("Every period after the first needs a start date.");
+  const sorted = [first, ...rest.sort((a, b) => (a.start < b.start ? -1 : 1))];
+  const starts = rest.map((p) => p.start);
+  if (new Set(starts).size !== starts.length) return err("Two periods start on the same day.");
+  for (const p of sorted) {
+    if (!Number.isInteger(p.value) || p.value < 1) return err(`${t.label} targets must be whole numbers greater than 0.`);
+    if (t.max && p.value > t.max) return err(`${t.label} can't be more than ${t.max} ${t.unit}.`);
+  }
+  return sorted;
+}
+
+async function saveTarget() {
+  const ed = state.targetEdit;
+  const t = state.targets.find((x) => x.key === ed.key);
+  const periods = validTargetPeriods(t, ed);
+  if (!periods) return;
+  const reset = ed.mode === "single" && t.periods.length > 1;
+  if (
+    reset &&
+    !confirm(
+      `Reset the ${t.label} target?\n\nIts ${t.periods.length} custom periods will be deleted, and ` +
+        `${fmtTarget(t, periods[0].value)} will be the target for every day, past and future.`
+    )
+  ) {
+    return;
+  }
+  try {
+    await api("PUT", `/targets/${ed.key}`, { periods });
+    await loadTargets();
+    state.targetEdit = null;
+    renderTargets();
+    toast(reset ? `${t.label} target reset` : `${t.label} target saved`);
+  } catch (err) {
+    $("#target-error").textContent = err.message;
+  }
+}
+
+function wireTargets() {
+  const body = $("#targets-body");
+  body.addEventListener("click", (e) => {
+    const edit = e.target.closest("[data-edit-target]");
+    if (edit) {
+      // the pencil toggles the editor
+      if (state.targetEdit?.key === edit.dataset.editTarget) {
+        state.targetEdit = null;
+        return renderTargets();
+      }
+      return editTarget(edit.dataset.editTarget);
+    }
+    if (e.target.closest("[data-tadd]")) return addTargetPeriod();
+    if (e.target.closest("[data-tsave]")) return saveTarget();
+    if (e.target.closest("[data-tcancel]")) {
+      state.targetEdit = null;
+      return renderTargets();
+    }
+    const del = e.target.closest("[data-tdel]");
+    if (del) {
+      state.targetEdit.periods.splice(Number(del.dataset.tdel), 1);
+      if (state.targetEdit.periods.length === 1) state.targetEdit.mode = "single";
+      renderTargets();
+    }
+  });
+  body.addEventListener("input", (e) => {
+    const ed = state.targetEdit;
+    if (!ed) return;
+    if (e.target.dataset.tval != null) {
+      const raw = e.target.value.trim();
+      ed.periods[Number(e.target.dataset.tval)].value = raw === "" ? null : Number(raw);
+    }
+  });
+  body.addEventListener("change", (e) => {
+    const ed = state.targetEdit;
+    if (!ed) return;
+    if (e.target.name === "tmode") return setTargetMode(e.target.value);
+    if (e.target.dataset.tstart != null) {
+      ed.periods[Number(e.target.dataset.tstart)].start = e.target.value || null;
+      const i = Number(e.target.dataset.tstart);
+      renderTargets(); // refresh the "Until" column
+      $(`#targets-body [data-tstart="${i}"]`)?.focus();
+    }
+  });
+  body.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.closest("input[data-tval]")) saveTarget();
+    if (e.key === "Escape" && state.targetEdit) {
+      state.targetEdit = null;
+      renderTargets();
+    }
+  });
+}
+
 // --- history view ------------------------------------------------------------
 
 async function loadHistory() {
@@ -1375,7 +1609,7 @@ function renderHistory(days) {
   const logged = days.filter((d) => d.entry_count > 0);
   const avg = (key, list = logged) => (list.length ? list.reduce((s, d) => s + d[key], 0) / list.length : null);
   const withKey = (key) => days.filter((d) => d[key] != null);
-  const t = state.config.targets;
+  const t = days[days.length - 1].targets; // in force on the last (latest) day
   const activeDays = days.filter((d) => d.active_min > 0).length;
   const sleepAvg = avg("sleep_min", withKey("sleep_min"));
   const moodAvg = avg("mood", withKey("mood"));
@@ -1392,10 +1626,10 @@ function renderHistory(days) {
     .map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v} <small>${s}</small></div></div>`)
     .join("");
 
-  barChart($("#chart-kcal"), days, "kcal", t.kcal, "kcal");
-  barChart($("#chart-protein"), days, "protein_g", t.protein_g, "g");
-  barChart($("#chart-steps"), days, "steps", t.steps, "steps");
-  barChart($("#chart-sleep"), days, "sleep_h", t.sleep_h, "h", 1);
+  barChart($("#chart-kcal"), days, "kcal", "kcal");
+  barChart($("#chart-protein"), days, "protein_g", "g");
+  barChart($("#chart-steps"), days, "steps", "steps");
+  barChart($("#chart-sleep"), days, "sleep_h", "h", 1);
 
   $("#history-body").innerHTML = [...days]
     .reverse()
@@ -1415,9 +1649,12 @@ function renderHistory(days) {
 const SVG_NS = "http://www.w3.org/2000/svg";
 const chartData = new WeakMap();
 
-/** Single-series bar chart with a dashed target line and per-bar hover tooltip. */
-function barChart(el, days, key, target, unit, digits = 0) {
-  chartData.set(el, { days, key, target, unit, digits });
+/**
+ * Single-series bar chart with per-bar hover tooltip. The dashed target line is
+ * each day's target (same key), so it steps where a target period changes.
+ */
+function barChart(el, days, key, unit, digits = 0) {
+  chartData.set(el, { days, key, unit, digits });
   drawChart(el);
 }
 
@@ -1431,12 +1668,13 @@ function niceMax(v) {
 function drawChart(el) {
   const spec = chartData.get(el);
   if (!spec) return;
-  const { days, key, target, unit, digits } = spec;
+  const { days, key, unit, digits } = spec;
+  const tgt = (d) => d.targets?.[key] ?? null;
   const W = el.clientWidth, H = el.clientHeight;
   if (!W || !H) return;
   const m = { top: 14, right: 8, bottom: 22, left: 44 };
   const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
-  const maxV = niceMax(Math.max(target || 0, ...days.map((d) => d[key] ?? 0)) * 1.05);
+  const maxV = niceMax(Math.max(...days.map((d) => tgt(d) ?? 0), ...days.map((d) => d[key] ?? 0)) * 1.05);
   const y = (v) => m.top + ih - (v / maxV) * ih;
   const band = iw / days.length;
   const gap = Math.min(2, band * 0.25);
@@ -1465,9 +1703,23 @@ function drawChart(el) {
     s += `<path class="bar" data-i="${i}" d="M${x},${m.top + ih}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${m.top + ih}Z"/>`;
   });
   s += `</g>`;
-  if (target) {
-    s += `<line class="target" x1="${m.left}" x2="${W - m.right}" y1="${y(target)}" y2="${y(target)}"/>`;
-    s += `<text class="target-lbl" x="${W - m.right}" y="${y(target) - 5}" text-anchor="end">target ${fmt(target, digits)}</text>`;
+  // target: one horizontal segment per run of days with the same value
+  let path = "";
+  let prev = null;
+  days.forEach((d, i) => {
+    const v = tgt(d);
+    const x0 = m.left + i * band, x1 = x0 + band;
+    if (v == null) {
+      // no target that day: the line breaks
+    } else if (prev == null) path += `M${x0},${y(v)}H${x1}`;
+    else if (prev === v) path += `H${x1}`;
+    else path += `V${y(v)}H${x1}`; // step to the new period's value
+    prev = v;
+  });
+  if (path) {
+    s += `<path class="target" fill="none" d="${path}"/>`;
+    const last = tgt(days[days.length - 1]);
+    if (last != null) s += `<text class="target-lbl" x="${W - m.right}" y="${y(last) - 5}" text-anchor="end">target ${fmt(last, digits)}</text>`;
   }
   if (!days.some((d) => d[key])) {
     s += `<text class="empty-msg" x="${m.left + iw / 2}" y="${m.top + ih / 2}" text-anchor="middle">No data in this range</text>`;
@@ -1489,7 +1741,8 @@ function drawChart(el) {
     const d = days[i];
     $(`.bar[data-i="${i}"]`, svg)?.classList.add("hot");
     const v = d[key];
-    tip.innerHTML = `<b>${fmtDay(d.day)}</b>${fmt(v, digits)} ${unit}${target && v != null ? ` · ${fmt((v / target) * 100)}% of target` : ""}`;
+    const target = tgt(d);
+    tip.innerHTML = `<b>${fmtDay(d.day)}</b>${fmt(v, digits)} ${unit}${target && v != null ? ` · ${fmt((v / target) * 100)}% of target ${fmt(target, digits)}` : ""}`;
     tip.hidden = false;
     const tw = tip.offsetWidth;
     tip.style.left = `${Math.min(e.clientX + 12, window.innerWidth - tw - 8)}px`;
@@ -1512,22 +1765,24 @@ function drawChart(el) {
 
 function renderHelp() {
   document.title = "Help · Pamela";
-  const { profile, targets, meals } = state.config;
-  const rows = [
-    ["kcal", "kcal", (v) => fmt(v)],
-    ...MACROS.map((m) => [m.key, m.label, (v) => `${fmt(v)} g`]),
-    ["steps", "Steps", (v) => fmt(v)],
-    ["sleep_h", "Sleep", (v) => `${fmtSleep(v * 60)} h`],
-  ];
-  const tgt = rows.map(([k, label, f]) => `<tr><td>${label}</td><td class="n">${targets[k] ? f(targets[k]) : "—"}</td></tr>`).join("");
+  const { profile, meals } = state.config;
+  const today = todayISO();
+  const tgt = state.targets
+    .map((t) => {
+      const v = targetOn(t.periods, today);
+      const shown = v == null ? "—" : t.key === "sleep_h" ? `${v} h` : `${fmt(v)} ${t.unit === "kcal" || t.unit === "steps" ? "" : t.unit}`;
+      return `<tr><td>${TARGET_EMOJI[t.key] ?? ""} ${esc(t.label)}</td><td class="n">${shown}</td></tr>`;
+    })
+    .join("");
   $("#help-settings").innerHTML = `
     <dl class="help-dl">
-      <dt>Body weight</dt><dd>${fmtQty(profile.weight_kg)} kg</dd>
-      <dt>Meals</dt><dd>${meals.names.map(esc).join(", ")}</dd>
-      <dt>Exercise types</dt><dd>${state.activityTypes.length}, in <a href="#/settings">Settings</a></dd>
+      <dt>⚖️ Body weight</dt><dd>${fmtQty(profile.weight_kg)} kg</dd>
+      <dt>🍽️ Meals</dt><dd>${meals.names.map(esc).join(", ")}</dd>
+      <dt>🏃 Exercise types</dt><dd>${state.activityTypes.length}, in <a href="#/settings">Settings</a></dd>
     </dl>
-    <h3>Daily targets</h3>
-    <table class="help-table"><tbody>${tgt}</tbody></table>`;
+    <h3>🎯 Today's targets</h3>
+    <table class="help-table"><tbody>${tgt}</tbody></table>
+    <p>Change them in <a href="#/settings">Settings</a>.</p>`;
 }
 
 // --- wiring ------------------------------------------------------------------
@@ -1729,6 +1984,7 @@ function wire() {
   });
 
   // settings
+  wireTargets();
   $("#at-form").addEventListener("submit", submitType);
   $("#at-form").elements.met.addEventListener("input", updateTypeHint);
   $("#at-cancel").addEventListener("click", resetTypeForm);
@@ -1770,7 +2026,7 @@ async function init() {
     return; // banner already explains the problem
   }
   try {
-    [state.vocab] = await Promise.all([api("GET", "/vocab"), loadActivityTypes(), loadSavedMeals()]);
+    [state.vocab] = await Promise.all([api("GET", "/vocab"), loadActivityTypes(), loadSavedMeals(), loadTargets()]);
   } catch (err) {
     return showError(err);
   }

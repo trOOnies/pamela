@@ -10,15 +10,7 @@ name = "Me"
 # when you don't enter the calories yourself.
 weight_kg = 75.0
 
-# Daily targets: intake, steps and hours of sleep.
-[targets]
-kcal = 2200
-protein_g = 150
-carbs_g = 230
-fat_g = 70
-fiber_g = 30
-steps = 8000
-sleep_h = 8
+# Daily targets are managed in the app (Settings tab), no longer here.
 
 # Meals shown in the daily log, in this order.
 [meals]

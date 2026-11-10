@@ -498,3 +498,40 @@ kbd {
 .toast.error { background: var(--danger); color: #fff; }
 
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* --- feelings, grouped by kind ---------------------------------------- */
+.feelings { display: flex; flex-direction: column; gap: 6px; }
+.feel-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 8px; }
+.feel-group { font-size: .78rem; color: var(--text-2); white-space: nowrap; }
+
+/* --- icon buttons ------------------------------------------------------ */
+.row-btn.icon { display: inline-flex; align-items: center; justify-content: center; padding: 4px 6px; vertical-align: middle; }
+.ico { display: block; }
+
+/* --- targets ------------------------------------------------------------ */
+.targets-card { grid-column: 1 / -1; }
+.targets-card .card-head { flex-wrap: wrap; justify-content: flex-start; }
+.targets-table td.periods { color: var(--text-2); font-size: .88rem; }
+.targets-table .period { display: inline-block; margin-right: 14px; white-space: nowrap; }
+.targets-table .period b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.targets-table tr.editing td { background: var(--accent-soft); }
+.targets-table tr.target-editor td { background: var(--surface-2); padding: 12px; }
+.targets-table tbody tr.target-editor:hover td { background: var(--surface-2); }
+.muted { color: var(--text-3); }
+.tedit { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.tsingle { display: flex; align-items: center; gap: 14px; }
+.tedit .with-unit input { width: 110px; }
+.tperiods { width: auto; min-width: 460px; }
+.tperiods td { background: transparent; }
+.tperiods tbody tr:hover td { background: transparent; }
+.tperiods input[type="date"] { width: 160px; }
+.tactions { display: flex; gap: 8px; }
+.hint.error { color: var(--danger); }
+
+/* --- help ----------------------------------------------------------------- */
+.help-card h2 { font-size: 1.2rem; }
+.help-card p, .help-card ol { line-height: 1.6; }
+.help-card .tag { vertical-align: 1px; }
+.targets-table th:first-child { width: 170px; }
+.targets-table th:nth-child(2) { width: 120px; }
+.targets-table td.periods { padding-left: 24px; }

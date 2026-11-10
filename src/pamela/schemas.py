@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from itertools import pairwise
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -24,21 +25,25 @@ DIET_FIELDS = tuple(DIET_TAGS)
 
 # Overall mood on the common 5-point scale, plus optional feelings.
 MOODS = {1: "Awful", 2: "Bad", 3: "Okay", 4: "Good", 5: "Great"}
-FEELINGS = {
-    "happy": "Happy",
-    "calm": "Calm",
-    "grateful": "Grateful",
-    "energetic": "Energetic",
-    "motivated": "Motivated",
-    "focused": "Focused",
-    "tired": "Tired",
-    "stressed": "Stressed",
-    "anxious": "Anxious",
-    "sad": "Sad",
-    "irritable": "Irritable",
-    "bored": "Bored",
-    "lonely": "Lonely",
-    "sick": "Unwell",
+# Feelings come in groups of related ones; the Day view shows one group per row.
+FEELING_GROUPS = {
+    "Content": {"happy": "Happy", "calm": "Calm", "grateful": "Grateful"},
+    "Driven": {"energetic": "Energetic", "motivated": "Motivated", "focused": "Focused"},
+    "Tense": {"stressed": "Stressed", "anxious": "Anxious", "irritable": "Irritable"},
+    "Down": {"sad": "Sad", "lonely": "Lonely", "bored": "Bored"},
+    "Drained": {"tired": "Tired", "sick": "Unwell"},
+}
+FEELINGS = {k: label for group in FEELING_GROUPS.values() for k, label in group.items()}
+
+# Daily targets: key -> (label, unit, max). Values are positive integers.
+TARGETS = {
+    "kcal": ("Calories", "kcal", None),
+    "protein_g": ("Protein", "g", None),
+    "carbs_g": ("Carbs", "g", None),
+    "fat_g": ("Fat", "g", None),
+    "fiber_g": ("Fiber", "g", None),
+    "steps": ("Steps", "steps", None),
+    "sleep_h": ("Sleep", "h", 24),
 }
 
 NonNeg = Field(0, ge=0)
@@ -285,6 +290,7 @@ class Day(BaseModel):
     burned_kcal: float
     active_min: float
     metrics: DayMetrics
+    targets: dict[str, int | None] = Field(description="Targets in force on this day")
 
 
 class HistoryDay(Macros):
@@ -295,11 +301,50 @@ class HistoryDay(Macros):
     steps: int | None = None
     sleep_min: float | None = None
     mood: int | None = None
+    targets: dict[str, int | None] = Field(default_factory=dict)
+
+
+# --- targets -----------------------------------------------------------------
+
+
+class TargetPeriod(_In):
+    start: dt.date | None = Field(
+        None, description="First day this value applies; null for the very first period"
+    )
+    value: int = Field(gt=0)
+
+
+class TargetIn(_In):
+    """Either one period (a single value for all history) or several, each in force
+    from its start day until the next one starts."""
+
+    periods: list[TargetPeriod] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> TargetIn:
+        first, *rest = self.periods
+        if first.start is not None:
+            raise ValueError("the first period must start at the beginning (start: null)")
+        starts = [p.start for p in rest]
+        if any(s is None for s in starts):
+            raise ValueError("only the first period can have no start day")
+        if any(a >= b for a, b in pairwise(starts)):
+            raise ValueError("periods must be in order, with different start days")
+        return self
+
+
+class Target(BaseModel):
+    key: str
+    label: str
+    unit: str
+    max: int | None
+    periods: list[TargetPeriod]
 
 
 class Choice(BaseModel):
     key: str
     label: str
+    group: str | None = None
 
 
 class Vocabulary(BaseModel):

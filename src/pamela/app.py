@@ -26,12 +26,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ensure_config_file(settings.config_path)
         db.migrate(settings.db_path)
         try:
-            legacy_types = config_store.get().activity_types
+            legacy = config_store.get()
         except ConfigError:
             pass  # retried on the next start; the banner shows the problem meanwhile
         else:
             with db.session(settings.db_path) as conn:
-                db.import_config_activity_types(conn, legacy_types)
+                db.import_config_activity_types(conn, legacy.activity_types)
+                db.import_config_targets(conn, legacy.targets.model_dump())
         yield
 
     app = FastAPI(title="Pamela", version=__version__, lifespan=lifespan)

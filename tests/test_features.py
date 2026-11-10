@@ -365,7 +365,11 @@ def test_vocab(client):
         "tacc_free",
     ]
     assert [m["label"] for m in v["moods"]] == ["Awful", "Bad", "Okay", "Good", "Great"]
-    assert {"key": "anxious", "label": "Anxious"} in v["feelings"]
+    assert {"key": "anxious", "label": "Anxious", "group": "Tense"} in v["feelings"]
+    groups = [f["group"] for f in v["feelings"]]
+    # each group is one contiguous run, so the Day view can show it as a row
+    runs = [g for i, g in enumerate(groups) if i == 0 or groups[i - 1] != g]
+    assert len(runs) == len(set(runs)) == 5
 
 
 def test_fetch_product_handles_answers(monkeypatch):
@@ -396,3 +400,95 @@ def test_fetch_product_handles_answers(monkeypatch):
         barcode.fetch_product("4")
     with pytest.raises(barcode.LookupUnavailable, match="reach"):
         barcode.fetch_product("5")
+
+
+# --- targets -----------------------------------------------------------------
+
+
+def test_targets_imported_from_config_once(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from pamela.app import create_app
+    from pamela.config import Settings
+
+    settings = Settings(local_dir=tmp_path / "local", info_dir=tmp_path / "info")
+    settings.info_dir.mkdir()
+    settings.config_path.write_text("[targets]\nkcal = 1999.6\nfat_g = 0\nsleep_h = 7.4\n")
+    with TestClient(create_app(settings)) as c:
+        t = {x["key"]: x for x in c.get("/api/targets").json()}
+        assert t["kcal"]["periods"] == [{"start": None, "value": 2000}]  # rounded
+        assert t["fat_g"]["periods"][0]["value"] == 1  # must be positive
+        assert t["sleep_h"]["periods"][0]["value"] == 7
+        assert t["steps"]["periods"][0]["value"] == 8000  # default
+        assert "targets" not in c.get("/api/config").json()
+        c.put("/api/targets/kcal", json={"periods": [{"start": None, "value": 2500}]})
+    settings.config_path.write_text("[targets]\nkcal = 1000\n")
+    with TestClient(create_app(settings)) as c:  # restart: the config is ignored now
+        kcal = next(x for x in c.get("/api/targets").json() if x["key"] == "kcal")
+        assert kcal["periods"][0]["value"] == 2500
+
+
+def test_target_periods_apply_per_day(client):
+    body = {
+        "periods": [
+            {"start": None, "value": 2000},
+            {"start": "2026-11-03", "value": 2400},
+            {"start": "2026-11-05", "value": 1800},
+        ]
+    }
+    r = client.put("/api/targets/kcal", json=body)
+    assert r.status_code == 200, r.text
+    assert [p["value"] for p in r.json()["periods"]] == [2000, 2400, 1800]
+
+    days = client.get("/api/history", params={"start": "2026-11-01", "end": "2026-11-06"}).json()
+    assert [d["targets"]["kcal"] for d in days] == [2000, 2000, 2400, 2400, 1800, 1800]
+    assert days[0]["targets"]["steps"] == 8000
+    assert client.get("/api/days/2026-11-04").json()["targets"]["kcal"] == 2400
+
+    # reset to a single value for all history
+    r = client.put("/api/targets/kcal", json={"periods": [{"start": None, "value": 2100}]})
+    assert r.json()["periods"] == [{"start": None, "value": 2100}]
+    assert client.get("/api/days/2026-11-06").json()["targets"]["kcal"] == 2100
+
+
+@pytest.mark.parametrize(
+    ("key", "periods"),
+    [
+        ("kcal", []),
+        ("kcal", [{"start": None, "value": 0}]),
+        ("kcal", [{"start": None, "value": -5}]),
+        ("kcal", [{"start": None, "value": 2000.5}]),  # integers only
+        ("kcal", [{"start": "2026-01-01", "value": 1}]),  # first must be open-ended
+        ("kcal", [{"start": None, "value": 1}, {"start": None, "value": 2}]),
+        (
+            "kcal",
+            [
+                {"start": None, "value": 1},
+                {"start": "2026-02-01", "value": 2},
+                {"start": "2026-01-01", "value": 3},
+            ],
+        ),
+        (
+            "kcal",
+            [
+                {"start": None, "value": 1},
+                {"start": "2026-01-01", "value": 2},
+                {"start": "2026-01-01", "value": 3},
+            ],
+        ),
+        ("sleep_h", [{"start": None, "value": 25}]),
+    ],
+)
+def test_target_validation(client, key, periods):
+    assert client.put(f"/api/targets/{key}", json={"periods": periods}).status_code == 422
+
+
+def test_target_unknown_key(client):
+    body = {"periods": [{"start": None, "value": 1}]}
+    assert client.put("/api/targets/beers", json=body).status_code == 404
+    assert (
+        client.put(
+            "/api/targets/sleep_h", json={"periods": [{"start": None, "value": 24}]}
+        ).status_code
+        == 200
+    )

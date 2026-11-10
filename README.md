@@ -37,7 +37,11 @@ Or without `make`: `pamela --reload` (options: `--host`, `--port`).
 - **Saved meals**: fixed mixes of catalog foods (or *☆ save* a meal from the Day tab).
 - **History**: daily kcal, protein, steps and sleep charts against your targets, averages,
   and a per-day table with mood (click a day to open it).
-- **Settings**: the exercise types (about 75 built in, with MET values), editable.
+- **Settings**: daily targets (kcal, macros, steps, sleep), each either one value for all
+  history or custom periods ("from this date on"), so past days keep the target they had.
+  Going back to a single value resets the periods after a confirmation. Targets are positive
+  whole numbers; sleep is at most 24 h. Also the exercise types (about 75 built in, with MET
+  values), editable.
 - **Help**: how each tab works, keyboard shortcuts, and your current settings from
   `info/config.toml` (targets and meals). Press `?` to open it.
 
@@ -53,10 +57,10 @@ You can point them somewhere else with the `PAMELA_LOCAL_DIR` / `PAMELA_INFO_DIR
 
 ### `info/config.toml`
 
-Holds the profile (body weight for calorie estimates), daily targets (kcal, protein, carbs,
-fat, fiber, steps, hours of sleep) and meal names. Activity types used to live here; they
-are now in the database (Settings tab). An old `[[activity_types]]` list is imported once
-on the first start after upgrading and ignored afterwards, so you can delete it.
+Holds the profile (body weight for calorie estimates) and meal names. Daily targets and
+activity types used to live here; they are now in the database (Settings tab). An old
+`[targets]` table or `[[activity_types]]` list is imported once on the first start after
+upgrading and ignored afterwards, so you can delete them.
 Changes are picked up without restarting: switch back to the browser tab and the page
 reloads them. If the file has a mistake, a red banner shows what's wrong. The template is
 `src/pamela/defaults/config.toml`.

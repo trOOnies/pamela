@@ -7,7 +7,7 @@ records how many have run. Never edit an existing migration - append a new one.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -193,6 +193,18 @@ MIGRATIONS: list[str] = [
         value TEXT NOT NULL
     );
     """,
+    # 3: daily targets move from info/config.toml into the database. Each value is
+    # in force from start_day until the next period of the same target starts;
+    # the first period of a target has no start_day.
+    """
+    CREATE TABLE target_periods (
+        id         INTEGER PRIMARY KEY,
+        key        TEXT    NOT NULL,
+        start_day  TEXT,                            -- YYYY-MM-DD, NULL = beginning
+        value      INTEGER NOT NULL CHECK (value > 0),
+        UNIQUE (key, start_day)
+    );
+    """,
 ]
 
 
@@ -253,6 +265,31 @@ def import_config_activity_types(conn: sqlite3.Connection, types: Iterable) -> b
     conn.execute(
         "INSERT INTO meta (key, value) VALUES (?, datetime('now'))",
         (CONFIG_ACTIVITY_TYPES_IMPORTED,),
+    )
+    return True
+
+
+CONFIG_TARGETS_IMPORTED = "config_targets_imported"
+
+
+def import_config_targets(conn: sqlite3.Connection, targets: Mapping[str, float]) -> bool:
+    """One-time move of ``[targets]`` from info/config.toml into the database, as a
+    single value for all history. Values become positive integers within ``maxima``.
+    Returns False when the import had already happened."""
+    from .schemas import TARGETS
+
+    if conn.execute("SELECT 1 FROM meta WHERE key = ?", (CONFIG_TARGETS_IMPORTED,)).fetchone():
+        return False
+    for key, (_label, _unit, top) in TARGETS.items():
+        value = max(1, round(targets[key]))
+        if top is not None:
+            value = min(value, top)
+        conn.execute("DELETE FROM target_periods WHERE key = ?", (key,))
+        conn.execute(
+            "INSERT INTO target_periods (key, start_day, value) VALUES (?, NULL, ?)", (key, value)
+        )
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, datetime('now'))", (CONFIG_TARGETS_IMPORTED,)
     )
     return True
 

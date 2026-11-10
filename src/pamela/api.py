@@ -14,9 +14,10 @@ from .config import AppConfig
 from .schemas import (
     DIET_FIELDS,
     DIET_TAGS,
-    FEELINGS,
+    FEELING_GROUPS,
     MACRO_FIELDS,
     MOODS,
+    TARGETS,
     Activity,
     ActivityIn,
     ActivityType,
@@ -34,9 +35,11 @@ from .schemas import (
     Macros,
     SavedMeal,
     SavedMealIn,
+    Target,
+    TargetIn,
     Vocabulary,
 )
-from .tracking import estimate_kcal, scale_macros
+from .tracking import estimate_kcal, scale_macros, target_on
 
 router = APIRouter(prefix="/api")
 
@@ -82,7 +85,65 @@ def read_vocab() -> dict:
     def choices(d: dict) -> list[dict]:
         return [{"key": str(k), "label": v} for k, v in d.items()]
 
-    return {"diet_tags": choices(DIET_TAGS), "moods": choices(MOODS), "feelings": choices(FEELINGS)}
+    feelings = [
+        {"key": k, "label": label, "group": group}
+        for group, members in FEELING_GROUPS.items()
+        for k, label in members.items()
+    ]
+    return {"diet_tags": choices(DIET_TAGS), "moods": choices(MOODS), "feelings": feelings}
+
+
+# --- targets -----------------------------------------------------------------
+
+
+def _target_periods(conn: sqlite3.Connection) -> dict[str, list[tuple[str | None, int]]]:
+    """Periods per target key, oldest first (the open-ended first period leads)."""
+    out: dict[str, list[tuple[str | None, int]]] = {k: [] for k in TARGETS}
+    rows = conn.execute(
+        "SELECT key, start_day, value FROM target_periods "
+        "ORDER BY key, start_day IS NOT NULL, start_day"
+    )
+    for r in rows:
+        if r["key"] in out:
+            out[r["key"]].append((r["start_day"], r["value"]))
+    return out
+
+
+def _targets_on(periods: dict[str, list[tuple[str | None, int]]], iso: str) -> dict:
+    return {k: target_on(p, iso) for k, p in periods.items()}
+
+
+def _target(key: str, periods: list[tuple[str | None, int]]) -> dict:
+    label, unit, top = TARGETS[key]
+    return {
+        "key": key,
+        "label": label,
+        "unit": unit,
+        "max": top,
+        "periods": [{"start": s, "value": v} for s, v in periods],
+    }
+
+
+@router.get("/targets", response_model=list[Target])
+def list_targets(conn: Conn) -> list[dict]:
+    return [_target(k, p) for k, p in _target_periods(conn).items()]
+
+
+@router.put("/targets/{key}", response_model=Target)
+def update_target(key: str, target: TargetIn, conn: Conn) -> dict:
+    """Replace every period of one target. A single period is a single value for all
+    history, which is also how a target is reset after using custom periods."""
+    if key not in TARGETS:
+        raise _not_found("target")
+    top = TARGETS[key][2]
+    if top is not None and any(p.value > top for p in target.periods):
+        raise HTTPException(UNPROCESSABLE, f"{TARGETS[key][0]} can't be more than {top}")
+    conn.execute("DELETE FROM target_periods WHERE key = ?", (key,))
+    conn.executemany(
+        "INSERT INTO target_periods (key, start_day, value) VALUES (?, ?, ?)",
+        [(key, p.start.isoformat() if p.start else None, p.value) for p in target.periods],
+    )
+    return _target(key, _target_periods(conn)[key])
 
 
 # --- foods -------------------------------------------------------------------
@@ -579,6 +640,7 @@ def read_day(day: dt.date, conn: Conn) -> dict:
         "burned_kcal": sum(a["kcal"] for a in activities),
         "active_min": sum(a["duration_min"] for a in activities),
         "metrics": _metrics(conn, iso),
+        "targets": _targets_on(_target_periods(conn), iso),
     }
 
 
@@ -619,6 +681,7 @@ def read_history(
             "SELECT day, steps, sleep_min, mood FROM day_metrics WHERE day BETWEEN ? AND ?", span
         )
     }
+    periods = _target_periods(conn)
     out = []
     for i in range((end - start).days + 1):
         d = start + dt.timedelta(days=i)
@@ -632,6 +695,7 @@ def read_history(
                 active_min=a["mins"] if a else 0,
                 **({k: f[k] for k in MACRO_FIELDS} if f else {}),
                 **({k: m[k] for k in ("steps", "sleep_min", "mood")} if m else {}),
+                targets=_targets_on(periods, iso),
             )
         )
     return out

@@ -134,7 +134,7 @@
           <span class="mini-label" id="mood-label">Mood</span>
           <div class="mood-scale" id="mood-scale" role="radiogroup" aria-labelledby="mood-label"></div>
           <span class="mini-label" id="feelings-label">Feelings <small>(any that apply)</small></span>
-          <div class="chips feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
+          <div class="feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
         </div>
       </section>
 
@@ -273,6 +273,19 @@
 
     <!-- Settings -------------------------------------------------------- -->
     <section id="view-settings" class="view settings-grid" hidden>
+      <section class="card targets-card" aria-labelledby="targets-h">
+        <div class="card-head">
+          <h2 id="targets-h">Daily targets</h2>
+          <span class="hint">Whole numbers above 0. Use custom periods when a target changed over time, e.g. a cut or a bulk.</span>
+        </div>
+        <div class="table-wrap">
+          <table class="targets-table">
+            <thead><tr><th>Target</th><th class="n">Today</th><th>History</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+            <tbody id="targets-body"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card" aria-labelledby="at-form-h">
         <div class="card-head">
           <h2 id="at-form-h">New exercise type</h2>
@@ -310,97 +323,110 @@
     <!-- Help ------------------------------------------------------------ -->
     <section id="view-help" class="view help-grid" hidden>
       <section class="card help-card" aria-labelledby="help-day-h">
-        <h2 id="help-day-h">Day</h2>
-        <p>Log what you eat and the activities you do. Use the arrows or date picker in the
-          top bar to move between days, or <kbd>[</kbd> / <kbd>]</kbd>.</p>
-        <h3>Logging food from the catalog</h3>
+        <h2 id="help-day-h">📅 Day</h2>
+        <p>This is where you log your day: what you eat, how you move, and how you feel.
+          Use the arrows or the date at the top to change day, or press <kbd>[</kbd> and <kbd>]</kbd>.</p>
+
+        <h3>🍽️ Logging a food</h3>
         <ol>
-          <li>Pick the meal (it defaults to the one for the current time of day).</li>
-          <li>Type in <b>Food</b> to search, then <kbd>↑</kbd> / <kbd>↓</kbd> and <kbd>Enter</kbd> to choose.</li>
-          <li>Type the amount and press <kbd>Enter</kbd>. The preview below the form shows the macros you're adding.</li>
+          <li>Pick the meal. It already guesses one from the time of day.</li>
+          <li>Start typing the food's name, brand or barcode, then choose it with <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Enter</kbd>.</li>
+          <li>Type how much you had and press <kbd>Enter</kbd>. The line under the form shows what you're adding.</li>
         </ol>
-        <p>When a food has a serving or package size, buttons below the amount fill in
-          <i>1 serving</i>, <i>½ pack</i> and so on; you can always type any amount.</p>
-        <p>You can also type or scan a barcode into <b>Food</b>. If the food isn't in the catalog yet,
-          choose the <i>Create</i> / <i>Look up barcode</i> option at the end of the list. It opens
-          the Foods tab with the name or barcode filled in.</p>
-        <h3>Saved meals</h3>
-        <p>Switch to <b>Saved meal</b> and pick one: its foods appear as a <i>draft</i>. Nothing is
-          logged until you press <b>Log</b>, so you can change amounts, remove foods or add others
-          for today. The saved meal itself never changes from here.</p>
-        <h3>Quick add</h3>
-        <p>Switch to <b>Quick add</b> to type kcal and macros directly, without a catalog food.
-          Good for one-offs like a restaurant meal.</p>
-        <h3>Editing the log</h3>
+        <p>🥄 Had only part of it? If the food has a serving or package size, tap
+          <i>1 serving</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
+        <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
+          the list, and the Foods tab opens with it filled in.</p>
+
+        <h3>⭐ Saved meals</h3>
+        <p>Switch to <b>Saved meal</b> and pick one. Its foods show up as a <i>draft</i>:
+          change amounts, remove things, add extras. Nothing is logged until you press <b>Log</b>,
+          and the saved meal itself stays exactly as it was.</p>
+
+        <h3>⚡ Quick add</h3>
+        <p>For one-offs, like a restaurant dish: type a name and the calories and macros you know.</p>
+
+        <h3>✏️ Fixing the log</h3>
         <p>Click an amount to change it (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels).
-          Use <b>+ add</b> on a meal heading to log straight into that meal, <b>☆ save</b> to keep
-          its foods as a saved meal, and <b>✕</b> to delete a row.</p>
-        <h3>Check-in</h3>
-        <p>Steps, hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>) and mood,
-          with any feelings that apply. They save as soon as you change them.</p>
-        <h3>Activity</h3>
-        <p>Choose a type and enter the minutes. If you leave <b>kcal</b> empty it's estimated as
-          <code>MET × body weight (kg) × hours</code>; the placeholder shows the estimate.
-          Distance is asked only for types that use it. Types are grouped by category, with the ones
-          you've used lately at the top; manage them in <a href="#/settings">Settings</a>.</p>
-        <h3>Summary</h3>
-        <p>Shows kcal and each macro against your daily targets. Values over target turn amber.
-          <b>Net kcal</b> is eaten minus burned.</p>
+          <b>+ add</b> logs straight into that meal, <b>☆ save</b> keeps its foods as a saved meal,
+          and <b>✕</b> deletes a row.</p>
+
+        <h3>💭 Check-in</h3>
+        <p>👟 Steps, 😴 hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>),
+          and how your day felt. Pick a mood from 😣 to 😄 (tap it again to clear), and any feelings
+          that fit. They're grouped by kind: 😊 content, ⚡ driven, 😬 tense, 🌧️ down and 🪫 drained.
+          Everything saves on its own.</p>
+
+        <h3>🏃 Activity</h3>
+        <p>Choose what you did and for how long. Leave <b>kcal</b> empty and it's estimated for you
+          from your body weight (the box shows the guess). Types you use often appear at the top.</p>
+
+        <h3>📊 Summary</h3>
+        <p>Calories and macros against that day's targets. Anything over target turns amber.
+          <b>Net kcal</b> is what you ate minus what you burned.</p>
       </section>
 
       <div class="help-col">
         <section class="card help-card" aria-labelledby="help-foods-h">
-          <h2 id="help-foods-h">Foods</h2>
-          <p>Your catalog. Each food stores its macros per a basis amount, e.g. <i>per 100 g</i> or
-            <i>per 1 slice</i>; logging scales them to the amount you eat.</p>
-          <p>While you fill in the form, a hint shows the kcal your macros add up to
-            (4 kcal/g protein and carbs, 9 kcal/g fat), handy for catching typos.</p>
-          <p><b>Barcode:</b> type or scan the EAN and press <b>Look up</b>. If it's already in your
-            catalog, that food opens for editing. Otherwise it's searched on
+          <h2 id="help-foods-h">🥫 Foods</h2>
+          <p>Your own food list. Each food has its nutrition per an amount you choose, like
+            <i>per 100 g</i> or <i>per 1 slice</i>, and logging works out the rest.</p>
+          <p>🔎 <b>Got a barcode?</b> Type or scan it and press <b>Look up</b>. If it's already in
+            your list, it opens. If not, it's looked up on
             <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>
-            (only the barcode is sent) and the form is filled in for you to check and save. If it isn't
-            found, enter the label's values: the food is saved with its barcode, so typing or scanning
-            it later finds it.</p>
-          <p><b>Diet tags</b> (vegetarian, vegan, kosher, lactose-free, peanut-free, TACC-free) show as
-            colored labels; click them above the catalog to filter. A saved meal shows the tags all its
-            foods share. Vegan implies vegetarian.</p>
-          <p>Foods you've logged most in the last 90 days are listed (and suggested) first.
-            Editing or deleting a food never changes past log entries: each entry keeps a copy of
-            the macros it was logged with.</p>
+            (only the barcode is sent) and the form fills in for you to check. Not found anywhere?
+            Copy the values from the label once, and the barcode will find it next time.</p>
+          <p>🏷️ <b>Diet tags</b>: <span class="tag tag-vegetarian">Vegetarian</span>
+            <span class="tag tag-vegan">Vegan</span> <span class="tag tag-kosher">Kosher</span>
+            <span class="tag tag-lactose_free">Lactose-free</span>
+            <span class="tag tag-peanut_free">Peanut-free</span>
+            <span class="tag tag-tacc_free">TACC-free</span>.
+            Click them above your list to filter. Vegan also counts as vegetarian.</p>
+          <p>🧮 A hint shows the calories your macros add up to, which helps catch typos.</p>
+          <p>🔒 Editing or deleting a food never changes days you already logged.</p>
         </section>
 
         <section class="card help-card" aria-labelledby="help-meals-h">
-          <h2 id="help-meals-h">Saved meals</h2>
-          <p>A fixed mix of catalog foods you eat often, like a usual breakfast. Build one here, or press
-            <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> preselects the meal slot when you use it.
-            Logging a saved meal copies its foods into the day, so editing those entries (or the saved
-            meal later) doesn't affect the other.</p>
+          <h2 id="help-meals-h">⭐ Saved meals</h2>
+          <p>Combos you eat often, like your usual breakfast. Build one here, or press
+            <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> picks the meal for you, and the
+            tags show what all its foods have in common.</p>
         </section>
 
         <section class="card help-card" aria-labelledby="help-history-h">
-          <h2 id="help-history-h">History</h2>
-          <p>Daily kcal, protein, steps and sleep over the last 7, 30 or 90 days, with your target as a
-            dashed line. Averages count only days with data. Click a bar or a row to open that day.</p>
+          <h2 id="help-history-h">📈 History</h2>
+          <p>Calories, protein, steps and sleep for the last 7, 30 or 90 days. The dashed line is
+            your target, and it steps up or down where a target changed. Click a bar or a row to
+            jump to that day.</p>
+        </section>
+
+        <section class="card help-card" aria-labelledby="help-settings-tab-h">
+          <h2 id="help-settings-tab-h">⚙️ Settings</h2>
+          <p>🎯 <b>Daily targets</b>: press the ✏️ pencil to change one. Use a <i>single value</i>
+            for every day, or <i>custom periods</i> if your goal changed over time. Each day uses
+            the target from its own period, so old days keep their old goals. Going back to a single
+            value deletes the periods (you'll be asked first).</p>
+          <p>🏋️ <b>Exercise types</b>: about 75 built in, from CrossFit to padel. Add your own
+            or adjust how many calories each one burns.</p>
         </section>
 
         <section class="card help-card" aria-labelledby="help-keys-h">
-          <h2 id="help-keys-h">Keyboard</h2>
+          <h2 id="help-keys-h">⌨️ Shortcuts</h2>
           <table class="keys-table">
             <tbody>
-              <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next day (Day tab)</td></tr>
-              <tr><td><kbd>↑</kbd> / <kbd>↓</kbd>, <kbd>Enter</kbd></td><td>Choose a food in the search list</td></tr>
-              <tr><td><kbd>Esc</kbd></td><td>Close the search list, cancel an amount edit</td></tr>
+              <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Previous / next day</td></tr>
+              <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Choose a food from the list</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>Close the list, or cancel an edit</td></tr>
               <tr><td><kbd>?</kbd></td><td>Open this help</td></tr>
             </tbody>
           </table>
         </section>
 
         <section class="card help-card" aria-labelledby="help-settings-h">
-          <h2 id="help-settings-h">Your settings</h2>
-          <p>These come from <code>info/config.toml</code>. Edit that file and switch back to this
-            tab to see the changes; no restart needed. If the file has a mistake, a red banner
-            at the top explains it. Exercise types have moved into the app:
-            <a href="#/settings">Settings</a>.</p>
+          <h2 id="help-settings-h">🗂️ Your setup</h2>
+          <p>Body weight and meal names still live in <code>info/config.toml</code>. Edit the file,
+            come back to this tab, and the changes show up. No restart needed. If something in it is
+            wrong, a red banner at the top tells you what.</p>
           <div id="help-settings"></div>
         </section>
       </div>

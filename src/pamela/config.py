@@ -55,6 +55,9 @@ class Profile(BaseModel):
 
 
 class Targets(BaseModel):
+    """Legacy: targets now live in the database (Settings tab). These values are
+    imported once, on the first start after the move, and ignored afterwards."""
+
     kcal: float = Field(2200, ge=0)
     protein_g: float = Field(150, ge=0)
     carbs_g: float = Field(230, ge=0)
@@ -86,7 +89,7 @@ class ActivityType(BaseModel):
 
 class AppConfig(BaseModel):
     profile: Profile = Field(default_factory=Profile)
-    targets: Targets = Field(default_factory=Targets)
+    targets: Targets = Field(default_factory=Targets, exclude=True)
     meals: Meals = Field(default_factory=Meals)
     # Legacy: activity types now live in the database (Settings tab). A list here is
     # imported once, on the first start after the move, and ignored afterwards.
