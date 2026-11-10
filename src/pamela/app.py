@@ -16,6 +16,19 @@ from .config import ConfigError, ConfigStore, Settings, ensure_config_file
 STATIC_DIR = resources.files("pamela") / "static"
 
 
+def prepare(settings: Settings, config_store: ConfigStore) -> None:
+    """Create the config file, migrate the database and run the one-time imports."""
+    ensure_config_file(settings.config_path)
+    db.migrate(settings.db_path)
+    try:
+        legacy = config_store.get()
+    except ConfigError:
+        return  # retried on the next start; the banner shows the problem meanwhile
+    with db.session(settings.db_path) as conn:
+        db.import_config_activity_types(conn, legacy.activity_types)
+        db.import_config_targets(conn, legacy.targets.model_dump())
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
@@ -23,16 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        ensure_config_file(settings.config_path)
-        db.migrate(settings.db_path)
-        try:
-            legacy = config_store.get()
-        except ConfigError:
-            pass  # retried on the next start; the banner shows the problem meanwhile
-        else:
-            with db.session(settings.db_path) as conn:
-                db.import_config_activity_types(conn, legacy.activity_types)
-                db.import_config_targets(conn, legacy.targets.model_dump())
+        prepare(settings, config_store)
         yield
 
     app = FastAPI(title="Pamela", version=__version__, lifespan=lifespan)

@@ -14,6 +14,11 @@ make install        # pip install -e ".[dev]"
 make serve          # http://127.0.0.1:8000 (auto-reloads on code changes)
 ```
 
+To look around before logging real data, run `make seed` first: it fills an empty
+database with about two months of mock foods, meals, activities and check-ins
+(`python -m pamela.seed --days N` for a different length). It refuses to touch a database
+that already has data; delete `local/pamela.sqlite3` to go back to an empty one.
+
 Or without `make`: `pamela --reload` (options: `--host`, `--port`).
 
 ## Features
