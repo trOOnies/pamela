@@ -19,15 +19,24 @@ STATIC_DIR = resources.files("pamela") / "static"
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
+    config_store = ConfigStore(settings.config_path)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         ensure_config_file(settings.config_path)
         db.migrate(settings.db_path)
+        try:
+            legacy_types = config_store.get().activity_types
+        except ConfigError:
+            pass  # retried on the next start; the banner shows the problem meanwhile
+        else:
+            with db.session(settings.db_path) as conn:
+                db.import_config_activity_types(conn, legacy_types)
         yield
 
     app = FastAPI(title="Pamela", version=__version__, lifespan=lifespan)
     app.state.settings = settings
-    app.state.config_store = ConfigStore(settings.config_path)
+    app.state.config_store = config_store
 
     @app.exception_handler(ConfigError)
     async def _config_error(request: Request, exc: ConfigError) -> JSONResponse:

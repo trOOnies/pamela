@@ -14,7 +14,9 @@
     <nav class="tabs" aria-label="Sections">
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
+      <a href="#/meals" data-nav="meals">Saved meals</a>
       <a href="#/history" data-nav="history">History</a>
+      <a href="#/settings" data-nav="settings">Settings</a>
       <a href="#/help" data-nav="help" title="Help ( ? )">Help</a>
     </nav>
     <div class="daynav" id="daynav">
@@ -37,6 +39,7 @@
           <h2 id="food-h">Food</h2>
           <div class="seg" role="radiogroup" aria-label="Entry mode">
             <label><input type="radio" name="entry-mode" value="catalog" checked><span>Catalog</span></label>
+            <label><input type="radio" name="entry-mode" value="saved"><span>Saved meal</span></label>
             <label><input type="radio" name="entry-mode" value="quick"><span>Quick add</span></label>
           </div>
         </div>
@@ -50,7 +53,7 @@
           <div class="catalog-only field food-field">
             <span id="food-search-label">Food</span>
             <div class="combo">
-              <input type="search" id="food-search" placeholder="Search foods…"
+              <input type="search" id="food-search" placeholder="Search name, brand or barcode…"
                      role="combobox" aria-expanded="false" aria-controls="food-suggest"
                      aria-autocomplete="list" aria-labelledby="food-search-label">
               <ul id="food-suggest" class="suggest" role="listbox" hidden></ul>
@@ -72,9 +75,36 @@
           <label class="quick-only field num"><span>Fat</span><input type="number" name="fat_g" min="0" step="any"></label>
           <label class="quick-only field num"><span>Fiber</span><input type="number" name="fiber_g" min="0" step="any"></label>
 
-          <button class="btn primary" type="submit">Add</button>
+          <label class="saved-only field grow"><span>Saved meal</span>
+            <select id="saved-pick"></select></label>
+
+          <button class="btn primary not-saved" type="submit">Add</button>
           <p class="preview catalog-only" id="entry-preview" aria-live="polite"></p>
+          <div class="chips catalog-only" id="portion-chips" role="group" aria-label="Portion"></div>
+          <p class="hint saved-only" id="saved-hint"></p>
         </form>
+
+        <section class="draft" id="draft" hidden aria-labelledby="draft-h">
+          <div class="draft-head">
+            <h3 id="draft-h"></h3>
+            <span class="draft-note">Not logged yet. Change amounts, remove or add foods; the saved meal itself stays as it is.</span>
+          </div>
+          <table class="draft-table">
+            <thead><tr><th>Food</th><th class="n">Amount</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="n">Fib</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+            <tbody id="draft-body"></tbody>
+            <tfoot id="draft-foot"></tfoot>
+          </table>
+          <div class="draft-actions">
+            <div class="combo draft-add">
+              <input type="search" id="draft-search" placeholder="+ Add a food to this draft…"
+                     role="combobox" aria-expanded="false" aria-controls="draft-suggest"
+                     aria-autocomplete="list" aria-label="Add a food to the draft">
+              <ul id="draft-suggest" class="suggest" role="listbox" hidden></ul>
+            </div>
+            <button type="button" class="btn ghost" id="draft-discard">Discard</button>
+            <button type="button" class="btn primary" id="draft-commit">Log</button>
+          </div>
+        </section>
 
         <table class="log-table" id="log-table">
           <thead>
@@ -82,6 +112,30 @@
           </thead>
           <tbody id="log-body"></tbody>
         </table>
+      </section>
+
+      <div class="day-side">
+      <section class="card checkin" aria-labelledby="checkin-h">
+        <div class="card-head">
+          <h2 id="checkin-h">Check-in</h2>
+          <span class="status-note" id="checkin-status" aria-live="polite"></span>
+        </div>
+        <div class="metric">
+          <label class="field num"><span>Steps</span>
+            <input type="number" id="steps-input" min="0" max="200000" step="1" inputmode="numeric" placeholder="–"></label>
+          <div class="metric-meter"><div class="meter" style="--c:var(--c-steps)"><span id="steps-bar"></span></div><span class="metric-sub" id="steps-sub"></span></div>
+        </div>
+        <div class="metric">
+          <label class="field num"><span>Sleep</span>
+            <input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal" title="Hours, as 7:30, 7.5 or 7h30"></label>
+          <div class="metric-meter"><div class="meter" style="--c:var(--c-sleep)"><span id="sleep-bar"></span></div><span class="metric-sub" id="sleep-sub"></span></div>
+        </div>
+        <div class="mood-block">
+          <span class="mini-label" id="mood-label">Mood</span>
+          <div class="mood-scale" id="mood-scale" role="radiogroup" aria-labelledby="mood-label"></div>
+          <span class="mini-label" id="feelings-label">Feelings <small>(any that apply)</small></span>
+          <div class="chips feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
+        </div>
       </section>
 
       <section class="card activity" aria-labelledby="act-h">
@@ -96,6 +150,7 @@
         </form>
         <ul class="act-list" id="act-list"></ul>
       </section>
+      </div>
     </section>
 
     <!-- Foods ----------------------------------------------------------- -->
@@ -106,6 +161,15 @@
           <button type="button" class="btn ghost" id="food-cancel" hidden>Cancel edit</button>
         </div>
         <form id="food-form" class="food-form" autocomplete="off">
+          <div class="field span2 ean-field">
+            <span id="ean-label">Barcode (EAN) <small>(optional)</small></span>
+            <div class="ean-row">
+              <input type="text" name="ean" id="food-ean" inputmode="numeric" maxlength="20"
+                     placeholder="e.g. 7790070410139" aria-labelledby="ean-label">
+              <button type="button" class="btn" id="ean-lookup">Look up</button>
+            </div>
+          </div>
+          <p class="hint span2 ean-status" id="ean-status" aria-live="polite"></p>
           <label class="field span2"><span>Name</span><input type="text" name="name" required maxlength="200"></label>
           <label class="field span2"><span>Brand <small>(optional)</small></span><input type="text" name="brand" maxlength="200"></label>
           <label class="field"><span>Values per</span><input type="number" name="basis_qty" min="0" step="any" value="100" required></label>
@@ -119,6 +183,13 @@
           <label class="field"><span>Fat (g)</span><input type="number" name="fat_g" min="0" step="any" value="0"></label>
           <label class="field"><span>Fiber (g)</span><input type="number" name="fiber_g" min="0" step="any" value="0"></label>
           <p class="hint span2" id="food-kcal-hint"></p>
+          <label class="field"><span>Serving size <small>(optional)</small></span>
+            <span class="with-unit"><input type="number" name="serving_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
+          <label class="field"><span>Package size <small>(optional)</small></span>
+            <span class="with-unit"><input type="number" name="package_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
+          <fieldset class="span2 tag-picks" id="tag-picks">
+            <legend>Diet</legend>
+          </fieldset>
           <button class="btn primary span2" type="submit" id="food-submit">Save food</button>
         </form>
       </section>
@@ -126,7 +197,10 @@
       <section class="card" aria-labelledby="foods-h">
         <div class="card-head">
           <h2 id="foods-h">Catalog <span class="count" id="foods-count"></span></h2>
-          <input type="search" id="foods-filter" placeholder="Filter…" aria-label="Filter foods">
+          <div class="filters">
+            <div class="chips tag-filter" id="tag-filter" role="group" aria-label="Only show foods that are"></div>
+            <input type="search" id="foods-filter" placeholder="Filter…" aria-label="Filter foods">
+          </div>
         </div>
         <div class="table-wrap">
           <table class="foods-table">
@@ -134,6 +208,39 @@
             <tbody id="foods-body"></tbody>
           </table>
         </div>
+      </section>
+    </section>
+
+    <!-- Saved meals ----------------------------------------------------- -->
+    <section id="view-meals" class="view meals-grid" hidden>
+      <section class="card" aria-labelledby="sm-form-h">
+        <div class="card-head">
+          <h2 id="sm-form-h">New saved meal</h2>
+          <button type="button" class="btn ghost" id="sm-cancel" hidden>Cancel edit</button>
+        </div>
+        <form id="sm-form" class="sm-form" autocomplete="off">
+          <div class="sm-fields">
+            <label class="field grow"><span>Name</span><input type="text" name="name" required maxlength="200" placeholder="e.g. Usual breakfast"></label>
+            <label class="field"><span>Usually for</span><select name="default_meal" id="sm-default-meal"></select></label>
+          </div>
+          <table class="draft-table sm-items">
+            <thead><tr><th>Food</th><th class="n">Amount</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+            <tbody id="sm-body"></tbody>
+            <tfoot id="sm-foot"></tfoot>
+          </table>
+          <div class="combo">
+            <input type="search" id="sm-search" placeholder="+ Add a food from the catalog…"
+                   role="combobox" aria-expanded="false" aria-controls="sm-suggest"
+                   aria-autocomplete="list" aria-label="Add a food to the saved meal">
+            <ul id="sm-suggest" class="suggest" role="listbox" hidden></ul>
+          </div>
+          <button class="btn primary" type="submit" id="sm-submit">Save meal</button>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="sm-list-h">
+        <div class="card-head"><h2 id="sm-list-h">Saved meals <span class="count" id="sm-count"></span></h2></div>
+        <div class="sm-list" id="sm-list"></div>
       </section>
     </section>
 
@@ -151,12 +258,50 @@
       <div class="charts">
         <section class="card"><h3>Calories eaten</h3><div class="chart" id="chart-kcal"></div></section>
         <section class="card"><h3>Protein (g)</h3><div class="chart" id="chart-protein"></div></section>
+        <section class="card"><h3>Steps</h3><div class="chart" id="chart-steps"></div></section>
+        <section class="card"><h3>Sleep (hours)</h3><div class="chart" id="chart-sleep"></div></section>
       </div>
       <section class="card">
         <div class="table-wrap">
           <table class="history-table">
-            <thead><tr><th>Day</th><th class="n">kcal</th><th class="n">Protein</th><th class="n">Carbs</th><th class="n">Fat</th><th class="n">Fiber</th><th class="n">Burned</th><th class="n">Active min</th></tr></thead>
+            <thead><tr><th>Day</th><th class="n">kcal</th><th class="n">Protein</th><th class="n">Carbs</th><th class="n">Fat</th><th class="n">Fiber</th><th class="n">Burned</th><th class="n">Active min</th><th class="n">Steps</th><th class="n">Sleep</th><th>Mood</th></tr></thead>
             <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- Settings -------------------------------------------------------- -->
+    <section id="view-settings" class="view settings-grid" hidden>
+      <section class="card" aria-labelledby="at-form-h">
+        <div class="card-head">
+          <h2 id="at-form-h">New exercise type</h2>
+          <button type="button" class="btn ghost" id="at-cancel" hidden>Cancel edit</button>
+        </div>
+        <form id="at-form" class="at-form" autocomplete="off">
+          <label class="field span2"><span>Name</span><input type="text" name="name" required maxlength="100" placeholder="e.g. Indoor rowing class"></label>
+          <label class="field span2"><span>Category</span>
+            <input type="text" name="category" required maxlength="60" list="at-categories" value="Other">
+            <datalist id="at-categories"></datalist></label>
+          <label class="field"><span>MET</span><input type="number" name="met" min="0.1" max="30" step="any" required></label>
+          <label class="field check"><input type="checkbox" name="distance"><span>Ask for distance</span></label>
+          <p class="hint span2" id="at-hint"></p>
+          <button class="btn primary span2" type="submit" id="at-submit">Add type</button>
+        </form>
+        <p class="hint at-explain">MET is the energy an activity takes compared with sitting still
+          (1 MET ≈ 1 kcal per kg of body weight per hour). Look up values in the
+          <a href="https://pacompendium.com/" target="_blank" rel="noopener">Compendium of Physical Activities</a>.</p>
+      </section>
+
+      <section class="card" aria-labelledby="at-list-h">
+        <div class="card-head">
+          <h2 id="at-list-h">Exercise types <span class="count" id="at-count"></span></h2>
+          <input type="search" id="at-filter" placeholder="Filter…" aria-label="Filter exercise types">
+        </div>
+        <div class="table-wrap">
+          <table class="at-table">
+            <thead><tr><th>Name</th><th class="n">MET</th><th class="n" title="Estimated at your body weight">kcal / hour</th><th>Distance</th><th class="n" title="Times logged in the last 90 days">Uses</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+            <tbody id="at-body"></tbody>
           </table>
         </div>
       </section>
@@ -174,18 +319,30 @@
           <li>Type in <b>Food</b> to search, then <kbd>↑</kbd> / <kbd>↓</kbd> and <kbd>Enter</kbd> to choose.</li>
           <li>Type the amount and press <kbd>Enter</kbd>. The preview below the form shows the macros you're adding.</li>
         </ol>
-        <p>If the food isn't in the catalog yet, choose the <i>Create</i> option at the end of the
-          list. It opens the Foods tab with the name filled in.</p>
+        <p>When a food has a serving or package size, buttons below the amount fill in
+          <i>1 serving</i>, <i>½ pack</i> and so on; you can always type any amount.</p>
+        <p>You can also type or scan a barcode into <b>Food</b>. If the food isn't in the catalog yet,
+          choose the <i>Create</i> / <i>Look up barcode</i> option at the end of the list. It opens
+          the Foods tab with the name or barcode filled in.</p>
+        <h3>Saved meals</h3>
+        <p>Switch to <b>Saved meal</b> and pick one: its foods appear as a <i>draft</i>. Nothing is
+          logged until you press <b>Log</b>, so you can change amounts, remove foods or add others
+          for today. The saved meal itself never changes from here.</p>
         <h3>Quick add</h3>
         <p>Switch to <b>Quick add</b> to type kcal and macros directly, without a catalog food.
           Good for one-offs like a restaurant meal.</p>
         <h3>Editing the log</h3>
         <p>Click an amount to change it (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels).
-          Use <b>+ add</b> on a meal heading to log straight into that meal, and <b>✕</b> to delete a row.</p>
+          Use <b>+ add</b> on a meal heading to log straight into that meal, <b>☆ save</b> to keep
+          its foods as a saved meal, and <b>✕</b> to delete a row.</p>
+        <h3>Check-in</h3>
+        <p>Steps, hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>) and mood,
+          with any feelings that apply. They save as soon as you change them.</p>
         <h3>Activity</h3>
         <p>Choose a type and enter the minutes. If you leave <b>kcal</b> empty it's estimated as
           <code>MET × body weight (kg) × hours</code>; the placeholder shows the estimate.
-          Distance is asked only for types that use it.</p>
+          Distance is asked only for types that use it. Types are grouped by category, with the ones
+          you've used lately at the top; manage them in <a href="#/settings">Settings</a>.</p>
         <h3>Summary</h3>
         <p>Shows kcal and each macro against your daily targets. Values over target turn amber.
           <b>Net kcal</b> is eaten minus burned.</p>
@@ -198,15 +355,32 @@
             <i>per 1 slice</i>; logging scales them to the amount you eat.</p>
           <p>While you fill in the form, a hint shows the kcal your macros add up to
             (4 kcal/g protein and carbs, 9 kcal/g fat), handy for catching typos.</p>
+          <p><b>Barcode:</b> type or scan the EAN and press <b>Look up</b>. If it's already in your
+            catalog, that food opens for editing. Otherwise it's searched on
+            <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>
+            (only the barcode is sent) and the form is filled in for you to check and save. If it isn't
+            found, enter the label's values: the food is saved with its barcode, so typing or scanning
+            it later finds it.</p>
+          <p><b>Diet tags</b> (vegetarian, vegan, kosher, lactose-free, peanut-free, TACC-free) show as
+            colored labels; click them above the catalog to filter. A saved meal shows the tags all its
+            foods share. Vegan implies vegetarian.</p>
           <p>Foods you've logged most in the last 90 days are listed (and suggested) first.
             Editing or deleting a food never changes past log entries: each entry keeps a copy of
             the macros it was logged with.</p>
         </section>
 
+        <section class="card help-card" aria-labelledby="help-meals-h">
+          <h2 id="help-meals-h">Saved meals</h2>
+          <p>A fixed mix of catalog foods you eat often, like a usual breakfast. Build one here, or press
+            <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> preselects the meal slot when you use it.
+            Logging a saved meal copies its foods into the day, so editing those entries (or the saved
+            meal later) doesn't affect the other.</p>
+        </section>
+
         <section class="card help-card" aria-labelledby="help-history-h">
           <h2 id="help-history-h">History</h2>
-          <p>Daily kcal and protein over the last 7, 30 or 90 days, with your target as a dashed line.
-            Calorie and macro averages count only days with food logged. Click a bar or a row to open that day.</p>
+          <p>Daily kcal, protein, steps and sleep over the last 7, 30 or 90 days, with your target as a
+            dashed line. Averages count only days with data. Click a bar or a row to open that day.</p>
         </section>
 
         <section class="card help-card" aria-labelledby="help-keys-h">
@@ -225,7 +399,8 @@
           <h2 id="help-settings-h">Your settings</h2>
           <p>These come from <code>info/config.toml</code>. Edit that file and switch back to this
             tab to see the changes; no restart needed. If the file has a mistake, a red banner
-            at the top explains it.</p>
+            at the top explains it. Exercise types have moved into the app:
+            <a href="#/settings">Settings</a>.</p>
           <div id="help-settings"></div>
         </section>
       </div>

@@ -60,6 +60,8 @@ class Targets(BaseModel):
     carbs_g: float = Field(230, ge=0)
     fat_g: float = Field(70, ge=0)
     fiber_g: float = Field(30, ge=0)
+    steps: float = Field(8000, ge=0)
+    sleep_h: float = Field(8, ge=0, le=24)
 
 
 class Meals(BaseModel):
@@ -86,13 +88,9 @@ class AppConfig(BaseModel):
     profile: Profile = Field(default_factory=Profile)
     targets: Targets = Field(default_factory=Targets)
     meals: Meals = Field(default_factory=Meals)
-    activity_types: list[ActivityType] = Field(default_factory=list)
-
-    def activity_type(self, name: str) -> ActivityType | None:
-        for t in self.activity_types:
-            if t.name.lower() == name.lower():
-                return t
-        return None
+    # Legacy: activity types now live in the database (Settings tab). A list here is
+    # imported once, on the first start after the move, and ignored afterwards.
+    activity_types: list[ActivityType] = Field(default_factory=list, exclude=True)
 
 
 class ConfigError(Exception):

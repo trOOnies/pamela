@@ -7,7 +7,7 @@ records how many have run. Never edit an existing migration - append a new one.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -61,6 +61,138 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX activities_day ON activities (day);
     """,
+    # 2: barcodes, portions and diet tags on foods; saved meals; activity types
+    # move from info/config.toml into the database; daily steps, sleep and mood.
+    """
+    ALTER TABLE foods ADD COLUMN ean          TEXT;     -- normalized GTIN (8, 13 or 14 digits)
+    ALTER TABLE foods ADD COLUMN serving_qty  REAL;     -- one serving, in the food's unit
+    ALTER TABLE foods ADD COLUMN package_qty  REAL;     -- whole package, in the food's unit
+    ALTER TABLE foods ADD COLUMN vegetarian   INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE foods ADD COLUMN vegan        INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE foods ADD COLUMN kosher       INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE foods ADD COLUMN lactose_free INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE foods ADD COLUMN peanut_free  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE foods ADD COLUMN tacc_free    INTEGER NOT NULL DEFAULT 0;
+    CREATE UNIQUE INDEX foods_ean ON foods (ean) WHERE ean IS NOT NULL;
+
+    -- A saved meal is only a template: logging it copies its items into
+    -- food_entries, so later edits on either side never affect the other.
+    CREATE TABLE saved_meals (
+        id           INTEGER PRIMARY KEY,
+        name         TEXT    NOT NULL,
+        default_meal TEXT    NOT NULL DEFAULT '',
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE saved_meal_items (
+        id             INTEGER PRIMARY KEY,
+        saved_meal_id  INTEGER NOT NULL REFERENCES saved_meals (id) ON DELETE CASCADE,
+        food_id        INTEGER NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+        quantity       REAL    NOT NULL CHECK (quantity > 0),
+        position       INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX saved_meal_items_meal ON saved_meal_items (saved_meal_id, position);
+
+    CREATE TABLE activity_types (
+        id        INTEGER PRIMARY KEY,
+        name      TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+        category  TEXT    NOT NULL DEFAULT 'Other',
+        met       REAL    NOT NULL CHECK (met > 0 AND met <= 30),
+        distance  INTEGER NOT NULL DEFAULT 0
+    );
+    -- MET values approximate the Compendium of Physical Activities.
+    INSERT INTO activity_types (name, category, met, distance) VALUES
+        ('Walking', 'Cardio', 3.5, 1),
+        ('Brisk walking', 'Cardio', 4.3, 1),
+        ('Nordic walking', 'Cardio', 4.8, 1),
+        ('Running', 'Cardio', 9.8, 1),
+        ('Jogging', 'Cardio', 7.0, 1),
+        ('Trail running', 'Cardio', 9.0, 1),
+        ('Treadmill running', 'Cardio', 9.0, 1),
+        ('Treadmill walking (incline)', 'Cardio', 6.0, 1),
+        ('Cycling', 'Cardio', 7.5, 1),
+        ('Mountain biking', 'Cardio', 8.5, 1),
+        ('Stationary bike, light', 'Cardio', 3.5, 0),
+        ('Stationary bike, moderate', 'Cardio', 6.8, 0),
+        ('Stationary bike, vigorous', 'Cardio', 8.8, 0),
+        ('Spinning class', 'Cardio', 8.5, 0),
+        ('Elliptical trainer', 'Cardio', 5.0, 0),
+        ('Rowing machine', 'Cardio', 7.0, 1),
+        ('Stair climber', 'Cardio', 9.0, 0),
+        ('Jump rope', 'Cardio', 11.8, 0),
+        ('Strength training', 'Gym & strength', 5.0, 0),
+        ('Weightlifting, vigorous', 'Gym & strength', 6.0, 0),
+        ('Powerlifting', 'Gym & strength', 6.0, 0),
+        ('CrossFit', 'Gym & strength', 8.0, 0),
+        ('HIIT', 'Gym & strength', 8.0, 0),
+        ('Circuit training', 'Gym & strength', 6.0, 0),
+        ('Functional training', 'Gym & strength', 5.0, 0),
+        ('Kettlebell training', 'Gym & strength', 8.0, 0),
+        ('Calisthenics', 'Gym & strength', 3.8, 0),
+        ('TRX / suspension training', 'Gym & strength', 5.0, 0),
+        ('Core / abs workout', 'Gym & strength', 3.8, 0),
+        ('Yoga', 'Mind & body', 2.5, 0),
+        ('Power yoga', 'Mind & body', 4.0, 0),
+        ('Pilates', 'Mind & body', 3.0, 0),
+        ('Stretching', 'Mind & body', 2.3, 0),
+        ('Tai chi', 'Mind & body', 3.0, 0),
+        ('Aerobics', 'Classes & combat', 7.3, 0),
+        ('Step aerobics', 'Classes & combat', 8.5, 0),
+        ('Zumba', 'Classes & combat', 6.5, 0),
+        ('Dancing', 'Classes & combat', 5.0, 0),
+        ('Aqua aerobics', 'Classes & combat', 5.3, 0),
+        ('Boxing (bag work)', 'Classes & combat', 5.5, 0),
+        ('Boxing, sparring', 'Classes & combat', 7.8, 0),
+        ('Kickboxing', 'Classes & combat', 7.5, 0),
+        ('Martial arts', 'Classes & combat', 7.0, 0),
+        ('Football (soccer)', 'Sports', 7.0, 0),
+        ('Football 5-a-side', 'Sports', 8.0, 0),
+        ('Basketball', 'Sports', 6.5, 0),
+        ('Volleyball', 'Sports', 4.0, 0),
+        ('Beach volleyball', 'Sports', 8.0, 0),
+        ('Tennis', 'Sports', 7.3, 0),
+        ('Padel', 'Sports', 6.0, 0),
+        ('Squash', 'Sports', 7.3, 0),
+        ('Badminton', 'Sports', 5.5, 0),
+        ('Table tennis', 'Sports', 4.0, 0),
+        ('Rugby', 'Sports', 8.3, 0),
+        ('Field hockey', 'Sports', 7.8, 0),
+        ('Handball', 'Sports', 8.0, 0),
+        ('Golf (walking)', 'Sports', 4.8, 0),
+        ('Swimming', 'Outdoors & water', 6.0, 1),
+        ('Swimming laps, vigorous', 'Outdoors & water', 9.8, 1),
+        ('Hiking', 'Outdoors & water', 6.0, 1),
+        ('Climbing / bouldering', 'Outdoors & water', 7.5, 0),
+        ('Inline skating', 'Outdoors & water', 7.5, 1),
+        ('Ice skating', 'Outdoors & water', 7.0, 0),
+        ('Skateboarding', 'Outdoors & water', 5.0, 0),
+        ('Downhill skiing', 'Outdoors & water', 5.3, 0),
+        ('Cross-country skiing', 'Outdoors & water', 9.0, 1),
+        ('Snowboarding', 'Outdoors & water', 5.3, 0),
+        ('Surfing', 'Outdoors & water', 3.0, 0),
+        ('Kayaking / canoeing', 'Outdoors & water', 5.0, 1),
+        ('Stand-up paddle', 'Outdoors & water', 6.0, 1),
+        ('Horse riding', 'Outdoors & water', 5.5, 0),
+        ('Walking the dog', 'Everyday', 3.0, 1),
+        ('Gardening', 'Everyday', 3.8, 0),
+        ('Housework', 'Everyday', 3.3, 0),
+        ('Playing with kids (active)', 'Everyday', 5.8, 0),
+        ('Other', 'Other', 4.0, 0);
+
+    CREATE TABLE day_metrics (
+        day        TEXT    PRIMARY KEY,             -- YYYY-MM-DD
+        steps      INTEGER CHECK (steps >= 0),
+        sleep_min  REAL    CHECK (sleep_min >= 0 AND sleep_min <= 1440),
+        mood       INTEGER CHECK (mood BETWEEN 1 AND 5),
+        feelings   TEXT    NOT NULL DEFAULT '',     -- comma-separated keys
+        updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -92,6 +224,37 @@ def migrate(path: Path) -> int:
         return conn.execute("PRAGMA user_version").fetchone()["user_version"]
     finally:
         conn.close()
+
+
+CONFIG_ACTIVITY_TYPES_IMPORTED = "config_activity_types_imported"
+
+
+def import_config_activity_types(conn: sqlite3.Connection, types: Iterable) -> bool:
+    """One-time move of ``[[activity_types]]`` from info/config.toml into the database.
+
+    Types already in the database (matched by name, ignoring case) take the config's
+    MET and distance, since those were the user's own values; new ones are added under
+    "Custom". Returns False when the import had already happened."""
+    done = conn.execute(
+        "SELECT 1 FROM meta WHERE key = ?", (CONFIG_ACTIVITY_TYPES_IMPORTED,)
+    ).fetchone()
+    if done:
+        return False
+    for t in types:
+        cur = conn.execute(
+            "UPDATE activity_types SET met = ?, distance = ? WHERE name = ?",
+            (t.met, int(t.distance), t.name),
+        )
+        if cur.rowcount == 0:
+            conn.execute(
+                "INSERT INTO activity_types (name, category, met, distance) VALUES (?, ?, ?, ?)",
+                (t.name, "Custom", t.met, int(t.distance)),
+            )
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, datetime('now'))",
+        (CONFIG_ACTIVITY_TYPES_IMPORTED,),
+    )
+    return True
 
 
 @contextmanager

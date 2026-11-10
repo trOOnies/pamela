@@ -7,6 +7,7 @@ import pytest
 
 from pamela import db
 from pamela.config import (
+    ActivityType,
     ConfigError,
     ConfigStore,
     Settings,
@@ -21,8 +22,8 @@ def test_default_config_is_valid():
     cfg = parse_config(default_config_text())
     assert cfg.targets.kcal > 0
     assert cfg.meals.names[0] == "Breakfast"
-    assert cfg.activity_type("running").met == pytest.approx(9.8)
-    assert cfg.activity_type("nope") is None
+    assert cfg.targets.steps == 8000
+    assert cfg.activity_types == []  # they live in the database now
 
 
 def test_ensure_config_creates_file_once(tmp_path):
@@ -76,7 +77,29 @@ def test_migrate_is_idempotent(tmp_path):
         tables = {
             r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-    assert {"foods", "food_entries", "activities"} <= tables
+    assert {
+        "foods",
+        "food_entries",
+        "activities",
+        "saved_meals",
+        "saved_meal_items",
+        "activity_types",
+        "day_metrics",
+    } <= tables
+
+
+def test_import_config_activity_types_once(tmp_path):
+    path = tmp_path / "db.sqlite3"
+    db.migrate(path)
+    legacy = [ActivityType(name="running", met=11, distance=True), ActivityType(name="Pogo", met=6)]
+    with db.session(path) as conn:
+        assert db.import_config_activity_types(conn, legacy) is True
+        # a second run (e.g. after the user deleted a type in the app) changes nothing
+        conn.execute("DELETE FROM activity_types WHERE name = 'Pogo'")
+        assert db.import_config_activity_types(conn, legacy) is False
+        rows = {r["name"]: r for r in conn.execute("SELECT * FROM activity_types")}
+    assert rows["Running"]["met"] == 11  # the config's value wins, matched ignoring case
+    assert "Pogo" not in rows
 
 
 def test_session_rolls_back_on_error(tmp_path):

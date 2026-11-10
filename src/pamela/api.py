@@ -9,19 +9,32 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
-from . import db
+from . import barcode, db
 from .config import AppConfig
 from .schemas import (
+    DIET_FIELDS,
+    DIET_TAGS,
+    FEELINGS,
     MACRO_FIELDS,
+    MOODS,
     Activity,
     ActivityIn,
+    ActivityType,
+    ActivityTypeIn,
+    BarcodeLookup,
     Day,
+    DayMetrics,
+    DayMetricsIn,
     Entry,
+    EntryBatchIn,
     EntryIn,
     Food,
     FoodIn,
     HistoryDay,
     Macros,
+    SavedMeal,
+    SavedMealIn,
+    Vocabulary,
 )
 from .tracking import estimate_kcal, scale_macros
 
@@ -29,6 +42,7 @@ router = APIRouter(prefix="/api")
 
 MAX_HISTORY_DAYS = 366
 UNPROCESSABLE = 422
+BAD_GATEWAY = 502
 
 
 def get_conn(request: Request) -> Iterator[sqlite3.Connection]:
@@ -51,12 +65,24 @@ def _not_found(what: str) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, f"{what} not found")
 
 
+def _like(word: str) -> str:
+    return "%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
 # --- config ------------------------------------------------------------------
 
 
 @router.get("/config", response_model=AppConfig)
 def read_config(config: Config) -> AppConfig:
     return config
+
+
+@router.get("/vocab", response_model=Vocabulary)
+def read_vocab() -> dict:
+    def choices(d: dict) -> list[dict]:
+        return [{"key": str(k), "label": v} for k, v in d.items()]
+
+    return {"diet_tags": choices(DIET_TAGS), "moods": choices(MOODS), "feelings": choices(FEELINGS)}
 
 
 # --- foods -------------------------------------------------------------------
@@ -87,12 +113,14 @@ def list_foods(
 ) -> list[dict]:
     """Foods ordered by how often they were logged recently, then by name.
 
-    ``q`` matches every whitespace-separated word against name or brand."""
+    ``q`` matches every whitespace-separated word against name, brand or barcode."""
     where, params = [], []
     for word in q.split():
-        like = "%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        where.append("(f.name LIKE ? ESCAPE '\\' OR f.brand LIKE ? ESCAPE '\\')")
-        params += [like, like]
+        like = _like(word)
+        where.append(
+            "(f.name LIKE ? ESCAPE '\\' OR f.brand LIKE ? ESCAPE '\\' OR f.ean LIKE ? ESCAPE '\\')"
+        )
+        params += [like, like, like]
     sql = _FOOD_SELECT
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -100,13 +128,50 @@ def list_foods(
     return conn.execute(sql, (*params, limit)).fetchall()
 
 
+def _ean_conflict(conn: sqlite3.Connection, food: FoodIn, food_id: int | None = None) -> None:
+    if food.ean is None:
+        return
+    other = conn.execute(
+        "SELECT id, name FROM foods WHERE ean = ? AND id IS NOT ?", (food.ean, food_id)
+    ).fetchone()
+    if other:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"barcode {food.ean} already belongs to \u201c{other['name']}\u201d",
+        )
+
+
 @router.post("/foods", response_model=Food, status_code=status.HTTP_201_CREATED)
 def create_food(food: FoodIn, conn: Conn) -> dict:
+    _ean_conflict(conn, food)
     data = food.model_dump()
     cols = ", ".join(data)
     marks = ", ".join("?" * len(data))
     cur = conn.execute(f"INSERT INTO foods ({cols}) VALUES ({marks})", tuple(data.values()))
     return _food_row(conn, cur.lastrowid)
+
+
+@router.get("/barcode/{code}", response_model=BarcodeLookup)
+def lookup_barcode(code: str, conn: Conn, online: bool = True) -> dict:
+    """Find a product by barcode: first in the catalog, then on Open Food Facts.
+
+    An Open Food Facts hit comes back as a ``draft`` to review; nothing is saved."""
+    try:
+        ean = barcode.normalize_ean(code)
+    except ValueError as e:
+        raise HTTPException(UNPROCESSABLE, str(e)) from e
+    row = conn.execute(_FOOD_SELECT + " WHERE f.ean = ?", (ean,)).fetchone()
+    if row:
+        return {"ean": ean, "source": "catalog", "food": row}
+    if not online:
+        return {"ean": ean, "source": None}
+    try:
+        product = barcode.fetch_product(ean)
+    except barcode.LookupUnavailable as e:
+        raise HTTPException(BAD_GATEWAY, str(e)) from e
+    if product is None:
+        return {"ean": ean, "source": None}
+    return {"ean": ean, "source": "openfoodfacts", "draft": barcode.product_to_draft(ean, product)}
 
 
 @router.get("/foods/{food_id}", response_model=Food)
@@ -116,22 +181,132 @@ def read_food(food_id: int, conn: Conn) -> dict:
 
 @router.put("/foods/{food_id}", response_model=Food)
 def update_food(food_id: int, food: FoodIn, conn: Conn) -> dict:
+    _food_row(conn, food_id)
+    _ean_conflict(conn, food, food_id)
     data = food.model_dump()
     sets = ", ".join(f"{k} = ?" for k in data)
-    cur = conn.execute(
+    conn.execute(
         f"UPDATE foods SET {sets}, updated_at = datetime('now') WHERE id = ?",
         (*data.values(), food_id),
     )
-    if cur.rowcount == 0:
-        raise _not_found("food")
     return _food_row(conn, food_id)
 
 
 @router.delete("/foods/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_food(food_id: int, conn: Conn) -> Response:
-    """Logged entries keep their macro snapshot; they just lose the link."""
+    """Logged entries keep their macro snapshot; they just lose the link.
+    The food is also removed from any saved meal that contains it."""
     if conn.execute("DELETE FROM foods WHERE id = ?", (food_id,)).rowcount == 0:
         raise _not_found("food")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- saved meals -------------------------------------------------------------
+
+_ITEM_COLS = ", ".join(
+    f"f.{c}"
+    for c in (
+        "name",
+        "brand",
+        "unit",
+        "basis_qty",
+        "serving_qty",
+        "package_qty",
+        *MACRO_FIELDS,
+        *DIET_FIELDS,
+    )
+)
+
+
+def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> list[dict]:
+    where, params = ("WHERE id = ?", (saved_meal_id,)) if saved_meal_id is not None else ("", ())
+    meals = conn.execute(
+        f"SELECT * FROM saved_meals {where} ORDER BY name COLLATE NOCASE, id", params
+    ).fetchall()
+    item_where = "WHERE i.saved_meal_id = ?" if saved_meal_id is not None else ""
+    items = conn.execute(
+        f"""SELECT i.saved_meal_id, i.quantity, f.id AS food_id, {_ITEM_COLS}
+            FROM saved_meal_items i JOIN foods f ON f.id = i.food_id
+            {item_where} ORDER BY i.position, i.id""",
+        params,
+    ).fetchall()
+    by_meal: dict[int, list[dict]] = {m["id"]: [] for m in meals}
+    for it in items:
+        by_meal[it["saved_meal_id"]].append(it)
+    out = []
+    for m in meals:
+        rows = by_meal[m["id"]]
+        scaled = [it | scale_macros(it, it["quantity"]) for it in rows]
+        out.append(
+            m
+            | {
+                "items": scaled,
+                "totals": {k: sum(it[k] for it in scaled) for k in MACRO_FIELDS},
+                "tags": [t for t in DIET_FIELDS if rows and all(it[t] for it in rows)],
+            }
+        )
+    return out
+
+
+def _saved_meal(conn: sqlite3.Connection, saved_meal_id: int) -> dict:
+    found = _saved_meals(conn, saved_meal_id)
+    if not found:
+        raise _not_found("saved meal")
+    return found[0]
+
+
+def _store_items(conn: sqlite3.Connection, saved_meal_id: int, meal: SavedMealIn) -> None:
+    ids = {it.food_id for it in meal.items}
+    marks = ", ".join("?" * len(ids))
+    known = {r["id"] for r in conn.execute(f"SELECT id FROM foods WHERE id IN ({marks})", (*ids,))}
+    if missing := ids - known:
+        raise HTTPException(UNPROCESSABLE, f"food not found: {', '.join(map(str, missing))}")
+    conn.execute("DELETE FROM saved_meal_items WHERE saved_meal_id = ?", (saved_meal_id,))
+    conn.executemany(
+        "INSERT INTO saved_meal_items (saved_meal_id, food_id, quantity, position) "
+        "VALUES (?, ?, ?, ?)",
+        [(saved_meal_id, it.food_id, it.quantity, i) for i, it in enumerate(meal.items)],
+    )
+
+
+@router.get("/saved-meals", response_model=list[SavedMeal])
+def list_saved_meals(conn: Conn) -> list[dict]:
+    return _saved_meals(conn)
+
+
+@router.post("/saved-meals", response_model=SavedMeal, status_code=status.HTTP_201_CREATED)
+def create_saved_meal(meal: SavedMealIn, conn: Conn) -> dict:
+    cur = conn.execute(
+        "INSERT INTO saved_meals (name, default_meal) VALUES (?, ?)",
+        (meal.name, meal.default_meal),
+    )
+    _store_items(conn, cur.lastrowid, meal)
+    return _saved_meal(conn, cur.lastrowid)
+
+
+@router.get("/saved-meals/{saved_meal_id}", response_model=SavedMeal)
+def read_saved_meal(saved_meal_id: int, conn: Conn) -> dict:
+    return _saved_meal(conn, saved_meal_id)
+
+
+@router.put("/saved-meals/{saved_meal_id}", response_model=SavedMeal)
+def update_saved_meal(saved_meal_id: int, meal: SavedMealIn, conn: Conn) -> dict:
+    cur = conn.execute(
+        "UPDATE saved_meals SET name = ?, default_meal = ?, updated_at = datetime('now') "
+        "WHERE id = ?",
+        (meal.name, meal.default_meal, saved_meal_id),
+    )
+    if cur.rowcount == 0:
+        raise _not_found("saved meal")
+    _store_items(conn, saved_meal_id, meal)
+    return _saved_meal(conn, saved_meal_id)
+
+
+@router.delete("/saved-meals/{saved_meal_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_saved_meal(saved_meal_id: int, conn: Conn) -> Response:
+    """Entries already logged from it are untouched."""
+    if conn.execute("DELETE FROM saved_meals WHERE id = ?", (saved_meal_id,)).rowcount == 0:
+        raise _not_found("saved meal")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -175,15 +350,33 @@ def _entry_row(conn: sqlite3.Connection, entry_id: int) -> dict:
     return row
 
 
-@router.post("/entries", response_model=Entry, status_code=status.HTTP_201_CREATED)
-def create_entry(entry: EntryIn, conn: Conn, config: Config) -> dict:
+def _insert_entry(conn: sqlite3.Connection, entry: EntryIn, config: AppConfig) -> int:
     values = _entry_values(entry, conn, config)
     cols = ", ".join(values)
     marks = ", ".join("?" * len(values))
     cur = conn.execute(
         f"INSERT INTO food_entries ({cols}) VALUES ({marks})", tuple(values.values())
     )
-    return _entry_row(conn, cur.lastrowid)
+    return cur.lastrowid
+
+
+@router.post("/entries", response_model=Entry, status_code=status.HTTP_201_CREATED)
+def create_entry(entry: EntryIn, conn: Conn, config: Config) -> dict:
+    return _entry_row(conn, _insert_entry(conn, entry, config))
+
+
+@router.post("/entries/batch", response_model=list[Entry], status_code=status.HTTP_201_CREATED)
+def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict]:
+    """Log several foods into one meal, all or nothing."""
+    ids = [
+        _insert_entry(
+            conn,
+            EntryIn(day=batch.day, meal=batch.meal, food_id=it.food_id, quantity=it.quantity),
+            config,
+        )
+        for it in batch.items
+    ]
+    return [_entry_row(conn, i) for i in ids]
 
 
 @router.put("/entries/{entry_id}", response_model=Entry)
@@ -202,21 +395,91 @@ def delete_entry(entry_id: int, conn: Conn) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+# --- activity types ----------------------------------------------------------
+
+# Categories keep the order in which they first appear (the seed order).
+_TYPE_SELECT = """
+    SELECT t.*, COALESCE(u.uses, 0) AS uses
+    FROM activity_types t
+    LEFT JOIN (
+        SELECT lower(type) AS k, COUNT(*) AS uses FROM activities
+        WHERE day >= date('now', '-90 days') GROUP BY lower(type)
+    ) u ON u.k = lower(t.name)
+"""
+_TYPE_ORDER = """
+    ORDER BY (SELECT MIN(c.id) FROM activity_types c WHERE c.category = t.category),
+             t.name COLLATE NOCASE
+"""
+
+
+def _type_row(conn: sqlite3.Connection, type_id: int) -> dict:
+    row = conn.execute(_TYPE_SELECT + " WHERE t.id = ?", (type_id,)).fetchone()
+    if row is None:
+        raise _not_found("activity type")
+    return row
+
+
+def _type_conflict(conn: sqlite3.Connection, t: ActivityTypeIn, type_id: int | None = None) -> None:
+    other = conn.execute(
+        "SELECT id FROM activity_types WHERE name = ? AND id IS NOT ?", (t.name, type_id)
+    ).fetchone()
+    if other:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"there is already a type named {t.name!r}")
+
+
+@router.get("/activity-types", response_model=list[ActivityType])
+def list_activity_types(conn: Conn) -> list[dict]:
+    return conn.execute(_TYPE_SELECT + _TYPE_ORDER).fetchall()
+
+
+@router.post("/activity-types", response_model=ActivityType, status_code=status.HTTP_201_CREATED)
+def create_activity_type(t: ActivityTypeIn, conn: Conn) -> dict:
+    _type_conflict(conn, t)
+    cur = conn.execute(
+        "INSERT INTO activity_types (name, category, met, distance) VALUES (?, ?, ?, ?)",
+        (t.name, t.category, t.met, int(t.distance)),
+    )
+    return _type_row(conn, cur.lastrowid)
+
+
+@router.put("/activity-types/{type_id}", response_model=ActivityType)
+def update_activity_type(type_id: int, t: ActivityTypeIn, conn: Conn) -> dict:
+    """Logged activities keep the name they were logged with."""
+    _type_row(conn, type_id)
+    _type_conflict(conn, t, type_id)
+    conn.execute(
+        "UPDATE activity_types SET name = ?, category = ?, met = ?, distance = ? WHERE id = ?",
+        (t.name, t.category, t.met, int(t.distance), type_id),
+    )
+    return _type_row(conn, type_id)
+
+
+@router.delete("/activity-types/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_activity_type(type_id: int, conn: Conn) -> Response:
+    if conn.execute("DELETE FROM activity_types WHERE id = ?", (type_id,)).rowcount == 0:
+        raise _not_found("activity type")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # --- activities --------------------------------------------------------------
 
 
-def _activity_values(activity: ActivityIn, config: AppConfig) -> dict:
+def _activity_values(activity: ActivityIn, conn: sqlite3.Connection, config: AppConfig) -> dict:
     values = activity.model_dump()
     values["day"] = activity.day.isoformat()
     if activity.kcal is None:
-        atype = config.activity_type(activity.type)
+        atype = conn.execute(
+            "SELECT met FROM activity_types WHERE name = ?", (activity.type,)
+        ).fetchone()
         if atype is None:
             raise HTTPException(
                 UNPROCESSABLE,
                 f"unknown activity type {activity.type!r}: enter kcal manually "
-                "or add the type to info/config.toml",
+                "or add the type in Settings",
             )
-        values["kcal"] = estimate_kcal(atype.met, config.profile.weight_kg, activity.duration_min)
+        values["kcal"] = estimate_kcal(
+            atype["met"], config.profile.weight_kg, activity.duration_min
+        )
         values["kcal_estimated"] = 1
     else:
         values["kcal_estimated"] = 0
@@ -232,7 +495,7 @@ def _activity_row(conn: sqlite3.Connection, activity_id: int) -> dict:
 
 @router.post("/activities", response_model=Activity, status_code=status.HTTP_201_CREATED)
 def create_activity(activity: ActivityIn, conn: Conn, config: Config) -> dict:
-    values = _activity_values(activity, config)
+    values = _activity_values(activity, conn, config)
     cols = ", ".join(values)
     marks = ", ".join("?" * len(values))
     cur = conn.execute(f"INSERT INTO activities ({cols}) VALUES ({marks})", tuple(values.values()))
@@ -242,7 +505,7 @@ def create_activity(activity: ActivityIn, conn: Conn, config: Config) -> dict:
 @router.put("/activities/{activity_id}", response_model=Activity)
 def update_activity(activity_id: int, activity: ActivityIn, conn: Conn, config: Config) -> dict:
     _activity_row(conn, activity_id)
-    values = _activity_values(activity, config)
+    values = _activity_values(activity, conn, config)
     sets = ", ".join(f"{k} = ?" for k in values)
     conn.execute(f"UPDATE activities SET {sets} WHERE id = ?", (*values.values(), activity_id))
     return _activity_row(conn, activity_id)
@@ -253,6 +516,46 @@ def delete_activity(activity_id: int, conn: Conn) -> Response:
     if conn.execute("DELETE FROM activities WHERE id = ?", (activity_id,)).rowcount == 0:
         raise _not_found("activity")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- daily metrics -----------------------------------------------------------
+
+
+def _metrics(conn: sqlite3.Connection, iso: str) -> dict:
+    row = conn.execute("SELECT * FROM day_metrics WHERE day = ?", (iso,)).fetchone()
+    if row is None:
+        return DayMetrics().model_dump()
+    return {
+        "steps": row["steps"],
+        "sleep_min": row["sleep_min"],
+        "mood": row["mood"],
+        "feelings": [f for f in row["feelings"].split(",") if f],
+    }
+
+
+@router.get("/days/{day}/metrics", response_model=DayMetrics)
+def read_day_metrics(day: dt.date, conn: Conn) -> dict:
+    return _metrics(conn, day.isoformat())
+
+
+@router.put("/days/{day}/metrics", response_model=DayMetrics)
+def update_day_metrics(day: dt.date, metrics: DayMetricsIn, conn: Conn) -> dict:
+    """Steps, sleep and mood for a day; send every field (empty ones are cleared)."""
+    iso = day.isoformat()
+    m = metrics
+    if m.steps is None and m.sleep_min is None and m.mood is None and not m.feelings:
+        conn.execute("DELETE FROM day_metrics WHERE day = ?", (iso,))
+    else:
+        conn.execute(
+            """INSERT INTO day_metrics (day, steps, sleep_min, mood, feelings)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (day) DO UPDATE SET
+                 steps = excluded.steps, sleep_min = excluded.sleep_min,
+                 mood = excluded.mood, feelings = excluded.feelings,
+                 updated_at = datetime('now')""",
+            (iso, m.steps, m.sleep_min, m.mood, ",".join(m.feelings)),
+        )
+    return _metrics(conn, iso)
 
 
 # --- aggregates --------------------------------------------------------------
@@ -275,6 +578,7 @@ def read_day(day: dt.date, conn: Conn) -> dict:
         "totals": totals,
         "burned_kcal": sum(a["kcal"] for a in activities),
         "active_min": sum(a["duration_min"] for a in activities),
+        "metrics": _metrics(conn, iso),
     }
 
 
@@ -309,10 +613,17 @@ def read_history(
             span,
         )
     }
+    metrics = {
+        r["day"]: r
+        for r in conn.execute(
+            "SELECT day, steps, sleep_min, mood FROM day_metrics WHERE day BETWEEN ? AND ?", span
+        )
+    }
     out = []
     for i in range((end - start).days + 1):
         d = start + dt.timedelta(days=i)
-        f, a = food.get(d.isoformat()), act.get(d.isoformat())
+        iso = d.isoformat()
+        f, a, m = food.get(iso), act.get(iso), metrics.get(iso)
         out.append(
             HistoryDay(
                 day=d,
@@ -320,6 +631,7 @@ def read_history(
                 burned_kcal=a["kcal"] if a else 0,
                 active_min=a["mins"] if a else 0,
                 **({k: f[k] for k in MACRO_FIELDS} if f else {}),
+                **({k: m[k] for k in ("steps", "sleep_min", "mood")} if m else {}),
             )
         )
     return out

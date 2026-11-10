@@ -22,14 +22,24 @@ Or without `make`: `pamela --reload` (options: `--host`, `--port`).
   or use *Quick add* to enter the macros directly. Click an amount to edit it. Log activities;
   if you leave kcal empty, it's estimated from the activity's MET value and your body weight.
   The summary shows kcal and macros against your targets, plus burned and net kcal.
+  Foods with a serving or package size offer quick portions (*1 serving*, *½ pack*…).
+  *Saved meal* mode loads a saved meal as an editable draft that is only logged when you
+  press *Log*. The *Check-in* card holds daily steps, sleep and mood (with feelings).
+  Activity types are grouped by category, recently used first.
   Keys `[` / `]` move to the previous or next day.
-- **Foods**: catalog of foods with macros per *N* units (e.g. per 100 g, per 1 slice).
+- **Foods**: catalog of foods with macros per *N* units (e.g. per 100 g, per 1 slice),
+  optional serving and package sizes, and diet tags (vegetarian, vegan, kosher, lactose-free,
+  peanut-free, TACC-free). Type or scan a barcode (EAN) and press *Look up*: it's searched in
+  the catalog, then on [Open Food Facts](https://world.openfoodfacts.org) (only the barcode is
+  sent), and the form is filled in for you to review. Foods are saved with their barcode.
   Foods you log often are listed first. Editing or deleting a food doesn't change past log
   entries, because each entry stores a snapshot of its macros.
-- **History**: daily kcal and protein charts against your targets, averages, and a
-  per-day table (click a day to open it).
+- **Saved meals**: fixed mixes of catalog foods (or *☆ save* a meal from the Day tab).
+- **History**: daily kcal, protein, steps and sleep charts against your targets, averages,
+  and a per-day table with mood (click a day to open it).
+- **Settings**: the exercise types (about 75 built in, with MET values), editable.
 - **Help**: how each tab works, keyboard shortcuts, and your current settings from
-  `info/config.toml` (targets, meals, activity types with estimated kcal/hour). Press `?` to open it.
+  `info/config.toml` (targets and meals). Press `?` to open it.
 
 ## Folders
 
@@ -44,7 +54,9 @@ You can point them somewhere else with the `PAMELA_LOCAL_DIR` / `PAMELA_INFO_DIR
 ### `info/config.toml`
 
 Holds the profile (body weight for calorie estimates), daily targets (kcal, protein, carbs,
-fat, fiber), meal names, and activity types (name, MET, whether it has a distance).
+fat, fiber, steps, hours of sleep) and meal names. Activity types used to live here; they
+are now in the database (Settings tab). An old `[[activity_types]]` list is imported once
+on the first start after upgrading and ignored afterwards, so you can delete it.
 Changes are picked up without restarting: switch back to the browser tab and the page
 reloads them. If the file has a mistake, a red banner shows what's wrong. The template is
 `src/pamela/defaults/config.toml`.
