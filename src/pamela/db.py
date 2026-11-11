@@ -227,7 +227,73 @@ MIGRATIONS: list[str] = [
     );
     INSERT INTO profile (id) VALUES (1);
     """,
+    # 5: an optional emoji per exercise type ('' = use its group's default), filled
+    # in for the built-in types.
+    """
+    ALTER TABLE activity_types ADD COLUMN emoji TEXT NOT NULL DEFAULT '';
+    CREATE TEMP TABLE _emoji (name TEXT PRIMARY KEY, emoji TEXT NOT NULL);
+    INSERT INTO _emoji (name, emoji) VALUES
+        ('Walking', '🚶'), ('Brisk walking', '🚶‍♀️'), ('Nordic walking', '🚶‍♂️'),
+        ('Running', '🏃'), ('Jogging', '🏃‍♀️'), ('Trail running', '⛰️'),
+        ('Treadmill running', '🏃‍♂️'), ('Treadmill walking (incline)', '📈'),
+        ('Cycling', '🚴'), ('Mountain biking', '🚵'),
+        ('Stationary bike, light', '🚲'), ('Stationary bike, moderate', '🚲'),
+        ('Stationary bike, vigorous', '🚲'), ('Spinning class', '🚴‍♀️'),
+        ('Elliptical trainer', '🔄'), ('Rowing machine', '🚣'), ('Stair climber', '🪜'),
+        ('Jump rope', '🪢'),
+        ('Strength training', '🏋️'), ('Weightlifting, vigorous', '🏋️‍♂️'),
+        ('Powerlifting', '🏋️‍♀️'), ('CrossFit', '🔥'), ('HIIT', '⏱️'),
+        ('Circuit training', '🔁'), ('Functional training', '🤸'),
+        ('Kettlebell training', '💪'), ('Calisthenics', '🤸‍♂️'),
+        ('TRX / suspension training', '⛓️'), ('Core / abs workout', '🎯'),
+        ('Yoga', '🧘'), ('Power yoga', '🧘‍♀️'), ('Pilates', '🤸‍♀️'), ('Stretching', '🙆'),
+        ('Tai chi', '☯️'),
+        ('Aerobics', '🎽'), ('Step aerobics', '👟'), ('Zumba', '💃'), ('Dancing', '🕺'),
+        ('Aqua aerobics', '🏊‍♀️'), ('Boxing (bag work)', '🥊'), ('Boxing, sparring', '🥊'),
+        ('Kickboxing', '🦵'), ('Martial arts', '🥋'),
+        ('Football (soccer)', '⚽'), ('Football 5-a-side', '🥅'), ('Basketball', '🏀'),
+        ('Volleyball', '🏐'), ('Beach volleyball', '🏖️'), ('Tennis', '🎾'), ('Padel', '🎾'),
+        ('Squash', '🧱'), ('Badminton', '🏸'), ('Table tennis', '🏓'), ('Rugby', '🏉'),
+        ('Field hockey', '🏑'), ('Handball', '🤾'), ('Golf (walking)', '⛳'),
+        ('Swimming', '🏊'), ('Swimming laps, vigorous', '🏊‍♂️'), ('Hiking', '🥾'),
+        ('Climbing / bouldering', '🧗'), ('Inline skating', '🛼'), ('Ice skating', '⛸️'),
+        ('Skateboarding', '🛹'), ('Downhill skiing', '⛷️'), ('Cross-country skiing', '🎿'),
+        ('Snowboarding', '🏂'), ('Surfing', '🏄'), ('Kayaking / canoeing', '🛶'),
+        ('Stand-up paddle', '🏄‍♂️'), ('Horse riding', '🏇'),
+        ('Walking the dog', '🐕'), ('Gardening', '🌱'), ('Housework', '🧹'),
+        ('Playing with kids (active)', '🧒');
+    UPDATE activity_types
+       SET emoji = (SELECT e.emoji FROM _emoji e WHERE e.name = activity_types.name)
+     WHERE name IN (SELECT name FROM _emoji);
+    DROP TABLE _emoji;
+    """,
 ]
+
+# Shown for an exercise type without an emoji of its own.
+CATEGORY_EMOJI: dict[str, str] = {
+    "Cardio": "🏃",
+    "Gym & strength": "🏋️",
+    "Mind & body": "🧘",
+    "Classes & combat": "🥊",
+    "Sports": "🏅",
+    "Outdoors & water": "🏞️",
+    "Everyday": "🏡",
+    "Other": "✨",
+}
+DEFAULT_CATEGORY_EMOJI = "💪"
+
+
+def category_emoji(category: str) -> str:
+    return CATEGORY_EMOJI.get(category, DEFAULT_CATEGORY_EMOJI)
+
+
+def checkpoint(path: Path) -> None:
+    """Fold the WAL into the main file, so the database is one self-contained file."""
+    conn = connect(path)
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        conn.close()
 
 
 def _dict_row(cursor: sqlite3.Cursor, row: tuple) -> dict:

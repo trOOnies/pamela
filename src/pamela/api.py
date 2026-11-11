@@ -531,7 +531,7 @@ def _type_row(conn: sqlite3.Connection, type_id: int) -> dict:
     row = conn.execute(_TYPE_SELECT + " WHERE t.id = ?", (type_id,)).fetchone()
     if row is None:
         raise _not_found("activity type")
-    return row
+    return _with_icons(row)
 
 
 def _type_conflict(conn: sqlite3.Connection, t: ActivityTypeIn, type_id: int | None = None) -> None:
@@ -542,17 +542,23 @@ def _type_conflict(conn: sqlite3.Connection, t: ActivityTypeIn, type_id: int | N
         raise HTTPException(status.HTTP_409_CONFLICT, f"there is already a type named {t.name!r}")
 
 
+def _with_icons(row: dict) -> dict:
+    row["category_icon"] = db.category_emoji(row["category"])
+    row["icon"] = row["emoji"] or row["category_icon"]
+    return row
+
+
 @router.get("/activity-types", response_model=list[ActivityType])
 def list_activity_types(conn: Conn) -> list[dict]:
-    return conn.execute(_TYPE_SELECT + _TYPE_ORDER).fetchall()
+    return [_with_icons(r) for r in conn.execute(_TYPE_SELECT + _TYPE_ORDER).fetchall()]
 
 
 @router.post("/activity-types", response_model=ActivityType, status_code=status.HTTP_201_CREATED)
 def create_activity_type(t: ActivityTypeIn, conn: Conn) -> dict:
     _type_conflict(conn, t)
     cur = conn.execute(
-        "INSERT INTO activity_types (name, category, met, distance) VALUES (?, ?, ?, ?)",
-        (t.name, t.category, t.met, int(t.distance)),
+        "INSERT INTO activity_types (name, category, met, distance, emoji) VALUES (?, ?, ?, ?, ?)",
+        (t.name, t.category, t.met, int(t.distance), t.emoji),
     )
     return _type_row(conn, cur.lastrowid)
 
@@ -563,8 +569,9 @@ def update_activity_type(type_id: int, t: ActivityTypeIn, conn: Conn) -> dict:
     _type_row(conn, type_id)
     _type_conflict(conn, t, type_id)
     conn.execute(
-        "UPDATE activity_types SET name = ?, category = ?, met = ?, distance = ? WHERE id = ?",
-        (t.name, t.category, t.met, int(t.distance), type_id),
+        "UPDATE activity_types SET name = ?, category = ?, met = ?, distance = ?, emoji = ?"
+        " WHERE id = ?",
+        (t.name, t.category, t.met, int(t.distance), t.emoji, type_id),
     )
     return _type_row(conn, type_id)
 

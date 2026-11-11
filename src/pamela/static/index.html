@@ -29,6 +29,7 @@
       <button type="button" class="btn ghost" id="today-btn" title="Go to today">Today</button>
       <span class="sr" id="day-today" aria-live="polite"></span>
     </div>
+    <button type="button" class="btn ghost exit-btn" id="exit-btn" title="Save &amp; close Pamela"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.56v16.16a1 1 0 0 1-1.24.97L5 20V5.56a2 2 0 0 1 1.52-1.94l4-1A2 2 0 0 1 13 4.56z"/></svg><span>Exit</span></button>
   </header>
 
   <div id="banner" class="banner" role="alert" hidden></div>
@@ -329,9 +330,12 @@
         </div>
         <form id="at-form" class="at-form" autocomplete="off">
           <label class="field span2"><span>Name</span><input type="text" name="name" required maxlength="100" placeholder="e.g. Indoor rowing class"></label>
-          <label class="field span2"><span>Category</span>
+          <label class="field"><span>Group</span>
             <input type="text" name="category" required maxlength="60" list="at-categories" value="Other">
             <datalist id="at-categories"></datalist></label>
+          <label class="field emoji-field"><span>Emoji <small>(optional)</small></span>
+            <input type="text" name="emoji" maxlength="16" autocomplete="off"
+                   title="Leave empty to use the group's emoji, shown greyed out"></label>
           <label class="field"><span>MET</span><input type="number" name="met" min="0.1" max="30" step="any" required></label>
           <label class="field check"><input type="checkbox" name="distance"><span>Ask for distance</span></label>
           <p class="hint span2" id="at-hint"></p>
@@ -357,64 +361,113 @@
     </section>
 
     <!-- Help ------------------------------------------------------------ -->
-    <section id="view-help" class="view help-grid" hidden>
-      <section class="card help-card" aria-labelledby="help-day-h">
-        <h2 id="help-day-h">📅 Day</h2>
-        <p>This is where you log your day: what you eat, how you move, and how you feel.
-          Use the arrows or the date at the top to change day, or press <kbd>[</kbd> and <kbd>]</kbd>.
-          Dates are shown as year-month-day. The <b>Today</b> button is highlighted when you're on today,
-          and days in the future can't be opened yet.</p>
-
-        <h3>🍽️ Logging a food</h3>
+    <section id="view-help" class="view help-layout" hidden>
+      <nav class="card help-index" aria-labelledby="help-index-h">
+        <h2 id="help-index-h">Contents</h2>
         <ol>
-          <li>Pick the meal. It already guesses one from the time of day.</li>
-          <li>Start typing the food's name, brand or barcode, then choose it with <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Enter</kbd>.</li>
-          <li>Type how much you had and press <kbd>Enter</kbd>. The line under the form shows what you're adding.</li>
+          <li><a href="#/help" data-jump="help-intro">👋 Welcome to Pamela</a></li>
+          <li><a href="#/help" data-jump="help-day">📅 Day</a>
+            <ol>
+              <li><a href="#/help" data-jump="help-day-food">Logging a food</a></li>
+              <li><a href="#/help" data-jump="help-day-saved">Saved meals</a></li>
+              <li><a href="#/help" data-jump="help-day-quick">Quick add</a></li>
+              <li><a href="#/help" data-jump="help-day-fix">Fixing the log</a></li>
+              <li><a href="#/help" data-jump="help-day-checkin">Check-in</a></li>
+              <li><a href="#/help" data-jump="help-day-body">Weight and body fat</a></li>
+              <li><a href="#/help" data-jump="help-day-notes">Notes</a></li>
+              <li><a href="#/help" data-jump="help-day-activity">Activity</a></li>
+              <li><a href="#/help" data-jump="help-day-summary">Summary</a></li>
+            </ol></li>
+          <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
+          <li><a href="#/help" data-jump="help-meals">⭐ Saved meals</a></li>
+          <li><a href="#/help" data-jump="help-history">📈 History</a></li>
+          <li><a href="#/help" data-jump="help-settings-tab">⚙️ Settings</a></li>
+          <li><a href="#/help" data-jump="help-exit">🚪 Closing Pamela</a></li>
+          <li><a href="#/help" data-jump="help-keys">⌨️ Shortcuts</a></li>
+          <li><a href="#/help" data-jump="help-setup">🗂️ Your setup</a></li>
+          <li><a href="#/help" data-jump="help-disclaimer">ℹ️ Important information</a></li>
         </ol>
-        <p>🥄 Had only part of it? If the food has a serving or package size, tap
-          <i>1 serving</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
-        <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
-          the list, and the Foods tab opens with it filled in.</p>
+      </nav>
 
-        <h3>⭐ Saved meals</h3>
-        <p>Switch to <b>Saved meal</b> and pick one. Its foods show up as a <i>draft</i>:
-          change amounts, remove things, add extras. Nothing is logged until you press <b>Log</b>,
-          and the saved meal itself stays exactly as it was.</p>
+      <div class="help-content">
+        <section class="card help-card help-intro" id="help-intro" aria-labelledby="help-intro-h">
+          <h2 id="help-intro-h">👋 Welcome to Pamela</h2>
+          <p>Pamela is your personal food and fitness diary. Each day you can log what you eat,
+            how you move, how you slept and how you feel, and then look back over weeks and months
+            to see how it all adds up.</p>
+          <p>🏠 <b>It's all yours, on your computer.</b> Pamela runs on your own machine and keeps
+            everything in a single file, <code>local/pamela.sqlite3</code>. There's no account and
+            nothing is uploaded. The only time it goes online is when you look up a barcode, and
+            then only the barcode itself is sent.</p>
+          <p>💾 <b>No save button needed.</b> Everything you add or change is saved the moment you do it.</p>
+          <p>🗺️ <b>Finding your way.</b> The tabs at the top are the parts of the app:</p>
+          <ul class="help-tour">
+            <li><b>Day</b>: your diary for one day. This is where you'll spend most of your time.</li>
+            <li><b>Foods</b>: your own list of foods and their nutrition.</li>
+            <li><b>Saved meals</b>: combos you eat often, ready to log in one go.</li>
+            <li><b>History</b>: charts and totals over 7, 30 or 90 days.</li>
+            <li><b>Settings</b>: your targets, profile and exercise types.</li>
+            <li><b>Help</b>: this page. Press <kbd>?</kbd> to come back any time.</li>
+          </ul>
+          <p>When you're done, press <b>🚪 Exit</b> in the top right corner to close Pamela properly.</p>
+        </section>
 
-        <h3>⚡ Quick add</h3>
-        <p>For one-offs, like a restaurant dish: type a name and the calories and macros you know.</p>
+        <section class="card help-card" id="help-day" aria-labelledby="help-day-h">
+          <h2 id="help-day-h">📅 Day</h2>
+          <p>This is where you log your day: what you eat, how you move, and how you feel.
+            Use the arrows or the date at the top to change day, or press <kbd>[</kbd> and <kbd>]</kbd>.
+            Dates are shown as year-month-day. The <b>Today</b> button is highlighted when you're on today,
+            and days in the future can't be opened yet.</p>
 
-        <h3>✏️ Fixing the log</h3>
-        <p>Click an amount to change it (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels).
-          <b>+ add</b> logs straight into that meal, <b>☆ save</b> keeps its foods as a saved meal,
-          and <b>✕</b> deletes a row.</p>
+          <h3 id="help-day-food">🍽️ Logging a food</h3>
+          <ol>
+            <li>Pick the meal. It already guesses one from the time of day.</li>
+            <li>Start typing the food's name, brand or barcode, then choose it with <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Enter</kbd>.</li>
+            <li>Type how much you had and press <kbd>Enter</kbd>. The line under the form shows what you're adding.</li>
+          </ol>
+          <p>🥄 Had only part of it? If the food has a serving or package size, tap
+            <i>1 serving</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
+          <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
+            the list, and the Foods tab opens with it filled in.</p>
 
-        <h3>💭 Check-in</h3>
-        <p>👟 Steps, 😴 hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>),
-          and how your day felt. Pick a mood from 😣 to 😄 (tap it again to clear), and any feelings
-          that fit. They're grouped by kind: 😊 content, ⚡ driven, 😬 tense, 🌧️ down and 🪫 drained.
-          Everything saves on its own.</p>
+          <h3 id="help-day-saved">⭐ Saved meals</h3>
+          <p>Switch to <b>Saved meal</b> and pick one. Its foods show up as a <i>draft</i>:
+            change amounts, remove things, add extras. Nothing is logged until you press <b>Log</b>,
+            and the saved meal itself stays exactly as it was.</p>
 
-        <h3>⚖️ Weight and body fat</h3>
-        <p>Also in the check-in: your weight in kg and body fat in %, whenever you measure them.
-          Below them you'll see the change since your previous weigh-in and, if your height is
-          set in Settings, your BMI.</p>
+          <h3 id="help-day-quick">⚡ Quick add</h3>
+          <p>For one-offs, like a restaurant dish: type a name and the calories and macros you know.</p>
 
-        <h3>📝 Notes</h3>
-        <p>An optional space for a few words on how the day went. It saves when you click away,
-          and days with a note show 📝 in History.</p>
+          <h3 id="help-day-fix">✏️ Fixing the log</h3>
+          <p>Click an amount to change it (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels).
+            <b>+ add</b> logs straight into that meal, <b>☆ save</b> keeps its foods as a saved meal,
+            and <b>✕</b> deletes a row.</p>
 
-        <h3>🏃 Activity</h3>
-        <p>Choose what you did and for how long. Leave <b>kcal</b> empty and it's estimated for you
-          from your latest logged body weight (the box shows the guess). Types you use often appear at the top.</p>
+          <h3 id="help-day-checkin">💭 Check-in</h3>
+          <p>👟 Steps, 😴 hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>),
+            and how your day felt. Pick a mood from 😣 to 😄 (tap it again to clear), and any feelings
+            that fit. They're grouped by kind: 😊 content, ⚡ driven, 😬 tense, 🌧️ down and 🪫 drained.
+            Everything saves on its own.</p>
 
-        <h3>📊 Summary</h3>
-        <p>Calories and macros against that day's targets. Anything over target turns amber.
-          <b>Net kcal</b> is what you ate minus what you burned.</p>
-      </section>
+          <h3 id="help-day-body">⚖️ Weight and body fat</h3>
+          <p>Also in the check-in: your weight in kg and body fat in %, whenever you measure them.
+            Below them you'll see the change since your previous weigh-in and, if your height is
+            set in Settings, your BMI.</p>
 
-      <div class="help-col">
-        <section class="card help-card" aria-labelledby="help-foods-h">
+          <h3 id="help-day-notes">📝 Notes</h3>
+          <p>An optional space for a few words on how the day went. It saves when you click away,
+            and days with a note show 📝 in History.</p>
+
+          <h3 id="help-day-activity">🏃 Activity</h3>
+          <p>Choose what you did and for how long. Leave <b>kcal</b> empty and it's estimated for you
+            from your latest logged body weight (the box shows the guess). Types you use often appear at the top.</p>
+
+          <h3 id="help-day-summary">📊 Summary</h3>
+          <p>Calories and macros against that day's targets. Anything over target turns amber.
+            <b>Net kcal</b> is what you ate minus what you burned.</p>
+        </section>
+
+        <section class="card help-card" id="help-foods" aria-labelledby="help-foods-h">
           <h2 id="help-foods-h">🥫 Foods</h2>
           <p>Your own food list. Each food has its nutrition per an amount you choose, like
             <i>per 100 g</i> or <i>per 1 slice</i>, and logging works out the rest.</p>
@@ -433,21 +486,21 @@
           <p>🔒 Editing or deleting a food never changes days you already logged.</p>
         </section>
 
-        <section class="card help-card" aria-labelledby="help-meals-h">
+        <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">
           <h2 id="help-meals-h">⭐ Saved meals</h2>
           <p>Combos you eat often, like your usual breakfast. Build one here, or press
             <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> picks the meal for you, and the
             tags show what all its foods have in common.</p>
         </section>
 
-        <section class="card help-card" aria-labelledby="help-history-h">
+        <section class="card help-card" id="help-history" aria-labelledby="help-history-h">
           <h2 id="help-history-h">📈 History</h2>
           <p>Calories, protein, steps, sleep, body weight and body fat for the last 7, 30 or 90 days. The dashed line is
             your target, and it steps up or down where a target changed. Click a bar or a row to
             jump to that day.</p>
         </section>
 
-        <section class="card help-card" aria-labelledby="help-settings-tab-h">
+        <section class="card help-card" id="help-settings-tab" aria-labelledby="help-settings-tab-h">
           <h2 id="help-settings-tab-h">⚙️ Settings</h2>
           <p>🎯 <b>Daily targets</b>: press the ✏️ pencil to change one. Use a <i>single value</i>
             for every day, or <i>custom periods</i> if your goal changed over time. Each day uses
@@ -456,10 +509,24 @@
           <p>🧍 <b>Profile</b>: your gender and height (cm). Height is used for BMI; gender is
             only stored and isn't used in any calculation.</p>
           <p>🏋️ <b>Exercise types</b>: about 75 built in, from CrossFit to padel. Add your own
-            or adjust how many calories each one burns.</p>
+            or adjust how many calories each one burns. Each type can have its own emoji; leave it
+            empty and it uses its group's (🏃 cardio, 🏋️ gym &amp; strength, 🧘 mind &amp; body,
+            🥊 classes &amp; combat, 🏅 sports, 🏞️ outdoors &amp; water, 🏡 everyday, and 💪 for
+            groups you make up).</p>
         </section>
 
-        <section class="card help-card" aria-labelledby="help-keys-h">
+        <section class="card help-card" id="help-exit" aria-labelledby="help-exit-h">
+          <h2 id="help-exit-h">🚪 Closing Pamela</h2>
+          <p>Press <b>Exit</b> in the top right corner and confirm. Pamela waits for anything still
+            being saved, tidies up its database file and stops its server, so nothing is left
+            running in the background. Your browser may not let a page close its own tab; if the tab
+            stays open, just close it.</p>
+          <p>Everything you've added is already saved as you go, so if the window closes by
+            accident you won't lose anything. Exit is simply the clean way to finish. To start again,
+            run <code>make serve</code>.</p>
+        </section>
+
+        <section class="card help-card" id="help-keys" aria-labelledby="help-keys-h">
           <h2 id="help-keys-h">⌨️ Shortcuts</h2>
           <table class="keys-table">
             <tbody>
@@ -471,7 +538,7 @@
           </table>
         </section>
 
-        <section class="card help-card" aria-labelledby="help-settings-h">
+        <section class="card help-card" id="help-setup" aria-labelledby="help-settings-h">
           <h2 id="help-settings-h">🗂️ Your setup</h2>
           <p>Meal names still live in <code>info/config.toml</code>, along with a fallback body weight
             used for calorie estimates until you log your first weigh-in. Edit the file,
@@ -479,22 +546,33 @@
             wrong, a red banner at the top tells you what.</p>
           <div id="help-settings"></div>
         </section>
-      </div>
 
-      <section class="card help-card disclaimer" aria-labelledby="help-disclaimer-h">
-        <h2 id="help-disclaimer-h">Important information</h2>
-        <p>Pamela is a personal tracking tool. It does not recommend any particular amount of
-          physical activity, calorie or nutrient intake, sleep, body weight or body composition,
-          and nothing it shows should be taken as such a recommendation.</p>
-        <p>Pamela does not provide medical, nutritional or physical health advice, and it is not a
-          substitute for consulting a physician, specialist, registered dietitian or nutritionist, or
-          any other qualified health professional. For advice about your health, please consult the
-          appropriate professional.</p>
-        <p>Any targets, goals and habits recorded in Pamela are chosen solely by you, at your own
-          discretion.</p>
-      </section>
+        <section class="card help-card disclaimer" id="help-disclaimer" aria-labelledby="help-disclaimer-h">
+          <h2 id="help-disclaimer-h">ℹ️ Important information</h2>
+          <p>Pamela is a personal tracking tool. It does not recommend any particular amount of
+            physical activity, calorie or nutrient intake, sleep, body weight or body composition,
+            and nothing it shows should be taken as such a recommendation.</p>
+          <p>Pamela does not provide medical, nutritional or physical health advice, and it is not a
+            substitute for consulting a physician, specialist, registered dietitian or nutritionist, or
+            any other qualified health professional. For advice about your health, please consult the
+            appropriate professional.</p>
+          <p>Any targets, goals and habits recorded in Pamela are chosen solely by you, at your own
+            discretion.</p>
+        </section>
+      </div>
     </section>
   </main>
+
+  <dialog id="exit-dialog" class="exit-dialog" aria-labelledby="exit-h">
+    <h2 id="exit-h">🚪 Save &amp; close Pamela?</h2>
+    <p>Everything you've logged is saved. Pamela will finish any save still in progress,
+      then stop its server. To open it again later, run <code>make serve</code>.</p>
+    <p class="exit-warn" id="exit-warn" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn ghost" id="exit-cancel" autofocus>Cancel</button>
+      <button type="button" class="btn primary" id="exit-confirm">Save &amp; close</button>
+    </div>
+  </dialog>
 
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

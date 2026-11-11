@@ -21,6 +21,10 @@ that already has data; delete `local/pamela.sqlite3` to go back to an empty one.
 
 Or without `make`: `pamela --reload` (options: `--host`, `--port`).
 
+To close Pamela, press **Exit** (top right) in the app: it waits for pending saves,
+folds the SQLite WAL back into `local/pamela.sqlite3` and stops the server, reloader
+included. Ctrl+C in the terminal still works too.
+
 ## Features
 
 - **Day**: log food from your catalog (type to search, `↑`/`↓`, `Enter`, type the amount, `Enter`)

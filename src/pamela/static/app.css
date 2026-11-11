@@ -130,12 +130,15 @@ small { color: var(--text-3); font-weight: normal; }
 .brand { font-weight: 700; font-size: 1.15rem; color: var(--text); text-decoration: none; letter-spacing: .01em; }
 .tabs { display: flex; gap: 4px; }
 .tabs a {
-  padding: 6px 12px; border-radius: 8px;
+  /* a fixed-height flex box keeps the label centered vertically, like the buttons */
+  display: inline-flex; align-items: center; height: 34px; padding: 0 12px; border-radius: 8px; line-height: 1;
   color: var(--text-2); text-decoration: none; font-weight: 500;
 }
 .tabs a:hover { background: var(--surface-2); }
 .tabs a[aria-current="page"] { background: var(--accent-soft); color: var(--text); }
 .daynav { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.exit-btn { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; }
+.exit-btn:hover { color: var(--danger); border-color: var(--danger); }
 
 /* --- controls --------------------------------------------------------- */
 input, select, button { font: inherit; color: inherit; }
@@ -467,9 +470,27 @@ input.invalid { border-color: var(--danger); }
 .history-table tr.nodata td { color: var(--text-3); }
 
 /* --- help view -------------------------------------------------------- */
-.help-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 1500px; }
-@media (max-width: 1099px) { .help-grid { grid-template-columns: minmax(0, 1fr); } }
-.help-col { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.help-layout { display: grid; gap: var(--gap); align-items: start; grid-template-columns: 250px minmax(0, 860px); }
+.help-content { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+/* the sticky top bar would cover a heading scrolled to the very top */
+.help-content > section { scroll-margin-top: 76px; }
+.help-index { position: sticky; top: 76px; max-height: calc(100vh - 96px); overflow-y: auto; }
+.help-index h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin-bottom: 8px; }
+.help-index ol { list-style: none; margin: 0; padding: 0; }
+.help-index ol ol { margin: 2px 0 4px 26px; font-size: .88rem; }
+.help-index a {
+  display: block; padding: 4px 8px; border-radius: 6px;
+  color: var(--text-2); text-decoration: none;
+}
+.help-index a:hover { background: var(--surface-2); color: var(--text); }
+.help-index a[aria-current="location"] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.help-tour { margin: 0 0 8px; padding-left: 1.4em; color: var(--text-2); line-height: 1.6; }
+.help-intro { border-left: 4px solid var(--accent); }
+.help-intro h2 { font-size: 1.35rem; }
+@media (max-width: 760px) {
+  .help-layout { grid-template-columns: minmax(0, 1fr); }
+  .help-index { position: static; max-height: none; }
+}
 .help-card h2 { margin-bottom: 8px; }
 .help-card h3 { margin: 16px 0 4px; color: var(--text); }
 .help-card p, .help-card ol { margin: 0 0 8px; color: var(--text-2); }
@@ -581,6 +602,37 @@ kbd {
 .profile-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
 
 /* --- help: disclaimer ------------------------------------------------------- */
-.disclaimer { border-left: 4px solid var(--text-3); grid-column: 1 / -1; }
+.disclaimer { border-left: 4px solid var(--text-3); }
 .disclaimer p { color: var(--text-2); }
 .note-flag { margin-left: 6px; cursor: help; }
+
+/* --- exercise type emojis -------------------------------------------------- */
+.at-emoji, .act-emoji { display: inline-block; width: 1.5em; text-align: center; margin-right: 4px; }
+.at-emoji.inherited { opacity: .45; filter: grayscale(.6); }
+.emoji-field input { width: 100%; }
+.emoji-field input::placeholder { opacity: .45; }
+
+/* --- exit -------------------------------------------------------------------- */
+.exit-dialog {
+  max-width: 440px; padding: 20px 22px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); box-shadow: 0 10px 40px rgb(0 0 0 / .25);
+}
+.exit-dialog::backdrop { background: rgb(0 0 0 / .35); }
+.exit-dialog h2 { margin-bottom: 10px; }
+.exit-dialog p { margin: 0 0 10px; color: var(--text-2); line-height: 1.5; }
+.exit-warn { color: var(--warn) !important; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.closed { display: grid; place-items: center; min-height: 100vh; padding: 24px; }
+.closed-card { max-width: 460px; text-align: center; }
+.closed-card h1 { font-size: 1.5rem; margin: 0 0 10px; }
+.closed-card p { color: var(--text-2); margin: 0 0 8px; }
+
+/* --- top bar at half screen: keep every control on one line ----------------- */
+.tabs a { white-space: nowrap; }
+@media (max-width: 1279px) {
+  .topbar { gap: 8px; padding: 10px 16px; }
+  .tabs { gap: 2px; }
+  .tabs a { padding: 0 6px; }
+  .exit-btn { padding: 0; width: 34px; justify-content: center; }
+  .exit-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}

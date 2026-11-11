@@ -114,7 +114,18 @@ function isBarcode(q) {
   return /^(\d{8}|\d{12,14})$/.test(q.replace(/[\s-]/g, ""));
 }
 
-async function api(method, path, body) {
+// Requests still on their way; "Save & close" waits for them before stopping the server.
+const inFlight = new Set();
+
+function api(method, path, body) {
+  const p = request(method, path, body);
+  inFlight.add(p);
+  const done = () => inFlight.delete(p);
+  p.then(done, done);
+  return p;
+}
+
+async function request(method, path, body) {
   const opts = { method, headers: {} };
   if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
@@ -646,6 +657,12 @@ async function saveMealAsSaved(meal) {
   }
 }
 
+/** The emoji of a logged activity's type, if that type still exists. */
+function activityIcon(name) {
+  const t = state.activityTypes.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  return t ? `<span class="act-emoji" aria-hidden="true">${t.icon}</span>` : "";
+}
+
 function renderActivities() {
   const { activities } = state.dayData;
   if (!activities.length) {
@@ -661,7 +678,7 @@ function renderActivities() {
         bits.push(`${Math.floor(pace)}:${String(Math.round((pace % 1) * 60)).padStart(2, "0")} /km`);
       }
       return `<li>
-        <div><span class="t">${esc(a.type)}</span> <span class="d">${bits.join(" · ")}</span></div>
+        <div><span class="t">${activityIcon(a.type)}${esc(a.type)}</span> <span class="d">${bits.join(" · ")}</span></div>
         <span class="kc">${fmt(a.kcal)} <small>kcal${a.kcal_estimated ? " (est.)" : ""}</small></span>
         <button type="button" class="row-btn del" data-del-activity="${a.id}" title="Delete" aria-label="Delete ${esc(a.type)}">✕</button>
         ${a.notes ? `<div class="notes">${esc(a.notes)}</div>` : ""}
@@ -1068,14 +1085,14 @@ function fillActivitySelect() {
   const prev = sel.value;
   const types = state.activityTypes;
   const recent = types.filter((t) => t.uses > 0).sort((a, b) => b.uses - a.uses).slice(0, 5);
-  const opt = (t) => `<option value="${esc(t.name)}">${esc(t.name)}</option>`;
+  const opt = (t) => `<option value="${esc(t.name)}">${t.icon} ${esc(t.name)}</option>`;
   const groups = new Map();
   for (const t of types) {
     if (!groups.has(t.category)) groups.set(t.category, []);
     groups.get(t.category).push(t);
   }
   let html = recent.length ? `<optgroup label="Recently used">${recent.map(opt).join("")}</optgroup>` : "";
-  for (const [cat, list] of groups) html += `<optgroup label="${esc(cat)}">${list.map(opt).join("")}</optgroup>`;
+  for (const [cat, list] of groups) html += `<optgroup label="${list[0].category_icon} ${esc(cat)}">${list.map(opt).join("")}</optgroup>`;
   sel.innerHTML = html;
   if (types.some((t) => t.name === prev)) sel.value = prev;
   updateActivityForm();
@@ -1466,6 +1483,7 @@ async function loadSettings() {
     renderProfile();
     renderTargets();
     renderTypes();
+    updateTypeEmojiPlaceholder();
   } catch (err) {
     showError(err);
   }
@@ -1482,10 +1500,10 @@ function renderTypes() {
   for (const t of rows) {
     if (t.category !== cat) {
       cat = t.category;
-      html += `<tr class="group-head"><td colspan="6">${esc(cat)}</td></tr>`;
+      html += `<tr class="group-head"><td colspan="6"><span class="at-emoji" aria-hidden="true">${t.category_icon}</span>${esc(cat)}</td></tr>`;
     }
     html += `<tr class="${t.id === state.editingTypeId ? "editing" : ""}">
-      <td>${esc(t.name)}</td><td class="n">${fmtQty(t.met)}</td><td class="n">${fmt(t.met * w)}</td>
+      <td><span class="at-emoji${t.emoji ? "" : " inherited"}" aria-hidden="true" title="${t.emoji ? "" : "Group default"}">${t.icon}</span>${esc(t.name)}</td><td class="n">${fmtQty(t.met)}</td><td class="n">${fmt(t.met * w)}</td>
       <td>${t.distance ? "yes" : ""}</td><td class="n">${t.uses || ""}</td>
       <td class="act"><button type="button" class="row-btn icon" data-edit-type="${t.id}" title="Edit" aria-label="Edit ${esc(t.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-type="${t.id}" aria-label="Delete ${esc(t.name)}">✕</button></td>
     </tr>`;
@@ -1499,6 +1517,14 @@ function updateTypeHint() {
   $("#at-hint").textContent = met ? `≈ ${fmt(met * w)} kcal per hour at your weight (${fmtQty(w)} kg)` : "";
 }
 
+/** The emoji box shows its group's default as a placeholder while it's empty. */
+function updateTypeEmojiPlaceholder() {
+  const el = $("#at-form").elements;
+  const cat = el.category.value.trim();
+  const known = state.activityTypes.find((t) => t.category === cat);
+  el.emoji.placeholder = known ? known.category_icon : "💪"; // a new group: the server's fallback
+}
+
 function resetTypeForm() {
   $("#at-form").reset();
   state.editingTypeId = null;
@@ -1506,6 +1532,7 @@ function resetTypeForm() {
   $("#at-submit").textContent = "Add type";
   $("#at-cancel").hidden = true;
   updateTypeHint();
+  updateTypeEmojiPlaceholder();
   renderTypes();
 }
 
@@ -1518,6 +1545,8 @@ function editType(id) {
   el.category.value = t.category;
   el.met.value = t.met;
   el.distance.checked = t.distance;
+  el.emoji.value = t.emoji;
+  updateTypeEmojiPlaceholder();
   $("#at-form-h").textContent = "Edit exercise type";
   $("#at-submit").textContent = "Update type";
   $("#at-cancel").hidden = false;
@@ -1530,7 +1559,13 @@ async function submitType(ev) {
   ev.preventDefault();
   const form = ev.currentTarget;
   const v = formValues(form);
-  const body = { name: v.name.trim(), category: v.category.trim(), met: num(v.met), distance: form.elements.distance.checked };
+  const body = {
+    name: v.name.trim(),
+    category: v.category.trim(),
+    met: num(v.met),
+    distance: form.elements.distance.checked,
+    emoji: (v.emoji || "").trim(),
+  };
   try {
     if (state.editingTypeId) {
       await api("PUT", `/activity-types/${state.editingTypeId}`, body);
@@ -2003,10 +2038,86 @@ function renderHelp() {
     <p>Change them in <a href="#/settings">Settings</a>.</p>`;
 }
 
+// --- help index ----------------------------------------------------------------
+
+/** Index links scroll within the Help tab (a plain #anchor would change the route),
+ * and the section being read is marked in the index. */
+function wireHelpIndex() {
+  const links = $$(".help-index a[data-jump]");
+  $(".help-index").addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-jump]");
+    if (!a) return;
+    e.preventDefault();
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(a.dataset.jump).scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  });
+  const ids = links.map((a) => a.dataset.jump);
+  const targets = ids.map((id) => document.getElementById(id));
+  const mark = () => {
+    if (state.view !== "help") return;
+    // The last section whose top has scrolled past the upper third of the window.
+    const line = innerHeight / 3;
+    let current = ids[0];
+    for (const [i, el] of targets.entries()) if (el.getBoundingClientRect().top <= line) current = ids[i];
+    if (scrollY > 0 && innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = ids.at(-1);
+    for (const a of links) {
+      if (a.dataset.jump === current) a.setAttribute("aria-current", "location");
+      else a.removeAttribute("aria-current");
+    }
+  };
+  addEventListener("scroll", mark, { passive: true });
+  addEventListener("hashchange", () => requestAnimationFrame(mark));
+}
+
+// --- exit ("Save & close") ------------------------------------------------------
+
+function openExitDialog() {
+  const notes = [];
+  if (state.draft) notes.push(`The saved-meal draft “${state.draft.name}” isn't logged yet and will be discarded.`);
+  $("#exit-warn").textContent = notes.join(" ");
+  $("#exit-warn").hidden = !notes.length;
+  $("#exit-dialog").showModal();
+}
+
+async function saveAndClose() {
+  const btn = $("#exit-confirm");
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  // Blurring fires "change" on a field still being typed in (steps, weight…), so it saves too.
+  document.activeElement?.blur?.();
+  flushNote();
+  try {
+    // A save can start another (e.g. a reload after it), so wait until nothing is left.
+    while (inFlight.size) await Promise.allSettled([...inFlight]);
+    await api("POST", "/shutdown");
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "Save & close";
+    $("#exit-dialog").close();
+    return showError(err.status ? err : new Error("Couldn't reach Pamela's server. Is it still running?"));
+  }
+  $("#exit-dialog").close();
+  document.title = "Pamela · closed";
+  document.body.innerHTML = `
+    <main class="closed">
+      <div class="card closed-card">
+        <h1>👋 Pamela is closed</h1>
+        <p>Everything is saved and the server has stopped.</p>
+        <p class="hint">You can close this tab. To open Pamela again, run <code>make serve</code>.</p>
+      </div>
+    </main>`;
+  // Browsers only let a page close a tab that a script opened; otherwise this does nothing.
+  window.close();
+}
+
 // --- wiring ------------------------------------------------------------------
 
 function wire() {
   window.addEventListener("hashchange", route);
+  $("#exit-btn").addEventListener("click", openExitDialog);
+  $("#exit-cancel").addEventListener("click", () => $("#exit-dialog").close());
+  $("#exit-confirm").addEventListener("click", saveAndClose);
+  wireHelpIndex();
 
   // top bar
   $("#prev-day").addEventListener("click", () => goDay(addDays(state.day, -1)));
@@ -2227,6 +2338,7 @@ function wire() {
   $("#profile-form").addEventListener("submit", submitProfile);
   $("#at-form").addEventListener("submit", submitType);
   $("#at-form").elements.met.addEventListener("input", updateTypeHint);
+  $("#at-form").elements.category.addEventListener("input", updateTypeEmojiPlaceholder);
   $("#at-cancel").addEventListener("click", resetTypeForm);
   $("#at-filter").addEventListener("input", renderTypes);
   $("#at-body").addEventListener("click", (e) => {

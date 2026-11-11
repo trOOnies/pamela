@@ -235,6 +235,8 @@ class ActivityTypeIn(_In):
     category: str = Field("Other", min_length=1, max_length=60)
     met: float = Field(gt=0, le=30, description="kcal per kg of body weight per hour")
     distance: bool = False
+    # Emoji may be several code points (skin tones, ZWJ sequences); '' = group default.
+    emoji: str = Field("", max_length=16)
 
 
 class ActivityType(BaseModel):
@@ -243,6 +245,9 @@ class ActivityType(BaseModel):
     category: str
     met: float
     distance: bool
+    emoji: str = Field("", description="The type's own emoji; '' when it uses its group's")
+    icon: str = Field("", description="The emoji to show: its own, or its group's default")
+    category_icon: str = Field("", description="The group's default emoji")
     uses: int = Field(0, description="Times logged in the last 90 days")
 
 

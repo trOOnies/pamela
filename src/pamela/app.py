@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import signal
 from contextlib import asynccontextmanager
 from importlib import resources
 
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -14,6 +16,17 @@ from .api import router
 from .config import ConfigError, ConfigStore, Settings, ensure_config_file
 
 STATIC_DIR = resources.files("pamela") / "static"
+
+# Set by ``pamela.web`` when it runs under the auto-reloader: the reloader only
+# restarts its worker on file changes, so stopping must signal the reloader itself.
+SUPERVISOR_PID_ENV = "PAMELA_SUPERVISOR_PID"
+
+
+def request_exit() -> None:
+    """Ask uvicorn to stop, the same way Ctrl+C does: open requests finish first,
+    then the lifespan shutdown runs."""
+    pid = int(os.environ.get(SUPERVISOR_PID_ENV) or os.getpid())
+    os.kill(pid, signal.SIGINT)
 
 
 def prepare(settings: Settings, config_store: ConfigStore) -> None:
@@ -38,10 +51,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         prepare(settings, config_store)
         yield
+        # Every change is already committed; this only folds the WAL back into the
+        # database file, so local/ holds one self-contained file after closing.
+        db.checkpoint(settings.db_path)
 
     app = FastAPI(title="Pamela", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.config_store = config_store
+    app.state.request_exit = request_exit
 
     @app.exception_handler(ConfigError)
     async def _config_error(request: Request, exc: ConfigError) -> JSONResponse:
@@ -57,6 +74,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(router)
+
+    @app.post("/api/shutdown", status_code=status.HTTP_202_ACCEPTED, tags=["app"])
+    def shutdown(background: BackgroundTasks) -> dict:
+        """Save & close: stop the server once this response has been sent."""
+        background.add_task(app.state.request_exit)
+        return {"detail": "Pamela is closing"}
 
     static_dir = str(STATIC_DIR)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
