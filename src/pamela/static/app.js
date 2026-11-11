@@ -798,6 +798,42 @@ function commitSteps() {
   if (steps !== state.dayData.metrics.steps) saveCheckin({ steps });
 }
 
+/** "+" next to steps / sleep: add what's typed to the day's total instead of replacing it. */
+function addToMetric(which) {
+  const m = state.dayData.metrics;
+  const input = $(`#${which}-input`);
+  const steps = which === "steps";
+  const saved = steps ? m.steps : m.sleep_min;
+  const shown = saved == null ? "" : steps ? String(saved) : fmtSleep(saved);
+  if (input.value.trim() === shown) {
+    input.focus();
+    input.select();
+    return toast(steps ? "Type the steps to add, then press +" : "Type the time to add (like 0:45), then press +");
+  }
+  const amount = steps ? (input.value.trim() === "" ? NaN : Number(input.value)) : parseSleep(input.value);
+  if (!Number.isFinite(amount) || amount <= 0 || (steps && !Number.isInteger(amount))) {
+    input.classList.add("invalid");
+    return toast(steps ? "Steps to add must be a whole number above 0" : "Sleep to add: type hours like 0:45, 1.5 or 1h30", true);
+  }
+  const total = (saved ?? 0) + amount;
+  if (steps ? total > 200000 : total > 1440) {
+    input.classList.add("invalid");
+    return toast(steps ? "That would make more than 200,000 steps in a day" : "That would make more than 24 h of sleep in a day", true);
+  }
+  input.classList.remove("invalid");
+  // Show the new total right away: leaving the field later then saves that same value.
+  input.value = steps ? String(total) : fmtSleep(total);
+  saveCheckin(steps ? { steps: total } : { sleep_min: total });
+  toast(steps ? `Added ${fmt(amount)} steps: ${fmt(total)} in total` : `Added ${fmtSleep(amount)} h: ${fmtSleep(total)} h in total`);
+}
+
+/** Leaving the field saves what's typed as the new total, unless focus went to its "+". */
+function commitUnlessAdding(which, commit) {
+  setTimeout(() => {
+    if (document.activeElement?.dataset?.add !== which) commit();
+  });
+}
+
 function commitSleep() {
   const input = $("#sleep-input");
   const min = parseSleep(input.value);
@@ -1349,7 +1385,7 @@ function renderSavedMeals() {
         <div class="sm-tot"><b>${fmt(t.kcal)}</b> kcal · ${MACROS.map((m) => `${m.short} ${fmt(t[m.key])}`).join(" · ")}</div>
         <div class="sm-actions">
           <button type="button" class="btn" data-use-sm="${sm.id}" title="Open today with this meal as a draft">Use today</button>
-          <button type="button" class="row-btn" data-edit-sm="${sm.id}">Edit</button>
+          <button type="button" class="row-btn icon" data-edit-sm="${sm.id}" title="Edit" aria-label="Edit ${esc(sm.name)}">${PENCIL}</button>
           <button type="button" class="row-btn del" data-del-sm="${sm.id}" aria-label="Delete ${esc(sm.name)}">✕</button>
         </div>
       </article>`;
@@ -2077,21 +2113,32 @@ function wireHelpIndex() {
     if (!a) return;
     e.preventDefault();
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // A section near the end can't scroll up to the top, so the scroll position alone
+    // would mark a later entry: keep the clicked one marked until the jump has landed.
+    jumping = true;
+    setCurrent(a.dataset.jump);
+    clearTimeout(jumpTimer);
+    jumpTimer = setTimeout(() => (jumping = false), 1500); // in case no scrollend comes
     document.getElementById(a.dataset.jump).scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
   });
+  let jumping = false, jumpTimer;
+  addEventListener("scrollend", () => (jumping = false));
+  const setCurrent = (id) => {
+    for (const a of links) {
+      if (a.dataset.jump === id) a.setAttribute("aria-current", "location");
+      else a.removeAttribute("aria-current");
+    }
+  };
   const ids = links.map((a) => a.dataset.jump);
   const targets = ids.map((id) => document.getElementById(id));
   const mark = () => {
-    if (state.view !== "help") return;
+    if (state.view !== "help" || jumping) return;
     // The last section whose top has scrolled past the upper third of the window.
     const line = innerHeight / 3;
     let current = ids[0];
     for (const [i, el] of targets.entries()) if (el.getBoundingClientRect().top <= line) current = ids[i];
     if (scrollY > 0 && innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = ids.at(-1);
-    for (const a of links) {
-      if (a.dataset.jump === current) a.setAttribute("aria-current", "location");
-      else a.removeAttribute("aria-current");
-    }
+    setCurrent(current);
   };
   addEventListener("scroll", mark, { passive: true });
   addEventListener("hashchange", () => requestAnimationFrame(mark));
@@ -2223,8 +2270,17 @@ function wire() {
   $("#draft-commit").addEventListener("click", commitDraft);
 
   // check-in
-  $("#steps-input").addEventListener("change", commitSteps);
-  $("#sleep-input").addEventListener("change", commitSleep);
+  $("#steps-input").addEventListener("change", () => commitUnlessAdding("steps", commitSteps));
+  $("#sleep-input").addEventListener("change", () => commitUnlessAdding("sleep", commitSleep));
+  for (const btn of $$("[data-add]")) {
+    const which = btn.dataset.add;
+    const commit = which === "steps" ? commitSteps : commitSleep;
+    // keep the focus in the field, so clicking "+" doesn't first save the value as the total
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("click", () => addToMetric(which));
+    // tabbed to "+" and then away without pressing it: save as a normal edit
+    btn.addEventListener("blur", (e) => e.relatedTarget !== $(`#${which}-input`) && commit());
+  }
   $("#weight-input").addEventListener("change", (e) =>
     commitBody(e.target, "weight_kg", 0, 500, "Weight: type kilograms, like 72.5")
   );

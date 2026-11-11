@@ -46,13 +46,17 @@
             <span class="status-note" id="checkin-status" aria-live="polite"></span>
           </div>
           <div class="metric">
-            <label class="field num"><span>Steps</span>
-              <input type="number" id="steps-input" min="0" max="200000" step="1" inputmode="numeric" placeholder="–"></label>
+            <div class="field num"><label for="steps-input">Steps</label>
+              <span class="add-wrap"><input type="number" id="steps-input" min="0" max="200000" step="1" inputmode="numeric" placeholder="–"
+                title="Enter or clicking away sets the day's total; + adds to it"><button type="button" class="add-btn" data-add="steps"
+                title="Add to the day's total" aria-label="Add these steps to the day's total">+</button></span></div>
             <div class="metric-meter"><div class="meter" style="--c:var(--c-steps)"><span id="steps-bar"></span></div><span class="metric-sub" id="steps-sub"></span></div>
           </div>
           <div class="metric">
-            <label class="field num"><span>Sleep</span>
-              <input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal" title="Hours, as 7:30, 7.5 or 7h30"></label>
+            <div class="field num"><label for="sleep-input">Sleep</label>
+              <span class="add-wrap"><input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal"
+                title="Hours, as 7:30, 7.5 or 7h30. Enter or clicking away sets the day's total; + adds to it (e.g. a nap)"><button type="button" class="add-btn" data-add="sleep"
+                title="Add to the day's total (e.g. a nap)" aria-label="Add this sleep to the day's total">+</button></span></div>
             <div class="metric-meter"><div class="meter" style="--c:var(--c-sleep)"><span id="sleep-bar"></span></div><span class="metric-sub" id="sleep-sub"></span></div>
           </div>
           <div class="body-row">
@@ -448,7 +452,9 @@
 
           <h3 id="help-day-checkin">💭 Check-in</h3>
           <p>👟 Steps, 😴 hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>),
-            and how your day felt. Pick a mood from 😣 to 😄 (tap it again to clear), and any feelings
+            and how your day felt. Pressing <kbd>Enter</kbd> or clicking away sets the day's steps or sleep;
+            press the <b>+</b> next to the box instead to <i>add</i> what you typed, like a walk's steps
+            or a nap. Pick a mood from 😣 to 😄 (tap it again to clear), and any feelings
             that fit. They're grouped by kind: 😊 content, ⚡ driven, 😬 tense, 🌧️ down and 🪫 drained.
             Everything saves on its own.</p>
 
