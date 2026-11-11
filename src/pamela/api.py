@@ -24,6 +24,7 @@ from .schemas import (
     ActivityType,
     ActivityTypeIn,
     BarcodeLookup,
+    BodyBaseline,
     Day,
     DayMetrics,
     DayMetricsIn,
@@ -744,6 +745,20 @@ def read_day(day: dt.date, conn: Conn, config: Config) -> dict:
         "estimate_weight_kg": _estimate_weight(last, config),
         "targets": _targets_on(_target_periods(conn), iso),
     }
+
+
+@router.get("/history/baseline", response_model=BodyBaseline)
+def read_history_baseline(conn: Conn, before: dt.date) -> dict:
+    """The latest weight and body fat logged strictly before ``before``: what a
+    period's latest values are compared with."""
+    def last(col: str) -> dict | None:
+        return conn.execute(
+            f"SELECT day, {col} AS value FROM day_metrics WHERE {col} IS NOT NULL AND day < ? "
+            "ORDER BY day DESC LIMIT 1",
+            (before.isoformat(),),
+        ).fetchone()
+
+    return {"weight_kg": last("weight_kg"), "body_fat_pct": last("body_fat_pct")}
 
 
 @router.get("/history", response_model=list[HistoryDay])

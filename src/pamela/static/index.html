@@ -302,10 +302,10 @@
       <section class="card" aria-labelledby="profile-h">
         <div class="card-head"><h2 id="profile-h">Profile</h2></div>
         <form id="profile-form" class="profile-form" autocomplete="off">
-          <label class="field span2"><span>Gender</span><select name="gender" id="profile-gender"></select></label>
+          <label class="field gender-field"><span>Gender</span><select name="gender" id="profile-gender"></select></label>
           <label class="field"><span>Height</span>
             <span class="with-unit"><input type="number" name="height_cm" min="50" max="280" step="0.1" inputmode="decimal"><span class="unit">cm</span></span></label>
-          <button class="btn primary span2" type="submit">Save profile</button>
+          <button class="btn primary" type="submit">Save profile</button>
         </form>
         <dl class="profile-stats" id="profile-stats"></dl>
         <p class="hint at-explain">Log your weight and body fat in the Day tab's check-in. Calorie
@@ -501,8 +501,12 @@
           <p>Calories, protein, steps, sleep, body weight and body fat for the last 7, 30 or 90 days. The dashed line is
             your target, and it steps up or down where a target changed. Click a bar or a row to
             jump to that day.</p>
-          <p>🫙 The cards on top with a target fill up as you get closer to it (hover one to see the %).
+          <p>🫙 The cards on top fill up as you get closer to the target (or, for days logged and
+            active days, to the whole period; for mood, to 😄). Hover one to see the %.
             Average calories or protein more than 10% above target turn the card amber.</p>
+          <p>⚖️ Latest weight and body fat show <span class="trend-demo up">▲</span> up,
+            <span class="trend-demo flat">–</span> no change or <span class="trend-demo down">▼</span> down,
+            compared with the latest value logged <i>before</i> the period. Hover for the exact change.</p>
         </section>
 
         <section class="card help-card" id="help-settings-tab" aria-labelledby="help-settings-tab-h">

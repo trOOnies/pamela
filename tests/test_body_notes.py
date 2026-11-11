@@ -100,3 +100,15 @@ def test_profile(client):
     assert genders == [
         "male_cis", "female_cis", "male_trans", "female_trans", "other", "unspecified"
     ]
+
+
+def test_history_baseline_is_latest_before_period(client):
+    put = lambda day, body: client.put(f"/api/days/{day}/metrics", json=body)  # noqa: E731
+    assert put("2026-10-01", {"weight_kg": 80, "body_fat_pct": 20}).status_code == 200
+    put("2026-10-05", {"weight_kg": 81})
+    put("2026-10-10", {"weight_kg": 79})  # inside the period: not a baseline
+    r = client.get("/api/history/baseline", params={"before": "2026-10-10"}).json()
+    assert r["weight_kg"] == {"day": "2026-10-05", "value": 81}
+    assert r["body_fat_pct"] == {"day": "2026-10-01", "value": 20}
+    r = client.get("/api/history/baseline", params={"before": "2026-10-01"}).json()
+    assert r == {"weight_kg": None, "body_fat_pct": None}

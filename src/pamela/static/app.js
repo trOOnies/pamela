@@ -277,7 +277,7 @@ function route() {
     if (a.dataset.nav === view) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
-  $("#daynav").style.visibility = view === "day" ? "visible" : "hidden";
+  document.body.dataset.view = view; // the CSS hides the day navigation off the Day tab
   render();
 }
 
@@ -1805,9 +1805,12 @@ async function loadHistory() {
   const start = addDays(end, -(state.historyRange - 1));
   try {
     $("#history-range").textContent = `${fmtDayWd(start)} → ${fmtDayWd(end)}`;
-    const days = await api("GET", `/history?start=${start}&end=${end}`);
+    const [days, baseline] = await Promise.all([
+      api("GET", `/history?start=${start}&end=${end}`),
+      api("GET", `/history/baseline?before=${start}`),
+    ]);
     for (const d of days) d.sleep_h = d.sleep_min != null ? d.sleep_min / 60 : null;
-    renderHistory(days);
+    renderHistory(days, baseline);
   } catch (err) {
     showError(err);
   }
@@ -1817,7 +1820,7 @@ function moodLabel(mood) {
   return state.vocab.moods.find((m) => Number(m.key) === mood)?.label ?? "";
 }
 
-function renderHistory(days) {
+function renderHistory(days, baseline) {
   const logged = days.filter((d) => d.entry_count > 0);
   const avg = (key, list = logged) => (list.length ? list.reduce((s, d) => s + d[key], 0) / list.length : null);
   const withKey = (key) => days.filter((d) => d[key] != null);
@@ -1826,35 +1829,47 @@ function renderHistory(days) {
   const sleepAvg = avg("sleep_min", withKey("sleep_min"));
   const moodAvg = avg("mood", withKey("mood"));
   const lastOf = (key) => withKey(key).at(-1);
-  const weightChange = () => {
-    const w = withKey("weight_kg");
-    if (w.length < 2) return w.length ? fmtDay(w[0].day) : "";
-    const d = w.at(-1).weight_kg - w[0].weight_kg;
-    return `${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt(Math.abs(d), 1)} kg in range`;
+  /** ▲ / – / ▼ for the period's latest measurement against the latest one before it. */
+  const trend = (key, unit) => {
+    const last = lastOf(key), before = baseline[key];
+    if (!last) return null;
+    const now = last[key];
+    if (!before) return { cls: "flat", text: "–", title: `Logged ${fmtDay(last.day)}. Nothing logged before this period to compare with` };
+    const d = Math.round((now - before.value) * 10) / 10;
+    const change = d === 0 ? "No change" : `${d > 0 ? "+" : "−"}${fmt(Math.abs(d), 1)}${unit}`;
+    const title = `${change} since ${fmt(before.value, 1)}${unit} on ${fmtDay(before.day)}, the latest before this period (this one: ${fmtDay(last.day)})`;
+    if (d === 0) return { cls: "flat", text: "–", title };
+    return { cls: d > 0 ? "up" : "down", text: d > 0 ? "▲" : "▼", title };
   };
-  // [label, value, note, gauge?]; a gauge fills the tile up to value / target, and
-  // turns amber when an overshoot counts (kcal, protein: more than 10% over).
+  // A gauge fills the tile up to value / target, and turns amber when an
+  // overshoot counts (kcal, protein: more than 10% over).
   const gauge = (value, target, overshoot = false) =>
     value != null && target ? { pct: value / target, overshoot: overshoot && value > target * 1.1 } : null;
   const sleepAvgH = sleepAvg != null ? sleepAvg / 60 : null;
-  $("#history-tiles").innerHTML = [
-    ["Avg kcal / logged day", fmt(avg("kcal")), t.kcal ? `target ${fmt(t.kcal)}` : "", gauge(avg("kcal"), t.kcal, true)],
-    ["Avg protein", `${fmt(avg("protein_g"))} g`, t.protein_g ? `target ${fmt(t.protein_g)} g` : "", gauge(avg("protein_g"), t.protein_g, true)],
-    ["Days logged", `${logged.length}`, `of ${days.length}`],
-    ["Active days", `${activeDays}`, `of ${days.length}`],
-    ["Avg burned / day", fmt(avg("burned_kcal", days)), "kcal"],
-    ["Avg steps", fmt(avg("steps", withKey("steps"))), t.steps ? `target ${fmt(t.steps)}` : "", gauge(avg("steps", withKey("steps")), t.steps)],
-    ["Avg sleep", sleepAvg != null ? fmtSleep(sleepAvg) : "–", t.sleep_h ? `target ${fmtSleep(t.sleep_h * 60)} h` : "h", gauge(sleepAvgH, t.sleep_h)],
-    ["Latest weight", lastOf("weight_kg") ? `${fmt(lastOf("weight_kg").weight_kg, 1)} kg` : "–", weightChange()],
-    ["Latest body fat", lastOf("body_fat_pct") ? `${fmt(lastOf("body_fat_pct").body_fat_pct, 1)} %` : "–", lastOf("body_fat_pct") ? fmtDay(lastOf("body_fat_pct").day) : ""],
-    ["Avg mood", moodAvg != null ? `${MOOD_EMOJI[Math.round(moodAvg)]}` : "–", moodAvg != null ? `${moodLabel(Math.round(moodAvg))} · ${fmt(moodAvg, 1)} / 5` : ""],
-  ]
-    .map(([k, v, s, g]) => {
-      if (!g) return `<div class="tile"><div class="k">${k}</div><div class="v">${v} <small>${s}</small></div></div>`;
+  const stepsAvg = avg("steps", withKey("steps"));
+  const weight = trend("weight_kg", " kg"), fat = trend("body_fat_pct", " %");
+  // { k: label, v: value, s: note, g: gauge, t: trend } (a trend replaces the note)
+  const tiles = [
+    { k: "Avg kcal / logged day", v: fmt(avg("kcal")), s: t.kcal ? `of ${fmt(t.kcal)}` : "", g: gauge(avg("kcal"), t.kcal, true) },
+    { k: "Avg protein", v: `${fmt(avg("protein_g"))} g`, s: t.protein_g ? `of ${fmt(t.protein_g)} g` : "", g: gauge(avg("protein_g"), t.protein_g, true) },
+    { k: "Days logged", v: `${logged.length}`, s: `of ${days.length}`, g: gauge(logged.length, days.length) },
+    { k: "Active days", v: `${activeDays}`, s: `of ${days.length}`, g: gauge(activeDays, days.length) },
+    { k: "Avg burned / day", v: fmt(avg("burned_kcal", days)), s: "kcal" },
+    { k: "Avg steps", v: fmt(stepsAvg), s: t.steps ? `of ${fmt(t.steps)}` : "", g: gauge(stepsAvg, t.steps) },
+    { k: "Avg sleep", v: sleepAvg != null ? fmtSleep(sleepAvg) : "–", s: t.sleep_h ? `of ${fmtSleep(t.sleep_h * 60)} h` : "h", g: gauge(sleepAvgH, t.sleep_h) },
+    { k: "Latest weight", v: lastOf("weight_kg") ? `${fmt(lastOf("weight_kg").weight_kg, 1)} kg` : "–", t: weight },
+    { k: "Latest body fat", v: lastOf("body_fat_pct") ? `${fmt(lastOf("body_fat_pct").body_fat_pct, 1)} %` : "–", t: fat },
+    // mood runs from 1 (awful) to 5 (great): awful is an empty tile, great a full one
+    { k: "Avg mood", v: moodAvg != null ? `${MOOD_EMOJI[Math.round(moodAvg)]}` : "–", s: moodAvg != null ? `${moodLabel(Math.round(moodAvg))} · ${fmt(moodAvg, 1)} / 5` : "", g: gauge(moodAvg != null ? moodAvg - 1 : null, 4) },
+  ];
+  $("#history-tiles").innerHTML = tiles
+    .map(({ k, v, s = "", g, t: tr }) => {
+      const note = tr ? `<small class="trend ${tr.cls}" aria-label="${esc(tr.title)}">${tr.text}</small>` : `<small>${s}</small>`;
+      const body = `<div class="k" title="${esc(k)}">${k}</div><div class="v">${v} ${note}</div>`;
+      if (!g) return `<div class="tile"${tr ? ` title="${esc(tr.title)}"` : ""}>${body}</div>`;
       const pct = Math.round(g.pct * 100);
-      const style = `--fill:${Math.min(100, pct)}%`;
-      const title = `${pct}% of target${g.overshoot ? ": more than 10% over" : ""}`;
-      return `<div class="tile gauge${g.overshoot ? " overshoot" : ""}" style="${style}" title="${title}"><div class="k">${k}</div><div class="v">${v} <small>${s}</small></div></div>`;
+      const title = k === "Avg mood" ? "" : ` title="${pct}% of ${k.startsWith("Avg") ? "target" : "the period"}${g.overshoot ? ": more than 10% over" : ""}"`;
+      return `<div class="tile gauge${g.overshoot ? " overshoot" : ""}" style="--fill:${Math.min(100, Math.max(0, pct))}%"${title}>${body}</div>`;
     })
     .join("");
 

@@ -373,6 +373,18 @@ class HistoryDay(Macros):
     targets: dict[str, int | None] = Field(default_factory=dict)
 
 
+class Measurement(BaseModel):
+    day: dt.date
+    value: float
+
+
+class BodyBaseline(BaseModel):
+    """The latest measurements before a period, to compare the period's latest with."""
+
+    weight_kg: Measurement | None = None
+    body_fat_pct: Measurement | None = None
+
+
 # --- targets -----------------------------------------------------------------
 
 
