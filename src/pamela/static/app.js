@@ -1205,7 +1205,7 @@ function renderFoods() {
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
       ${macroCells(f)}
       <td class="n">${f.uses}</td>
-      <td class="act"><button type="button" class="row-btn" data-edit-food="${f.id}">Edit</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
+      <td class="act"><button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
     </tr>`
         )
         .join("")
