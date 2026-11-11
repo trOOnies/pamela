@@ -130,3 +130,36 @@ def test_scale_and_estimate():
         "fiber_g": 1,
     }
     assert estimate_kcal(met=8, weight_kg=75, duration_min=30) == pytest.approx(300)
+
+
+def test_food_rebuild_keeps_ids_links_and_tags(tmp_path):
+    """Migration 6 rebuilds foods: entries and saved meals must keep pointing at them."""
+    path = tmp_path / "old.sqlite3"
+    conn = db.connect(path)
+    conn.execute("PRAGMA journal_mode = WAL")
+    for i, script in enumerate(db.MIGRATIONS[:5], start=1):
+        conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {i};\nCOMMIT;")
+    conn.execute("INSERT INTO foods (id, name, kcal, vegetarian) VALUES (7, 'Egg', 72, 1)")
+    conn.execute("INSERT INTO foods (id, name, kcal, vegan) VALUES (8, 'Rice', 130, 1)")
+    conn.execute(
+        "INSERT INTO food_entries (day, meal, food_id, name, kcal) "
+        "VALUES ('2026-01-01', 'L', 7, 'Egg', 72)"
+    )
+    conn.execute("INSERT INTO saved_meals (id, name) VALUES (1, 'm')")
+    conn.execute("INSERT INTO saved_meal_items (saved_meal_id, food_id, quantity) VALUES (1, 8, 1)")
+    conn.commit()
+    conn.close()
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+    conn = db.connect(path)
+    assert conn.execute("SELECT food_id FROM food_entries").fetchone()["food_id"] == 7
+    assert conn.execute("SELECT food_id FROM saved_meal_items").fetchone()["food_id"] == 8
+    egg, rice = conn.execute("SELECT * FROM foods ORDER BY id").fetchall()
+    assert (egg["pescatarian"], egg["ovolactovegetarian"], egg["vegan"]) == (1, 1, 0)
+    assert (rice["pescatarian"], rice["vegetarian"], rice["vegan"]) == (1, 1, 1)
+    conn.execute("INSERT INTO foods (name) VALUES ('Unknown')")
+    assert conn.execute("SELECT kcal FROM foods WHERE name = 'Unknown'").fetchone()["kcal"] is None
+    # foreign keys still work on the rebuilt table
+    conn.execute("DELETE FROM foods WHERE id = 8")
+    assert conn.execute("SELECT COUNT(*) AS n FROM saved_meal_items").fetchone()["n"] == 0
+    conn.close()

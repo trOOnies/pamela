@@ -12,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from . import barcode, db
 from .config import AppConfig
 from .schemas import (
+    AUTO_TAGS,
     DIET_FIELDS,
+    DIET_IMPLIES,
     DIET_TAGS,
     FEELING_GROUPS,
     GENDERS,
@@ -104,6 +106,8 @@ def read_vocab() -> dict:
     ]
     return {
         "diet_tags": choices(DIET_TAGS),
+        "diet_implies": DIET_IMPLIES,
+        "auto_tags": choices(AUTO_TAGS),
         "moods": choices(MOODS),
         "feelings": feelings,
         "genders": choices(GENDERS),
@@ -256,6 +260,20 @@ def _ean_conflict(conn: sqlite3.Connection, food: FoodIn, food_id: int | None = 
         )
 
 
+@router.get("/brands", response_model=list[str])
+def list_brands(conn: Conn) -> list[str]:
+    """Brands already used in the catalog, most used first. Spellings that differ
+    only in case count as one, shown as the most common spelling."""
+    rows = conn.execute(
+        """SELECT brand, COUNT(*) AS n FROM foods WHERE brand != ''
+           GROUP BY brand ORDER BY n DESC, brand COLLATE NOCASE"""
+    ).fetchall()
+    seen: dict[str, str] = {}
+    for r in rows:
+        seen.setdefault(r["brand"].casefold(), r["brand"])
+    return list(seen.values())
+
+
 @router.post("/foods", response_model=Food, status_code=status.HTTP_201_CREATED)
 def create_food(food: FoodIn, conn: Conn) -> dict:
     _ean_conflict(conn, food)
@@ -351,13 +369,19 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
     out = []
     for m in meals:
         rows = by_meal[m["id"]]
-        scaled = [it | scale_macros(it, it["quantity"]) for it in rows]
+        scaled = [
+            it | scale_macros(it, it["quantity"]) | {"kcal_missing": it["kcal"] is None}
+            for it in rows
+        ]
+        tags = [t for t in DIET_FIELDS if rows and all(it[t] for it in rows)]
+        if rows and all(it["kcal"] == 0 for it in rows):
+            tags.append("calorie_free")
         out.append(
             m
             | {
                 "items": scaled,
                 "totals": {k: sum(it[k] for it in scaled) for k in MACRO_FIELDS},
-                "tags": [t for t in DIET_FIELDS if rows and all(it[t] for it in rows)],
+                "tags": tags,
             }
         )
     return out

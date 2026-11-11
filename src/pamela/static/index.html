@@ -201,13 +201,14 @@
           </div>
           <p class="hint span2 ean-status" id="ean-status" aria-live="polite"></p>
           <label class="field span2"><span>Name</span><input type="text" name="name" required maxlength="200"></label>
-          <label class="field span2"><span>Brand <small>(optional)</small></span><input type="text" name="brand" maxlength="200"></label>
+          <label class="field span2"><span>Brand <small>(optional)</small></span><input type="text" name="brand" maxlength="200" list="brand-options" autocomplete="on"></label>
+          <datalist id="brand-options"></datalist>
           <label class="field"><span>Values per</span><input type="number" name="basis_qty" min="0" step="any" value="100" required></label>
           <label class="field"><span>Unit</span>
             <input type="text" name="unit" value="g" required maxlength="20" list="unit-options">
             <datalist id="unit-options"><option value="g"><option value="ml"><option value="unit"><option value="serving"><option value="slice"><option value="cup"><option value="tbsp"></datalist>
           </label>
-          <label class="field"><span>kcal</span><input type="number" name="kcal" min="0" step="any" required></label>
+          <label class="field"><span>kcal</span><input type="number" name="kcal" min="0" step="any" placeholder="unknown"></label>
           <label class="field"><span>Protein (g)</span><input type="number" name="protein_g" min="0" step="any" value="0"></label>
           <label class="field"><span>Carbs (g)</span><input type="number" name="carbs_g" min="0" step="any" value="0"></label>
           <label class="field"><span>Fat (g)</span><input type="number" name="fat_g" min="0" step="any" value="0"></label>
@@ -443,7 +444,7 @@
             <li>Type how much you had and press <kbd>Enter</kbd>. The line under the form shows what you're adding.</li>
           </ol>
           <p>🥄 Had only part of it? If the food has a serving or package size, tap
-            <i>1 serving</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
+            <i>1 serving</i>, <i>⅙ pack</i>, <i>⅓ pack</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
           <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
             the list, and the Foods tab opens with it filled in.</p>
 
@@ -495,12 +496,32 @@
             <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>
             (only the barcode is sent) and the form fills in for you to check. Not found anywhere?
             Copy the values from the label once, and the barcode will find it next time.</p>
-          <p>🏷️ <b>Diet tags</b>: <span class="tag tag-vegetarian">Vegetarian</span>
+          <p>🏷️ <b>Diet tags</b>: <span class="tag tag-pescatarian">Pescatarian</span>
+            <span class="tag tag-ovolactovegetarian">Ovolactovegetarian</span>
+            <span class="tag tag-vegetarian">Vegetarian</span>
             <span class="tag tag-vegan">Vegan</span> <span class="tag tag-kosher">Kosher</span>
             <span class="tag tag-lactose_free">Lactose-free</span>
             <span class="tag tag-peanut_free">Peanut-free</span>
             <span class="tag tag-tacc_free">TACC-free</span>.
-            Click them above your list to filter. Vegan also counts as vegetarian.</p>
+            Click them above your list to filter.</p>
+          <ul class="diet-defs">
+            <li><span class="tag tag-vegan">Vegan</span> No animal or product of animal origin.</li>
+            <li><span class="tag tag-vegetarian">Vegetarian</span> No animal, but products of animal
+              origin are ok, like milk and dairy products. It technically doesn't allow egg consumption.</li>
+            <li><span class="tag tag-ovolactovegetarian">Ovolactovegetarian</span> Like vegetarian, but
+              allows egg consumption. The "lacto" part is included because of normal everyday use,
+              though in this definition, both vegetarians and ovolactovegetarians can consume milk and
+              dairy products.</li>
+            <li><span class="tag tag-pescatarian">Pescatarian</span> Like vegetarian, but allows eating
+              fish. Technically still doesn't allow eating eggs.</li>
+          </ul>
+          <p>So a vegan food is also vegetarian, and a vegetarian food is also both
+            ovolactovegetarian and pescatarian. Ticking a tag ticks the ones it implies.</p>
+          <p>🔥 <b>kcal</b>: leave it empty if you don't know it yet. The food still works, counted
+            as 0 kcal, and the list marks it with <span class="warn-kcal">⚠ ?</span> until you fill it in.
+            Entering <b>0</b> means it really has none, and it gets the
+            <span class="tag tag-calorie_free">Calorie-free</span> tag on its own (you can't set that tag yourself).</p>
+          <p>✍️ The <b>Brand</b> field suggests brands you've already used.</p>
           <p>🧮 A hint shows the calories your macros add up to, which helps catch typos.</p>
           <p>🔒 Editing or deleting a food never changes days you already logged.</p>
         </section>

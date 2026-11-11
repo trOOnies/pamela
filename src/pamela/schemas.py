@@ -6,14 +6,27 @@ import datetime as dt
 from itertools import pairwise
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from .barcode import normalize_ean
 
 MACRO_FIELDS = ("kcal", "protein_g", "carbs_g", "fat_g", "fiber_g")
 
 # key -> label. "TACC-free" (sin TACC) means no wheat, oats, barley or rye, i.e. gluten-free.
+# The first four form a fork (see DIET_IMPLIES): vegan (nothing of animal origin)
+# -> vegetarian (no animals, dairy ok, no eggs), which then splits into pescatarian
+# (vegetarian plus fish) and ovolactovegetarian (vegetarian plus eggs). Neither
+# branch implies the other. The Help tab has the full definitions.
 DIET_TAGS = {
+    "pescatarian": "Pescatarian",
+    "ovolactovegetarian": "Ovolactovegetarian",
     "vegetarian": "Vegetarian",
     "vegan": "Vegan",
     "kosher": "Kosher",
@@ -22,6 +35,23 @@ DIET_TAGS = {
     "tacc_free": "TACC-free",
 }
 DIET_FIELDS = tuple(DIET_TAGS)
+# tag -> the broader tags it implies (applied transitively).
+DIET_IMPLIES: dict[str, tuple[str, ...]] = {
+    "vegan": ("vegetarian",),
+    "vegetarian": ("pescatarian", "ovolactovegetarian"),
+}
+# Tags derived from the values, never set by hand: Calorie-free <=> kcal == 0 (a
+# kcal left empty is unknown, not zero).
+AUTO_TAGS = {"calorie_free": "Calorie-free"}
+
+
+def close_diet_tags(tags: set[str]) -> set[str]:
+    """``tags`` plus every tag they imply."""
+    out = set(tags)
+    for tag in DIET_IMPLIES:  # ordered strictest first, so one pass is enough
+        if tag in out:
+            out.update(DIET_IMPLIES[tag])
+    return out
 
 # Overall mood on the common 5-point scale, plus optional feelings.
 MOODS = {1: "Awful", 2: "Bad", 3: "Okay", 4: "Good", 5: "Great"}
@@ -78,6 +108,8 @@ class Macros(BaseModel):
 
 
 class DietTags(BaseModel):
+    pescatarian: bool = False
+    ovolactovegetarian: bool = False
     vegetarian: bool = False
     vegan: bool = False
     kosher: bool = False
@@ -92,7 +124,9 @@ class FoodIn(DietTags, _In):
     ean: str | None = Field(None, description="EAN-8/13, UPC-A or GTIN-14 barcode")
     basis_qty: float = Field(100, gt=0)
     unit: str = Field("g", min_length=1, max_length=20)
-    kcal: float = NonNeg
+    kcal: float | None = Field(
+        None, ge=0, description="Empty = not known yet (counted as 0); 0 = calorie-free"
+    )
     protein_g: float = NonNeg
     carbs_g: float = NonNeg
     fat_g: float = NonNeg
@@ -108,14 +142,15 @@ class FoodIn(DietTags, _In):
         return normalize_ean(v)
 
     @model_validator(mode="after")
-    def _vegan_is_vegetarian(self) -> FoodIn:
-        if self.vegan:
-            self.vegetarian = True
+    def _implied_tags(self) -> FoodIn:
+        for tag in close_diet_tags({t for t in DIET_IMPLIES if getattr(self, t)}):
+            setattr(self, tag, True)
         return self
 
 
 class Food(Macros, DietTags):
     id: int
+    kcal: float | None = Field(description="null = not entered yet; counted as 0")
     name: str
     brand: str
     ean: str | None = None
@@ -125,11 +160,17 @@ class Food(Macros, DietTags):
     package_qty: float | None = None
     uses: int = 0
 
+    @computed_field
+    @property
+    def calorie_free(self) -> bool:
+        return self.kcal == 0
+
 
 class FoodDraft(Macros, DietTags):
     """Prefilled food fields from a barcode lookup; not saved yet."""
 
     ean: str
+    kcal: float | None = None
     name: str
     brand: str
     basis_qty: float
@@ -170,6 +211,7 @@ class SavedMealItem(Macros):
     basis_qty: float
     serving_qty: float | None = None
     package_qty: float | None = None
+    kcal_missing: bool = Field(False, description="The food has no kcal yet (counted as 0)")
 
 
 class SavedMeal(BaseModel):
@@ -432,6 +474,8 @@ class Vocabulary(BaseModel):
     """Fixed choices the frontend shows (labels live here, in one place)."""
 
     diet_tags: list[Choice]
+    diet_implies: dict[str, list[str]] = Field(description="tag -> the broader tags it implies")
+    auto_tags: list[Choice] = Field(description="Tags derived from the values; not settable")
     moods: list[Choice]
     feelings: list[Choice]
     genders: list[Choice]

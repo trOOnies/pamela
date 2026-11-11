@@ -115,13 +115,15 @@ def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
         "brand": (product.get("brands") or "").split(",")[0].strip(),
         "basis_qty": 100,
         "unit": unit,
-        "kcal": r(kcal),
+        "kcal": None if kcal is None else r(kcal),  # missing = unknown, not 0
         "protein_g": r(_num(n.get("proteins_100g"))),
         "carbs_g": r(_num(n.get("carbohydrates_100g"))),
         "fat_g": r(_num(n.get("fat_100g"))),
         "fiber_g": r(_num(n.get("fiber_100g"))),
         "serving_qty": _num(product.get("serving_quantity")) or None,
         "package_qty": _num(product.get("product_quantity")) or None,
+        "pescatarian": vegetarian,  # implied, as in FoodIn
+        "ovolactovegetarian": vegetarian,
         "vegetarian": vegetarian,
         "vegan": vegan,
         "kosher": _has_tag(labels, "kosher"),

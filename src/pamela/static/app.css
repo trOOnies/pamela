@@ -31,12 +31,15 @@
   --c-weight: #b0459a;
   --c-bodyfat: #6b8a1c;
   /* diet tags: text on a soft fill, never color alone (always labeled) */
+  --t-pescatarian: #1b6496; --t-pescatarian-bg: #dcebf6;
+  --t-ovolactovegetarian: #5c7012; --t-ovolactovegetarian-bg: #eaf0d2;
   --t-vegetarian: #23753a; --t-vegetarian-bg: #def2e3;
   --t-vegan: #0b6e66; --t-vegan-bg: #d4efec;
   --t-kosher: #2556c4; --t-kosher-bg: #e0e9fb;
   --t-lactose_free: #6a3fc8; --t-lactose_free-bg: #ece5fa;
   --t-peanut_free: #95480f; --t-peanut_free-bg: #f8e5d4;
   --t-tacc_free: #806000; --t-tacc_free-bg: #f6ebc4;
+  --t-calorie_free: #4f5b66; --t-calorie_free-bg: #e6eaee;
   /* mood scale, awful -> great */
   --m-1: #d64545; --m-2: #e07a2e; --m-3: #8f8e86; --m-4: #5ea83a; --m-5: #1a9f6e;
   --shadow: 0 1px 2px rgb(0 0 0 / .06);
@@ -75,12 +78,15 @@
     --c-sleep: #7f8ef0;
     --c-weight: #df7ac4;
     --c-bodyfat: #a3c54b;
+    --t-pescatarian: #8cc4ef; --t-pescatarian-bg: #142b3d;
+    --t-ovolactovegetarian: #c2d77a; --t-ovolactovegetarian-bg: #262e10;
     --t-vegetarian: #84d69c; --t-vegetarian-bg: #173323;
     --t-vegan: #6fd3c8; --t-vegan-bg: #11302d;
     --t-kosher: #9fb9f6; --t-kosher-bg: #1a2744;
     --t-lactose_free: #c4a9f6; --t-lactose_free-bg: #2a2044;
     --t-peanut_free: #f0b07a; --t-peanut_free-bg: #3a2616;
     --t-tacc_free: #e8c95f; --t-tacc_free-bg: #342b0e;
+    --t-calorie_free: #b8c3cd; --t-calorie_free-bg: #262c32;
     --m-1: #e66767; --m-2: #e8924f; --m-3: #a3a29a; --m-4: #7cc157; --m-5: #34bf8a;
     --shadow: none;
   }
@@ -113,12 +119,15 @@
   --c-sleep: #7f8ef0;
   --c-weight: #df7ac4;
   --c-bodyfat: #a3c54b;
+  --t-pescatarian: #8cc4ef; --t-pescatarian-bg: #142b3d;
+  --t-ovolactovegetarian: #c2d77a; --t-ovolactovegetarian-bg: #262e10;
   --t-vegetarian: #84d69c; --t-vegetarian-bg: #173323;
   --t-vegan: #6fd3c8; --t-vegan-bg: #11302d;
   --t-kosher: #9fb9f6; --t-kosher-bg: #1a2744;
   --t-lactose_free: #c4a9f6; --t-lactose_free-bg: #2a2044;
   --t-peanut_free: #f0b07a; --t-peanut_free-bg: #3a2616;
   --t-tacc_free: #e8c95f; --t-tacc_free-bg: #342b0e;
+  --t-calorie_free: #b8c3cd; --t-calorie_free-bg: #262c32;
   --m-1: #e66767; --m-2: #e8924f; --m-3: #a3a29a; --m-4: #7cc157; --m-5: #34bf8a;
   --shadow: none;
 }
@@ -323,12 +332,17 @@ td > .tags { display: flex; margin-top: 3px; }
 .tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .tags.mini .tag { padding: 0 6px; font-size: .68rem; }
 .tags.mini .tag::before { display: none; }
+.tag-pescatarian { --tc: var(--t-pescatarian); --tb: var(--t-pescatarian-bg); }
+.tag-ovolactovegetarian { --tc: var(--t-ovolactovegetarian); --tb: var(--t-ovolactovegetarian-bg); }
 .tag-vegetarian { --tc: var(--t-vegetarian); --tb: var(--t-vegetarian-bg); }
 .tag-vegan { --tc: var(--t-vegan); --tb: var(--t-vegan-bg); }
 .tag-kosher { --tc: var(--t-kosher); --tb: var(--t-kosher-bg); }
 .tag-lactose_free { --tc: var(--t-lactose_free); --tb: var(--t-lactose_free-bg); }
 .tag-peanut_free { --tc: var(--t-peanut_free); --tb: var(--t-peanut_free-bg); }
 .tag-tacc_free { --tc: var(--t-tacc_free); --tb: var(--t-tacc_free-bg); }
+.tag-calorie_free { --tc: var(--t-calorie_free); --tb: var(--t-calorie_free-bg); }
+/* a food with no kcal entered yet (counted as 0) */
+.warn-kcal { color: var(--warn); font-weight: 600; cursor: help; white-space: nowrap; }
 /* tag filter chips light up in their tag's color */
 .tag-chip[aria-pressed="true"] { background: var(--tb); border-color: var(--tc); color: var(--tc); font-weight: 600; }
 
@@ -535,6 +549,9 @@ input.invalid { border-color: var(--danger); }
 .help-card h3 { margin: 16px 0 4px; color: var(--text); }
 .help-card p, .help-card ol { margin: 0 0 8px; color: var(--text-2); }
 .help-card ol { padding-left: 1.4em; }
+.help-card .diet-defs { list-style: none; padding: 0; margin: 0 0 8px; color: var(--text-2); }
+.help-card .diet-defs li { margin-bottom: 6px; line-height: 1.6; }
+.help-card .diet-defs .tag { margin-right: 4px; }
 .help-card li { margin-bottom: 2px; }
 .help-card b { color: var(--text); font-weight: 600; }
 code { font: .88em ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }

@@ -71,6 +71,7 @@ def test_product_to_draft():
     assert (d["protein_g"], d["fiber_g"]) == (7.5, 0)
     assert (d["serving_qty"], d["package_qty"]) == (30, 150)
     assert d["vegan"] and d["vegetarian"] and d["kosher"] and d["tacc_free"]
+    assert d["ovolactovegetarian"] and d["pescatarian"]
     assert not d["lactose_free"]
     assert not d["peanut_free"]  # allergens say peanuts
 
@@ -131,7 +132,8 @@ def test_food_barcode_tags_and_portions(client):
         tacc_free=True,
     )
     assert f["ean"] == EAN
-    assert f["vegetarian"] is True  # implied by vegan
+    # vegan implies every broader diet
+    assert f["vegetarian"] and f["ovolactovegetarian"] and f["pescatarian"]
     assert (f["tacc_free"], f["kosher"]) == (True, False)
     assert (f["serving_qty"], f["package_qty"]) == (200, 1000)
 
@@ -150,6 +152,62 @@ def test_food_barcode_tags_and_portions(client):
 
     assert client.post("/api/foods", json={"name": "x", "ean": "123"}).status_code == 422
     assert client.post("/api/foods", json={"name": "x", "serving_qty": 0}).status_code == 422
+
+
+def test_diet_tags_imply_only_broader_ones(client):
+    # the two branches below vegetarian don't imply each other
+    f = food(client, name="Egg", ovolactovegetarian=True)
+    assert (f["pescatarian"], f["ovolactovegetarian"], f["vegetarian"], f["vegan"]) == (
+        False, True, False, False,
+    )
+    f = food(client, name="Tuna", pescatarian=True)
+    assert (f["pescatarian"], f["ovolactovegetarian"], f["vegetarian"]) == (True, False, False)
+    f = food(client, name="Lentils", vegetarian=True)
+    assert (f["pescatarian"], f["ovolactovegetarian"], f["vegan"]) == (True, True, False)
+
+
+def test_kcal_empty_is_unknown_zero_is_calorie_free(client, oats):
+    unknown = food(client, name="Mystery", kcal=None, protein_g=0)
+    assert unknown["kcal"] is None and unknown["calorie_free"] is False
+    assert client.post("/api/foods", json={"name": "No kcal key"}).json()["kcal"] is None
+    zero = food(client, name="Water", kcal=0, protein_g=0, unit="ml", vegan=True)
+    assert zero["kcal"] == 0 and zero["calorie_free"] is True
+    assert oats["calorie_free"] is False
+    # the tag can't be set by hand
+    r = client.post("/api/foods", json={"name": "x", "kcal": 50, "calorie_free": True})
+    assert r.status_code == 422
+    # becoming known (or unknown again) changes the tag with it
+    r = client.put(f"/api/foods/{zero['id']}", json={"name": "Water", "unit": "ml"})
+    assert (r.json()["kcal"], r.json()["calorie_free"]) == (None, False)
+    water_in = {"name": "Water", "unit": "ml", "kcal": 0, "vegan": True}
+    r = client.put(f"/api/foods/{zero['id']}", json=water_in)
+    assert r.json()["calorie_free"] is True
+
+    # an unknown kcal still logs, counted as 0
+    r = client.post(
+        "/api/entries", json={"day": DAY, "meal": "Lunch", "food_id": unknown["id"], "quantity": 50}
+    )
+    assert r.status_code == 201 and r.json()["kcal"] == 0
+    assert r.json()["protein_g"] == 0
+
+    sm = client.post(
+        "/api/saved-meals",
+        json={"name": "m", "items": [{"food_id": unknown["id"], "quantity": 10},
+                                     {"food_id": oats["id"], "quantity": 100}]},
+    ).json()
+    assert [it["kcal_missing"] for it in sm["items"]] == [True, False]
+    assert sm["totals"]["kcal"] == pytest.approx(380)
+    water = client.post(
+        "/api/saved-meals", json={"name": "w", "items": [{"food_id": zero["id"], "quantity": 500}]}
+    ).json()
+    assert "calorie_free" in water["tags"] and "vegan" in water["tags"]
+    assert "calorie_free" not in sm["tags"]
+
+
+def test_brands_are_distinct_and_most_used_first(client):
+    for name, brand in [("a", "Arcor"), ("b", "Check"), ("c", "check"), ("d", "Check"), ("e", "")]:
+        food(client, name=name, brand=brand)
+    assert client.get("/api/brands").json() == ["Check", "Arcor"]
 
 
 # --- saved meals -------------------------------------------------------------
@@ -178,7 +236,8 @@ def test_saved_meal_crud_and_tags(client, oats):
     assert [it["name"] for it in sm["items"]] == ["Rolled oats", "Milk"]
     assert sm["items"][1]["kcal"] == pytest.approx(100)
     assert sm["totals"]["kcal"] == pytest.approx(380 * 0.6 + 100)
-    assert sm["tags"] == ["vegetarian", "tacc_free"]  # shared by every item
+    # shared by every item (vegetarian implies the broader ones)
+    assert sm["tags"] == ["pescatarian", "ovolactovegetarian", "vegetarian", "tacc_free"]
 
     body["items"] = [{"food_id": milk["id"], "quantity": 250}]
     r = client.put(f"/api/saved-meals/{sm['id']}", json=body | {"name": "Just milk"})
@@ -365,7 +424,13 @@ def test_day_metrics_validation(client, bad):
 
 def test_vocab(client):
     v = client.get("/api/vocab").json()
+    assert v["diet_implies"] == {
+        "vegan": ["vegetarian"],
+        "vegetarian": ["pescatarian", "ovolactovegetarian"],
+    }
     assert [t["key"] for t in v["diet_tags"]] == [
+        "pescatarian",
+        "ovolactovegetarian",
         "vegetarian",
         "vegan",
         "kosher",

@@ -172,11 +172,16 @@ function formValues(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
 
+/** Every tag: the ones set by hand, then the derived ones (like Calorie-free). */
+function allTags() {
+  return [...state.vocab.diet_tags, ...state.vocab.auto_tags];
+}
+
 /** Colored diet tag pills for a food (booleans) or a list of tag keys. */
 function tagPills(src, cls = "") {
-  const keys = Array.isArray(src) ? src : state.vocab.diet_tags.map((t) => t.key).filter((k) => src[k]);
+  const keys = Array.isArray(src) ? src : allTags().map((t) => t.key).filter((k) => src[k]);
   if (!keys.length) return "";
-  const label = (k) => state.vocab.diet_tags.find((t) => t.key === k)?.label ?? k;
+  const label = (k) => allTags().find((t) => t.key === k)?.label ?? k;
   return `<span class="tags ${cls}">${keys.map((k) => `<span class="tag tag-${k}">${esc(label(k))}</span>`).join("")}</span>`;
 }
 
@@ -249,7 +254,7 @@ function buildVocabControls() {
     "beforeend",
     tags.map((t) => `<label class="tag-pick tag-${t.key}"><input type="checkbox" name="${t.key}"><span>${esc(t.label)}</span></label>`).join("")
   );
-  $("#tag-filter").innerHTML = tags
+  $("#tag-filter").innerHTML = allTags()
     .map((t) => `<button type="button" class="chip tag-chip tag-${t.key}" data-tag="${t.key}" aria-pressed="false">${esc(t.label)}</button>`)
     .join("");
 }
@@ -350,7 +355,7 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
       .map(
         (f, i) => `<li role="option" id="${idp}-${i}" data-i="${i}" aria-selected="${i === c.active}">
           <span class="s-name">${esc(f.name)} ${f.brand ? `<span class="brand-tag">${esc(f.brand)}</span>` : ""}${tagPills(f, "mini")}</span>
-          <span class="meta">${fmt(f.kcal)} kcal / ${fmtQty(f.basis_qty)} ${esc(f.unit)}</span></li>`
+          <span class="meta">${f.kcal == null ? `<span class="warn-kcal">⚠ no kcal</span>` : `${fmt(f.kcal)} kcal`} / ${fmtQty(f.basis_qty)} ${esc(f.unit)}</span></li>`
       )
       .join("");
     if (q && onCreate) {
@@ -589,8 +594,8 @@ function renderSummary() {
     </div>`;
 }
 
-function macroCells(o) {
-  return `<td class="n">${fmt(o.kcal)}</td>` + MACROS.map((m) => `<td class="n">${fmt(o[m.key], 1)}</td>`).join("");
+function macroCells(o, kcalCell = `<td class="n">${fmt(o.kcal)}</td>`) {
+  return kcalCell + MACROS.map((m) => `<td class="n">${fmt(o[m.key], 1)}</td>`).join("");
 }
 
 function renderLog() {
@@ -915,8 +920,13 @@ function setEntryMode(mode) {
 function portionOptions(f) {
   const o = [];
   if (f.serving_qty) o.push(["1 serving", f.serving_qty], ["2 servings", f.serving_qty * 2]);
-  if (f.package_qty) o.push(["¼ pack", f.package_qty / 4], ["½ pack", f.package_qty / 2], ["Whole pack", f.package_qty]);
-  return o;
+  if (f.package_qty) {
+    for (const [label, d] of [["⅙ pack", 6], ["¼ pack", 4], ["⅓ pack", 3], ["½ pack", 2], ["Whole pack", 1]]) {
+      o.push([label, f.package_qty / d]);
+    }
+  }
+  // rounded like a picked amount, so the chip stays highlighted for ⅙ and ⅓ too
+  return o.map(([label, q]) => [label, Math.round(q * 100) / 100]);
 }
 
 function updatePreview() {
@@ -933,12 +943,15 @@ function updatePreview() {
     .map(([label, q]) => `<button type="button" class="chip" data-portion="${q}" aria-pressed="${qty != null && Math.abs(qty - q) < 1e-6}">${label} <small>${fmtQty(q)} ${esc(f.unit)}</small></button>`)
     .join("");
   if (!qty) {
-    $("#entry-preview").textContent = `${f.name}: ${fmt(f.kcal)} kcal per ${fmtQty(f.basis_qty)} ${f.unit}`;
+    $("#entry-preview").textContent =
+      f.kcal == null
+        ? `${f.name}: no kcal entered yet (counted as 0), per ${fmtQty(f.basis_qty)} ${f.unit}`
+        : `${f.name}: ${fmt(f.kcal)} kcal per ${fmtQty(f.basis_qty)} ${f.unit}`;
     return;
   }
   const k = qty / f.basis_qty;
   $("#entry-preview").textContent =
-    `≈ ${fmt(f.kcal * k)} kcal · ` + MACROS.map((m) => `${m.short} ${fmt(f[m.key] * k, 1)}`).join(" · ");
+    (f.kcal == null ? "kcal unknown (counted as 0) · " : `≈ ${fmt(f.kcal * k)} kcal · `) + MACROS.map((m) => `${m.short} ${fmt(f[m.key] * k, 1)}`).join(" · ");
 }
 
 function selectFood(food) {
@@ -1181,10 +1194,15 @@ async function submitActivity(ev) {
 
 const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty"];
 
+// Shown in place of the kcal of a food that has none entered yet.
+const NO_KCAL_CELL = `<td class="n"><span class="warn-kcal" title="No kcal entered yet: counted as 0 until you add it. Enter 0 if it really has none.">⚠ ?<span class="sr"> No kcal entered yet, counted as 0</span></span></td>`;
+
 async function loadFoods() {
   document.title = "Foods · Pamela";
   try {
-    state.foods = await api("GET", "/foods?limit=1000");
+    const [foods, brands] = await Promise.all([api("GET", "/foods?limit=1000"), api("GET", "/brands")]);
+    state.foods = foods;
+    $("#brand-options").innerHTML = brands.map((b) => `<option value="${esc(b)}">`).join("");
     renderFoods();
   } catch (err) {
     showError(err);
@@ -1198,7 +1216,10 @@ function renderFoods() {
     const hay = `${f.name} ${f.brand} ${f.ean ?? ""}`.toLowerCase();
     return words.every((w) => hay.includes(w)) && tags.every((t) => f[t]);
   });
-  $("#foods-count").textContent = rows.length === state.foods.length ? `(${rows.length})` : `(${rows.length} of ${state.foods.length})`;
+  const missing = state.foods.filter((f) => f.kcal == null).length;
+  $("#foods-count").textContent =
+    (rows.length === state.foods.length ? `(${rows.length})` : `(${rows.length} of ${state.foods.length})`) +
+    (missing ? ` · ⚠ ${missing} without kcal` : "");
   $("#foods-body").innerHTML = rows.length
     ? rows
         .map(
@@ -1206,7 +1227,7 @@ function renderFoods() {
       <td>${esc(f.name)}${tagPills(f)}</td>
       <td>${esc(f.brand)}${f.ean ? `<span class="ean" title="Barcode">${esc(f.ean)}</span>` : ""}</td>
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
-      ${macroCells(f)}
+      ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
       <td class="n">${f.uses}</td>
       <td class="act"><button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
     </tr>`
@@ -1266,7 +1287,12 @@ function updateKcalHint() {
   const el = $("#food-form").elements;
   const p = num(el.protein_g.value) ?? 0, c = num(el.carbs_g.value) ?? 0, f = num(el.fat_g.value) ?? 0;
   const est = p * 4 + c * 4 + f * 9;
-  $("#food-kcal-hint").textContent = est ? `Macros add up to ≈ ${fmt(est)} kcal` : "";
+  const kcal = num(el.kcal.value);
+  const parts = [];
+  if (est) parts.push(`Macros add up to ≈ ${fmt(est)} kcal.`);
+  if (kcal == null) parts.push("No kcal: it counts as 0 until you fill it in (enter 0 if it really has none).");
+  else if (kcal === 0) parts.push("0 kcal: tagged Calorie-free.");
+  $("#food-kcal-hint").textContent = parts.join(" ");
 }
 
 async function lookupBarcode() {
@@ -1318,7 +1344,7 @@ async function submitFood(ev) {
     ean: v.ean.trim() || null,
     basis_qty: num(v.basis_qty),
     unit: v.unit.trim(),
-    kcal: num(v.kcal) ?? 0,
+    kcal: num(v.kcal), // empty = not known yet, unlike 0
     serving_qty: num(v.serving_qty) || null,
     package_qty: num(v.package_qty) || null,
   };
@@ -1384,7 +1410,7 @@ function renderSavedMeals() {
           ${sm.default_meal ? `<span class="sm-for">${esc(sm.default_meal)}</span>` : ""}
         </div>
         ${tagPills(sm.tags)}
-        <ul class="sm-foods">${sm.items.map((it) => `<li><span>${esc(it.name)}</span><span class="n">${fmtQty(it.quantity)} ${esc(it.unit)}</span></li>`).join("")}</ul>
+        <ul class="sm-foods">${sm.items.map((it) => `<li><span>${esc(it.name)}${it.kcal_missing ? ` <span class="warn-kcal" title="No kcal entered yet for this food: counted as 0">⚠</span>` : ""}</span><span class="n">${fmtQty(it.quantity)} ${esc(it.unit)}</span></li>`).join("")}</ul>
         <div class="sm-tot"><b>${fmt(t.kcal)}</b> kcal · ${MACROS.map((m) => `${m.short} ${fmt(t[m.key])}`).join(" · ")}</div>
         <div class="sm-actions">
           <button type="button" class="btn" data-use-sm="${sm.id}" title="Open today with this meal as a draft">Use today</button>
@@ -2390,8 +2416,31 @@ function wire() {
     if (e.target.name === "unit") updateFormUnit();
   });
   foodForm.addEventListener("change", (e) => {
-    // vegan implies vegetarian
-    if (e.target.name === "vegan" && e.target.checked) foodForm.elements.vegetarian.checked = true;
+    // A diet implies the broader ones (vegan -> vegetarian -> pescatarian and
+    // ovolactovegetarian): checking one checks those, unchecking one unchecks the
+    // stricter ones.
+    const implies = state.vocab.diet_implies;
+    if (!(e.target.name in implies) && !Object.values(implies).flat().includes(e.target.name)) return;
+    const el = foodForm.elements;
+    if (e.target.checked) {
+      const todo = [e.target.name];
+      while (todo.length) {
+        for (const t of implies[todo.pop()] ?? []) {
+          el[t].checked = true;
+          todo.push(t);
+        }
+      }
+    } else {
+      for (let changed = true; changed; ) {
+        changed = false;
+        for (const [strict, broader] of Object.entries(implies)) {
+          if (el[strict].checked && !broader.every((b) => el[b].checked)) {
+            el[strict].checked = false;
+            changed = true;
+          }
+        }
+      }
+    }
   });
   $("#ean-lookup").addEventListener("click", lookupBarcode);
   foodForm.elements.ean.addEventListener("keydown", (e) => {

@@ -267,6 +267,51 @@ MIGRATIONS: list[str] = [
      WHERE name IN (SELECT name FROM _emoji);
     DROP TABLE _emoji;
     """,
+    # 6: a food's kcal may be empty (not known yet, counted as 0), which differs
+    # from 0 (confirmed calorie-free). SQLite can't drop NOT NULL in place, so the
+    # table is rebuilt (migrate() runs with foreign keys off, keeping ids and links).
+    # Adds the pescatarian and ovo-lacto vegetarian tags, which vegetarian implies
+    # (they are the two branches below it: fish vs eggs and dairy).
+    """
+    CREATE TABLE foods_new (
+        id                 INTEGER PRIMARY KEY,
+        name               TEXT    NOT NULL,
+        brand              TEXT    NOT NULL DEFAULT '',
+        ean                TEXT,     -- normalized GTIN (8, 13 or 14 digits)
+        basis_qty          REAL    NOT NULL DEFAULT 100 CHECK (basis_qty > 0),
+        unit               TEXT    NOT NULL DEFAULT 'g',
+        kcal               REAL    CHECK (kcal >= 0),   -- NULL = not entered yet
+        protein_g          REAL    NOT NULL DEFAULT 0,
+        carbs_g            REAL    NOT NULL DEFAULT 0,
+        fat_g              REAL    NOT NULL DEFAULT 0,
+        fiber_g            REAL    NOT NULL DEFAULT 0,
+        serving_qty        REAL,     -- one serving, in the food's unit
+        package_qty        REAL,     -- whole package, in the food's unit
+        pescatarian        INTEGER NOT NULL DEFAULT 0,
+        ovolactovegetarian INTEGER NOT NULL DEFAULT 0,
+        vegetarian         INTEGER NOT NULL DEFAULT 0,
+        vegan              INTEGER NOT NULL DEFAULT 0,
+        kosher             INTEGER NOT NULL DEFAULT 0,
+        lactose_free       INTEGER NOT NULL DEFAULT 0,
+        peanut_free        INTEGER NOT NULL DEFAULT 0,
+        tacc_free          INTEGER NOT NULL DEFAULT 0,
+        created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at         TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO foods_new (id, name, brand, ean, basis_qty, unit, kcal, protein_g,
+        carbs_g, fat_g, fiber_g, serving_qty, package_qty, pescatarian,
+        ovolactovegetarian, vegetarian, vegan, kosher, lactose_free, peanut_free,
+        tacc_free, created_at, updated_at)
+    SELECT id, name, brand, ean, basis_qty, unit, kcal, protein_g, carbs_g, fat_g,
+        fiber_g, serving_qty, package_qty, vegetarian OR vegan, vegetarian OR vegan,
+        vegetarian OR vegan, vegan, kosher, lactose_free, peanut_free, tacc_free,
+        created_at, updated_at
+    FROM foods;
+    DROP TABLE foods;
+    ALTER TABLE foods_new RENAME TO foods;
+    CREATE INDEX foods_name ON foods (name COLLATE NOCASE);
+    CREATE UNIQUE INDEX foods_ean ON foods (ean) WHERE ean IS NOT NULL;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.
@@ -316,11 +361,18 @@ def migrate(path: Path) -> int:
     conn = connect(path)
     try:
         conn.execute("PRAGMA journal_mode = WAL")
+        # Off, so a migration can rebuild a table: dropping the old one must not
+        # cascade to the rows that point at it. Checked before each commit instead.
+        conn.execute("PRAGMA foreign_keys = OFF")
         version = conn.execute("PRAGMA user_version").fetchone()["user_version"]
         for i, script in enumerate(MIGRATIONS[version:], start=version + 1):
             # executescript commits any pending transaction first; wrap each
             # migration in its own transaction so a failure leaves no half-state.
-            conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {i};\nCOMMIT;")
+            conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {i};")
+            if broken := conn.execute("PRAGMA foreign_key_check").fetchall():
+                conn.rollback()
+                raise RuntimeError(f"migration {i} broke foreign keys: {broken[:5]}")
+            conn.commit()
         return conn.execute("PRAGMA user_version").fetchone()["user_version"]
     finally:
         conn.close()

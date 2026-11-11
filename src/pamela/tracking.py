@@ -7,10 +7,11 @@ from collections.abc import Mapping
 from .schemas import MACRO_FIELDS
 
 
-def scale_macros(food: Mapping[str, float], quantity: float) -> dict[str, float]:
-    """Macros for ``quantity`` of a food whose values are given per ``basis_qty``."""
+def scale_macros(food: Mapping[str, float | None], quantity: float) -> dict[str, float]:
+    """Macros for ``quantity`` of a food whose values are given per ``basis_qty``.
+    A value not entered yet (None, e.g. a food's unknown kcal) counts as 0."""
     factor = quantity / food["basis_qty"]
-    return {k: food[k] * factor for k in MACRO_FIELDS}
+    return {k: (food[k] or 0) * factor for k in MACRO_FIELDS}
 
 
 def target_on(periods: list[tuple[str | None, int]], day: str) -> int | None:

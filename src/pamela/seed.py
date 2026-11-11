@@ -16,7 +16,7 @@ import sys
 from . import db
 from .app import prepare
 from .config import ConfigStore, Settings
-from .schemas import DIET_FIELDS, FEELING_GROUPS
+from .schemas import DIET_FIELDS, FEELING_GROUPS, close_diet_tags
 from .tracking import estimate_kcal, scale_macros
 
 USER_TABLES = ("foods", "food_entries", "activities", "day_metrics", "day_notes", "saved_meals")
@@ -44,9 +44,9 @@ FOODS = [
     ("Lean ground beef", "", 100, "g", 176, 20, 0, 10, 0, 150, 500,
      {"lactose_free", "peanut_free", "tacc_free"}),
     ("Salmon fillet", "", 100, "g", 208, 20, 0, 13, 0, 150, None,
-     {"kosher", "lactose_free", "peanut_free", "tacc_free"}),
+     {"pescatarian", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
     ("Canned tuna in water", "Mar Azul", 100, "g", 116, 26, 0, 1, 0, 120, 120,
-     {"kosher", "lactose_free", "peanut_free", "tacc_free"}),
+     {"pescatarian", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
     ("White rice, cooked", "", 100, "g", 130, 2.7, 28, 0.3, 0.4, 180, None,
      {"vegetarian", "vegan", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
     ("Pasta, cooked", "", 100, "g", 158, 5.8, 31, 0.9, 1.8, 200, None,
@@ -162,6 +162,7 @@ def seed(conn: sqlite3.Connection, meal_names: list[str], weight_kg: float,
 
     foods: dict[str, dict] = {}
     for name, brand, basis, unit, kcal, p, c, f, fib, serving, package, tags in FOODS:
+        tags = close_diet_tags(tags)
         tag_values = [int(t in tags) for t in DIET_FIELDS]
         cur = conn.execute(
             f"""INSERT INTO foods (name, brand, basis_qty, unit, kcal, protein_g, carbs_g,
