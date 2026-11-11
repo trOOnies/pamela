@@ -798,7 +798,10 @@ def read_day(day: dt.date, conn: Conn, config: Config) -> dict:
         "SELECT * FROM food_entries WHERE day = ? ORDER BY created_at, id", (iso,)
     ).fetchall()
     activities = conn.execute(
-        "SELECT * FROM activities WHERE day = ? ORDER BY created_at, id", (iso,)
+        "SELECT * FROM activities WHERE day = ? "
+        # by time of day when given; the rest in the order they were logged
+        "ORDER BY start_time IS NULL, start_time, created_at, id",
+        (iso,),
     ).fetchall()
     totals = Macros(**{k: sum(e[k] for e in entries) for k in MACRO_FIELDS})
     last = _last_weight(conn, iso)

@@ -324,6 +324,14 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE profile ADD COLUMN bmi_cutoffs TEXT;
     """,
+    # 9: optional conditions on an activity: time of day, weather and how it felt.
+    """
+    ALTER TABLE activities ADD COLUMN start_time   TEXT;   -- HH:MM
+    ALTER TABLE activities ADD COLUMN temp_c       REAL CHECK (temp_c BETWEEN -60 AND 60);
+    ALTER TABLE activities ADD COLUMN humidity_pct REAL CHECK (humidity_pct BETWEEN 0 AND 100);
+    ALTER TABLE activities ADD COLUMN wind_kmh     REAL CHECK (wind_kmh >= 0);
+    ALTER TABLE activities ADD COLUMN comfort      INTEGER CHECK (comfort BETWEEN 1 AND 5);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

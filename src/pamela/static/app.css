@@ -411,6 +411,30 @@ input.invalid { border-color: var(--danger); }
 .act-list .kc { font-variant-numeric: tabular-nums; font-weight: 600; }
 .act-list .kc small { font-weight: normal; }
 .act-list .empty { display: block; color: var(--text-3); font-style: italic; border: 0; }
+.act-list li.editing { background: var(--accent-2-soft); }
+.act-list .tm { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: .88rem; margin-right: 2px; }
+.act-list .cond { grid-column: 1 / -1; color: var(--text-2); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.act-btns { display: inline-flex; white-space: nowrap; }
+.stars-ro { color: var(--accent-2-line); letter-spacing: 1px; }
+.stars-ro .off { color: var(--border); }
+/* optional conditions in the activity form */
+.act-more { flex-basis: 100%; }
+.act-more summary { cursor: pointer; font-size: .85rem; color: var(--text-2); width: max-content; }
+.act-more summary small { color: var(--text-3); }
+.act-more-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 8px; }
+.act-more-fields .num input { width: 90px; }
+.stars { display: inline-flex; gap: 2px; }
+.star {
+  border: 0; background: none; padding: 0 2px; font-size: 1.35rem; line-height: 1.6; cursor: pointer;
+  color: var(--border);
+}
+.star.on { color: var(--accent-2-line); }
+.star:hover { transform: scale(1.12); }
+/* the evening nudge to log steps */
+.steps-reminder {
+  margin: 2px 0 6px; padding: 6px 10px; border-radius: 8px; font-size: .88rem;
+  background: var(--accent-2-soft); border: 1px solid var(--accent-2-line); color: var(--text);
+}
 
 /* --- foods view ------------------------------------------------------- */
 .foods-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: 380px minmax(0, 1fr); }

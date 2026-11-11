@@ -35,6 +35,7 @@ const state = {
   bodyRefs: null, // GET /body-references
   historyDays: null,
   editingFoodId: null,
+  editingActivityId: null,
   selectedFood: null,   // food chosen in the entry form
   draft: null,          // saved meal being prepared for logging: { name, items }
   smItems: [],          // items of the saved meal in the editor
@@ -567,6 +568,8 @@ async function loadDay() {
     const data = await api("GET", `/days/${day}`);
     if (day !== state.day) return; // user navigated meanwhile
     state.dayData = data;
+    // an activity being edited on another day: drop the edit
+    if (state.editingActivityId && !data.activities.some((a) => a.id === state.editingActivityId)) resetActivityForm();
     renderSummary();
     renderLog();
     renderCheckin();
@@ -696,6 +699,77 @@ function activityIcon(name) {
   return t ? `<span class="act-emoji" aria-hidden="true">${t.icon}</span>` : "";
 }
 
+/** "🌡️ 18 °C · 💧 60 % · 💨 12 km/h · ★★★★☆", or "" when none are set. */
+function activityConditions(a) {
+  const bits = [];
+  if (a.temp_c != null) bits.push(`<span title="Temperature">🌡️ ${fmt(a.temp_c, 1)} °C</span>`);
+  if (a.humidity_pct != null) bits.push(`<span title="Humidity">💧 ${fmt(a.humidity_pct)} %</span>`);
+  if (a.wind_kmh != null) bits.push(`<span title="Wind">💨 ${fmt(a.wind_kmh, 1)} km/h</span>`);
+  if (a.comfort != null) {
+    bits.push(`<span class="stars-ro" title="Felt ${a.comfort} of 5" aria-label="Felt ${a.comfort} of 5 stars">${"★".repeat(a.comfort)}<span class="off">${"★".repeat(5 - a.comfort)}</span></span>`);
+  }
+  return bits.join(" · ");
+}
+
+const ACT_EXTRA = ["start_time", "temp_c", "humidity_pct", "wind_kmh", "comfort"];
+
+/** The 1-5 comfort stars in the form; picking the current value again clears it. */
+function renderComfortStars() {
+  const v = num($("#activity-form").elements.comfort.value);
+  $("#comfort-stars").innerHTML = [1, 2, 3, 4, 5]
+    .map(
+      (n) => `<button type="button" class="star${v != null && n <= v ? " on" : ""}" role="radio" aria-checked="${v === n}" data-star="${n}" title="${n} of 5" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`
+    )
+    .join("");
+}
+
+function resetActivityForm() {
+  const form = $("#activity-form");
+  for (const k of ["duration_min", "distance_km", "kcal", "notes", ...ACT_EXTRA]) form.elements[k].value = "";
+  state.editingActivityId = null;
+  $("#act-submit").textContent = "Add";
+  $("#act-cancel").hidden = true;
+  $("#act-more").open = false;
+  renderComfortStars();
+  updateActivityForm();
+  if (state.dayData) renderActivities();
+}
+
+function editActivity(id) {
+  const a = state.dayData.activities.find((x) => x.id === id);
+  if (!a) return;
+  const form = $("#activity-form");
+  const sel = $("#act-type");
+  // a type deleted since: keep it selectable for this activity
+  if (![...sel.options].some((o) => o.value === a.type)) sel.insertAdjacentHTML("beforeend", `<option>${esc(a.type)}</option>`);
+  sel.value = a.type;
+  form.elements.duration_min.value = a.duration_min;
+  form.elements.distance_km.value = a.distance_km ?? "";
+  form.elements.kcal.value = a.kcal_estimated ? "" : a.kcal; // empty: estimate again
+  form.elements.notes.value = a.notes;
+  for (const k of ACT_EXTRA) form.elements[k].value = a[k] ?? "";
+  $("#act-more").open = ACT_EXTRA.some((k) => a[k] != null);
+  state.editingActivityId = id;
+  $("#act-submit").textContent = "Update";
+  $("#act-cancel").hidden = false;
+  renderComfortStars();
+  updateActivityForm();
+  renderActivities();
+  form.elements.duration_min.focus();
+}
+
+/** From 9 PM to midnight on today: a nudge to log the day's steps. */
+function updateStepsReminder() {
+  const el = $("#steps-reminder");
+  if (!el || !state.dayData) return;
+  const late = new Date().getHours() >= 21;
+  el.hidden = !(late && state.day === todayISO());
+  if (el.hidden) return;
+  el.textContent = state.dayData.metrics.steps
+    ? "🌙 Day's almost done: update your steps with the final count before bed."
+    : "🌙 Day's almost done: don't forget to log today's steps!";
+}
+
 function renderActivities() {
   const { activities } = state.dayData;
   if (!activities.length) {
@@ -710,10 +784,12 @@ function renderActivities() {
         const pace = a.duration_min / a.distance_km;
         bits.push(`${Math.floor(pace)}:${String(Math.round((pace % 1) * 60)).padStart(2, "0")} /km`);
       }
-      return `<li>
-        <div><span class="t">${activityIcon(a.type)}${esc(a.type)}</span> <span class="d">${bits.join(" · ")}</span></div>
+      const cond = activityConditions(a);
+      return `<li class="${a.id === state.editingActivityId ? "editing" : ""}">
+        <div>${a.start_time ? `<span class="tm">${esc(a.start_time)}</span> ` : ""}<span class="t">${activityIcon(a.type)}${esc(a.type)}</span> <span class="d">${bits.join(" · ")}</span></div>
         <span class="kc">${fmt(a.kcal)} <small>kcal${a.kcal_estimated ? " (est.)" : ""}</small></span>
-        <button type="button" class="row-btn del" data-del-activity="${a.id}" title="Delete" aria-label="Delete ${esc(a.type)}">✕</button>
+        <span class="act-btns"><button type="button" class="row-btn icon" data-edit-activity="${a.id}" title="Edit" aria-label="Edit ${esc(a.type)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-activity="${a.id}" title="Delete" aria-label="Delete ${esc(a.type)}">✕</button></span>
+        ${cond ? `<div class="cond">${cond}</div>` : ""}
         ${a.notes ? `<div class="notes">${esc(a.notes)}</div>` : ""}
       </li>`;
     })
@@ -733,6 +809,7 @@ function renderCheckin() {
   if (document.activeElement !== weight) weight.value = m.weight_kg ?? "";
   if (document.activeElement !== fat) fat.value = m.body_fat_pct ?? "";
   for (const el of [sleep, weight, fat]) el.classList.remove("invalid");
+  updateStepsReminder();
   renderBodySub();
 
   $("#steps-bar").style.width = `${meterPct(m.steps ?? 0, t.steps)}%`;
@@ -1203,11 +1280,23 @@ async function submitActivity(ev) {
     distance_km: t && t.distance ? num(v.distance_km) : null,
     kcal: num(v.kcal),
     notes: (v.notes || "").trim(),
+    start_time: v.start_time || null,
+    temp_c: num(v.temp_c),
+    humidity_pct: num(v.humidity_pct),
+    wind_kmh: num(v.wind_kmh),
+    comfort: num(v.comfort),
   };
   try {
-    await api("POST", "/activities", body);
-    for (const k of ["duration_min", "distance_km", "kcal", "notes"]) form.elements[k].value = "";
-    updateActivityForm();
+    const editing = state.editingActivityId;
+    if (editing) {
+      // keep the day it was logged on
+      body.day = state.dayData.activities.find((a) => a.id === editing)?.day ?? state.day;
+      await api("PUT", `/activities/${editing}`, body);
+      toast("Activity updated");
+    } else {
+      await api("POST", "/activities", body);
+    }
+    resetActivityForm();
     await loadDay();
     loadActivityTypes().catch(showError); // refresh "Recently used"
   } catch (err) {
@@ -2637,11 +2726,25 @@ function wire() {
   $("#activity-form").addEventListener("submit", submitActivity);
   $("#act-type").addEventListener("change", updateActivityForm);
   $("#activity-form").elements.duration_min.addEventListener("input", updateActivityForm);
+  $("#act-cancel").addEventListener("click", resetActivityForm);
+  $("#comfort-stars").addEventListener("click", (e) => {
+    const star = e.target.closest("[data-star]");
+    if (!star) return;
+    const input = $("#activity-form").elements.comfort;
+    input.value = input.value === star.dataset.star ? "" : star.dataset.star;
+    renderComfortStars();
+  });
+  renderComfortStars();
+  // the reminder shows up at 9 PM (and goes at midnight) without a reload
+  setInterval(updateStepsReminder, 60_000);
   $("#act-list").addEventListener("click", async (e) => {
+    const edit = e.target.closest("[data-edit-activity]");
+    if (edit) return editActivity(Number(edit.dataset.editActivity));
     const del = e.target.closest("[data-del-activity]");
     if (!del) return;
     try {
       await api("DELETE", `/activities/${del.dataset.delActivity}`);
+      if (state.editingActivityId === Number(del.dataset.delActivity)) resetActivityForm();
       await loadDay();
     } catch (err) {
       showError(err);

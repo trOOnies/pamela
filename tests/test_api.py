@@ -268,3 +268,45 @@ def test_db_session_commits_before_response():
 
     (dep,) = typing.get_args(Conn)[1:]
     assert dep.scope == "function"
+
+
+def test_activity_conditions_optional_and_ordered_by_time(client):
+    base = {"day": DAY, "type": "Running", "duration_min": 30, "kcal": 300}
+    plain = client.post("/api/activities", json=base).json()
+    assert (plain["start_time"], plain["comfort"], plain["temp_c"]) == (None, None, None)
+    full = base | {
+        "start_time": "07:30", "temp_c": -2.5, "humidity_pct": 80, "wind_kmh": 15, "comfort": 4,
+    }
+    r = client.post("/api/activities", json=full)
+    assert r.status_code == 201, r.text
+    a = r.json()
+    assert (a["start_time"], a["temp_c"], a["humidity_pct"], a["wind_kmh"], a["comfort"]) == (
+        "07:30", -2.5, 80, 15, 4,
+    )
+    later = client.post("/api/activities", json=base | {"start_time": "18:05"}).json()
+    # timed ones first, by time; the untimed one last
+    ids = [x["id"] for x in client.get(f"/api/days/{DAY}").json()["activities"]]
+    assert ids == [a["id"], later["id"], plain["id"]]
+    # conditions can be added to a logged activity, and cleared again
+    r = client.put(f"/api/activities/{plain['id']}", json=base | {"comfort": 2, "wind_kmh": 0})
+    assert (r.json()["comfort"], r.json()["wind_kmh"]) == (2, 0)
+    r = client.put(f"/api/activities/{plain['id']}", json=base)
+    assert r.json()["comfort"] is None
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"start_time": "24:00"},
+        {"start_time": "7:30"},
+        {"temp_c": 61},
+        {"humidity_pct": 101},
+        {"humidity_pct": -1},
+        {"wind_kmh": -3},
+        {"comfort": 0},
+        {"comfort": 6},
+    ],
+)
+def test_activity_conditions_validation(client, bad):
+    body = {"day": DAY, "type": "Running", "duration_min": 30, "kcal": 300} | bad
+    assert client.post("/api/activities", json=body).status_code == 422

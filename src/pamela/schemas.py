@@ -366,6 +366,14 @@ class ActivityIn(_In):
     distance_km: float | None = OptNonNeg
     kcal: float | None = Field(None, ge=0, description="Leave empty to estimate from MET")
     notes: str = Field("", max_length=1000)
+    # Optional conditions
+    start_time: str | None = Field(
+        None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="Time of day, HH:MM"
+    )
+    temp_c: float | None = Field(None, ge=-60, le=60, description="Temperature, °C")
+    humidity_pct: float | None = Field(None, ge=0, le=100)
+    wind_kmh: float | None = Field(None, ge=0, le=300)
+    comfort: int | None = Field(None, ge=1, le=5, description="How it felt, 1 to 5 stars")
 
 
 class Activity(BaseModel):
@@ -377,6 +385,11 @@ class Activity(BaseModel):
     kcal: float
     kcal_estimated: bool
     notes: str
+    start_time: str | None = None
+    temp_c: float | None = None
+    humidity_pct: float | None = None
+    wind_kmh: float | None = None
+    comfort: int | None = None
 
 
 # --- daily metrics -----------------------------------------------------------

@@ -54,6 +54,7 @@
                 title="Add to the day's total" aria-label="Add these steps to the day's total">+</button></span></div>
             <div class="metric-meter"><div class="meter" style="--c:var(--c-steps)"><span id="steps-bar"></span></div><span class="metric-sub" id="steps-sub"></span></div>
           </div>
+          <p class="steps-reminder" id="steps-reminder" role="status" hidden></p>
           <div class="metric">
             <div class="field num"><label for="sleep-input">Sleep</label>
               <span class="add-wrap"><input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal"
@@ -159,14 +160,31 @@
 
       <div class="day-side">
         <section class="card activity" aria-labelledby="act-h">
-          <div class="card-head"><h2 id="act-h">Activity</h2></div>
+          <div class="card-head">
+            <h2 id="act-h">Activity</h2>
+            <button type="button" class="btn ghost" id="act-cancel" hidden>Cancel edit</button>
+          </div>
           <form id="activity-form" class="activity-form" autocomplete="off">
             <label class="field type-field"><span>Type</span><select name="type" id="act-type"></select></label>
             <label class="field num"><span>Minutes</span><input type="number" name="duration_min" min="1" step="any" required></label>
             <label class="field num" id="act-distance"><span>Km</span><input type="number" name="distance_km" min="0" step="any"></label>
             <label class="field num"><span>kcal</span><input type="number" name="kcal" min="0" step="any" id="act-kcal" placeholder="auto"></label>
             <label class="field grow"><span>Notes</span><input type="text" name="notes" maxlength="1000"></label>
-            <button class="btn primary" type="submit">Add</button>
+            <button class="btn primary" type="submit" id="act-submit">Add</button>
+            <details class="act-more" id="act-more">
+              <summary>Conditions <small>(optional)</small></summary>
+              <div class="act-more-fields">
+                <label class="field"><span>🕘 Time</span><input type="time" name="start_time"></label>
+                <label class="field num"><span>🌡️ °C</span><input type="number" name="temp_c" min="-60" max="60" step="any" inputmode="decimal"></label>
+                <label class="field num"><span>💧 Humidity %</span><input type="number" name="humidity_pct" min="0" max="100" step="any"></label>
+                <label class="field num"><span>💨 Wind km/h</span><input type="number" name="wind_kmh" min="0" max="300" step="any"></label>
+                <div class="field comfort-field">
+                  <span id="comfort-label">How it felt</span>
+                  <input type="hidden" name="comfort">
+                  <div class="stars" id="comfort-stars" role="radiogroup" aria-labelledby="comfort-label"></div>
+                </div>
+              </div>
+            </details>
           </form>
           <ul class="act-list" id="act-list"></ul>
         </section>
@@ -498,6 +516,8 @@
             or a nap. Pick a mood from 😣 to 😄 (tap it again to clear), and any feelings
             that fit. They're grouped by kind: 😊 content, ⚡ driven, 😬 tense, 🌧️ down and 🪫 drained.
             Everything saves on its own.</p>
+          <p>🌙 From 9 PM to midnight, today's check-in reminds you to log your steps before the day
+            ends.</p>
 
           <h3 id="help-day-body">⚖️ Weight and body fat</h3>
           <p>Also in the check-in: your weight in kg and body fat in %, whenever you measure them.
@@ -511,6 +531,10 @@
           <h3 id="help-day-activity">🏃 Activity</h3>
           <p>Choose what you did and for how long. Leave <b>kcal</b> empty and it's estimated for you
             from your latest logged body weight (the box shows the guess). Types you use often appear at the top.</p>
+          <p>🌤️ Open <b>Conditions</b> to add, if you like: the time of day, temperature (°C),
+            humidity (%), wind (km/h) and how comfortable it felt, from ★ to ★★★★★ (tap the same star
+            again to clear it). Activities with a time are listed in time order. Press the ✏️ pencil on
+            a logged activity to change it or add its conditions later.</p>
 
           <h3 id="help-day-summary">📊 Summary</h3>
           <p>Calories and macros against that day's targets. Anything over target turns amber.
