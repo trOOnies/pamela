@@ -279,6 +279,7 @@ function buildVocabControls() {
   const groups = state.vocab.food_groups.map((g) => `<option value="${g.key}">${g.emoji} ${esc(g.label)}</option>`).join("");
   $("#food-group").insertAdjacentHTML("beforeend", groups);
   $("#group-filter").insertAdjacentHTML("beforeend", groups);
+  buildWipeList();
   $("#unit-options").innerHTML = state.vocab.units.map((u) => `<option value="${esc(u)}">`).join("");
   $("#tag-filter").innerHTML = allTags()
     .map((t) => `<button type="button" class="chip tag-chip tag-${t.key}" data-tag="${t.key}" aria-pressed="false">${esc(t.label)}</button>`)
@@ -2526,6 +2527,110 @@ function toggleTheme() {
   labelThemeButton(); // everything else, charts included, is drawn with CSS variables
 }
 
+// --- deleting: one day, or whole kinds of data (Danger Zone) ----------------------
+
+/** Lets saves in progress (and a note being typed) land first, so none of them
+ * recreates what's about to be deleted. With ``dropNote``, unsaved note typing is discarded. */
+async function settleSaves(dropNote = false) {
+  if (dropNote) {
+    clearTimeout(noteTimer);
+    notePending = null;
+  }
+  document.activeElement?.blur?.();
+  if (!dropNote) flushNote();
+  while (inFlight.size) await Promise.allSettled([...inFlight]);
+}
+
+async function clearDay() {
+  const d = state.dayData;
+  if (!d) return;
+  const m = d.metrics;
+  const parts = [];
+  if (d.entries.length) parts.push(`${d.entries.length} food entr${d.entries.length === 1 ? "y" : "ies"}`);
+  if (d.activities.length) parts.push(`${d.activities.length} activit${d.activities.length === 1 ? "y" : "ies"}`);
+  if (["steps", "sleep_min", "mood", "weight_kg", "body_fat_pct"].some((k) => m[k] != null) || m.feelings?.length) parts.push("the check-in");
+  if (d.note || $("#notes-input").value.trim()) parts.push("the note");
+  if (!parts.length) return toast("Nothing is logged on this day");
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+  if (!confirm(`Clear ${fmtDayWd(d.day)}?\n\nThis deletes ${list}, as if the day had never been filled in. It can't be undone.`)) return;
+  const day = d.day;
+  try {
+    await settleSaves(true);
+    await api("DELETE", `/days/${day}`);
+    resetActivityForm();
+    await loadDay();
+    toast(`${fmtDayWd(day)} cleared`);
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function buildWipeList() {
+  $("#wipe-list").innerHTML = state.vocab.wipe_targets
+    .map((t) => `<label class="wipe-item"><input type="checkbox" name="what" value="${t.key}"><span><b>${esc(t.label)}</b><small>${esc(t.hint)}</small></span></label>`)
+    .join("");
+}
+
+/** Keeps "Select all" (checked, unchecked or in between) and the button in step. */
+function updateWipeForm() {
+  const boxes = $$('#wipe-list input[name="what"]');
+  const n = boxes.filter((b) => b.checked).length;
+  const all = $("#wipe-all");
+  all.checked = n === boxes.length;
+  all.indeterminate = n > 0 && n < boxes.length;
+  const btn = $("#wipe-btn");
+  btn.disabled = !n;
+  btn.textContent = n === boxes.length ? "Delete everything…" : n ? `Delete ${n} selected…` : "Delete selected…";
+}
+
+function wipeSelection() {
+  return $$('#wipe-list input[name="what"]').filter((b) => b.checked).map((b) => b.value);
+}
+
+function openWipeDialog() {
+  const what = wipeSelection();
+  if (!what.length) return;
+  const everything = what.length === state.vocab.wipe_targets.length;
+  $("#wipe-sum").innerHTML = state.vocab.wipe_targets
+    .filter((t) => what.includes(t.key))
+    .map((t) => `<li><b>${esc(t.label)}</b>: ${esc(t.hint)}</li>`)
+    .join("");
+  $("#wipe-alert").hidden = !everything;
+  $("#wipe-phrase").textContent = everything ? "delete all" : "delete";
+  $("#wipe-input").value = "";
+  $("#wipe-confirm").disabled = true;
+  $("#wipe-confirm").textContent = everything ? "Delete everything" : "Delete";
+  $("#wipe-dialog").classList.toggle("everything", everything);
+  $("#wipe-dialog").showModal();
+  $("#wipe-input").focus();
+}
+
+function wipeTyped() {
+  return $("#wipe-input").value.trim().toLowerCase() === $("#wipe-phrase").textContent;
+}
+
+async function runWipe() {
+  const what = wipeSelection();
+  if (!what.length || !wipeTyped()) return;
+  const btn = $("#wipe-confirm");
+  btn.disabled = true;
+  try {
+    await settleSaves(true);
+    const { counts } = await api("POST", "/wipe", { what });
+    $("#wipe-dialog").close();
+    for (const b of $$('#wipe-list input[name="what"]')) b.checked = false;
+    updateWipeForm();
+    if (what.includes("foods")) state.draft = null; // its foods are gone
+    state.foods = [];
+    await loadSavedMeals().catch(() => {});
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    toast(`Deleted ${fmt(total)} item${total === 1 ? "" : "s"}`);
+  } catch (err) {
+    btn.disabled = false;
+    showError(err);
+  }
+}
+
 // --- exit ("Save & close") ------------------------------------------------------
 
 function openExitDialog() {
@@ -2727,6 +2832,24 @@ function wire() {
   $("#act-type").addEventListener("change", updateActivityForm);
   $("#activity-form").elements.duration_min.addEventListener("input", updateActivityForm);
   $("#act-cancel").addEventListener("click", resetActivityForm);
+  $("#clear-day").addEventListener("click", clearDay);
+
+  // Danger Zone (its checkboxes come with the vocabulary: buildVocabControls)
+  $("#wipe-list").addEventListener("change", updateWipeForm);
+  $("#wipe-all").addEventListener("change", (e) => {
+    for (const b of $$('#wipe-list input[name="what"]')) b.checked = e.target.checked;
+    updateWipeForm();
+  });
+  $("#wipe-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    openWipeDialog();
+  });
+  $("#wipe-input").addEventListener("input", () => ($("#wipe-confirm").disabled = !wipeTyped()));
+  $("#wipe-dialog-form").addEventListener("submit", (e) => {
+    e.preventDefault(); // stay open until the delete is done
+    runWipe();
+  });
+  $("#wipe-cancel").addEventListener("click", () => $("#wipe-dialog").close());
   $("#comfort-stars").addEventListener("click", (e) => {
     const star = e.target.closest("[data-star]");
     if (!star) return;

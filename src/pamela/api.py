@@ -27,6 +27,7 @@ from .schemas import (
     MOODS,
     TARGETS,
     UNITS,
+    WIPE_TARGETS,
     Activity,
     ActivityIn,
     ActivityType,
@@ -40,6 +41,7 @@ from .schemas import (
     DayMetricsIn,
     DayNote,
     DayNoteIn,
+    Deleted,
     Entry,
     EntryBatchIn,
     EntryIn,
@@ -54,6 +56,7 @@ from .schemas import (
     Target,
     TargetIn,
     Vocabulary,
+    WipeIn,
     gender_group,
 )
 from .tracking import estimate_kcal, scale_macros, target_on
@@ -121,6 +124,9 @@ def read_vocab() -> dict:
             {"key": k, "label": label, "emoji": emoji} for k, (label, emoji) in FOOD_GROUPS.items()
         ],
         "units": list(UNITS),
+        "wipe_targets": [
+            {"key": k, "label": label, "hint": hint} for k, (label, hint) in WIPE_TARGETS.items()
+        ],
         "moods": choices(MOODS),
         "feelings": feelings,
         "genders": choices(GENDERS),
@@ -789,6 +795,48 @@ def update_day_note(day: dt.date, note: DayNoteIn, conn: Conn) -> dict:
 
 
 # --- aggregates --------------------------------------------------------------
+
+
+@router.delete("/days/{day}", response_model=Deleted)
+def clear_day(day: dt.date, conn: Conn) -> dict:
+    """Everything logged for one day, as if it had never been filled in: food
+    entries, activities, the check-in and the note."""
+    iso = day.isoformat()
+    counts = {
+        key: conn.execute(f"DELETE FROM {table} WHERE day = ?", (iso,)).rowcount
+        for key, table in (
+            ("food_log", "food_entries"),
+            ("activities", "activities"),
+            ("checkins", "day_metrics"),
+            ("notes", "day_notes"),
+        )
+    }
+    return {"counts": counts}
+
+
+# table that each wipe target empties
+_WIPE_TABLES = {
+    "food_log": "food_entries",
+    "activities": "activities",
+    "checkins": "day_metrics",
+    "notes": "day_notes",
+    "saved_meals": "saved_meals",
+    "foods": "foods",
+}
+
+
+@router.post("/wipe", response_model=Deleted)
+def wipe(body: WipeIn, conn: Conn) -> dict:
+    """Delete whole kinds of tracked data, for good (the Danger Zone)."""
+    counts = {}
+    for key in dict.fromkeys(body.what):  # once each, in the order given
+        counts[key] = conn.execute(f"DELETE FROM {_WIPE_TABLES[key]}").rowcount
+    if "foods" in counts and "saved_meals" not in counts:
+        # their items went with the foods: a saved meal left empty goes too
+        counts["saved_meals"] = conn.execute(
+            "DELETE FROM saved_meals WHERE id NOT IN (SELECT saved_meal_id FROM saved_meal_items)"
+        ).rowcount
+    return {"counts": counts}
 
 
 @router.get("/days/{day}", response_model=Day)

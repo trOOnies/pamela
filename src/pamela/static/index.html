@@ -198,6 +198,9 @@
                     placeholder="A few words on how the day went…"></textarea>
           <div class="notes-foot"><span>Saves when you click away.</span><span id="notes-count"></span></div>
         </section>
+        <div class="clear-day">
+          <button type="button" class="btn danger-outline" id="clear-day">🗑️ Clear this day</button>
+        </div>
       </div>
     </section>
 
@@ -415,6 +418,17 @@
           </table>
         </div>
       </section>
+
+      <section class="card danger-zone" aria-labelledby="danger-h">
+        <div class="card-head"><h2 id="danger-h">⚠️ Danger Zone</h2></div>
+        <p class="hint">Delete tracked information for good: this can't be undone. Your settings (targets,
+          profile, weight references and exercise types) are never touched.</p>
+        <form id="wipe-form" class="wipe-form" autocomplete="off">
+          <label class="wipe-all"><input type="checkbox" id="wipe-all"><span>Select all</span></label>
+          <div class="wipe-list" id="wipe-list" role="group" aria-label="What to delete"></div>
+          <button type="submit" class="btn danger-outline" id="wipe-btn" disabled>Delete selected…</button>
+        </form>
+      </section>
     </section>
 
     <!-- Help ------------------------------------------------------------ -->
@@ -433,6 +447,7 @@
               <li><a href="#/help" data-jump="help-day-body">Weight and body fat</a></li>
               <li><a href="#/help" data-jump="help-day-notes">Notes</a></li>
               <li><a href="#/help" data-jump="help-day-activity">Activity</a></li>
+              <li><a href="#/help" data-jump="help-day-clear">Clearing a day</a></li>
               <li><a href="#/help" data-jump="help-day-summary">Summary</a></li>
             </ol></li>
           <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
@@ -535,6 +550,11 @@
             humidity (%), wind (km/h) and how comfortable it felt, from ★ to ★★★★★ (tap the same star
             again to clear it). Activities with a time are listed in time order. Press the ✏️ pencil on
             a logged activity to change it or add its conditions later.</p>
+
+          <h3 id="help-day-clear">🗑️ Clearing a day</h3>
+          <p><b>Clear this day</b>, below the notes, deletes everything logged on the day you're
+            looking at: its food, activities, check-in and note, as if it had never been filled in.
+            You're asked first, and it can't be undone. Your foods and saved meals stay.</p>
 
           <h3 id="help-day-summary">📊 Summary</h3>
           <p>Calories and macros against that day's targets. Anything over target turns amber.
@@ -639,6 +659,11 @@
             empty and it uses its group's (🏃 cardio, 🏋️ gym &amp; strength, 🧘 mind &amp; body,
             🥊 classes &amp; combat, 🏅 sports, 🏞️ outdoors &amp; water, 🏡 everyday, and 💪 for
             groups you make up).</p>
+          <p>⚠️ <b>Danger Zone</b>, at the bottom: tick what to delete for good (food log,
+            activities, check-ins, day notes, saved meals, food catalog), or <i>Select all</i>, and
+            press <b>Delete</b>. To confirm, type <b>delete</b> (or <b>delete all</b> when everything is
+            ticked). Deleting the food catalog keeps the values of days you logged, but empties saved
+            meals made of those foods. Settings are never deleted.</p>
         </section>
 
         <section class="card help-card" id="help-exit" aria-labelledby="help-exit-h">
@@ -717,6 +742,23 @@
       <button type="button" class="btn ghost" id="exit-cancel" autofocus>Cancel</button>
       <button type="button" class="btn primary" id="exit-confirm">Save &amp; close</button>
     </div>
+  </dialog>
+
+  <dialog id="wipe-dialog" class="exit-dialog wipe-dialog" aria-labelledby="wipe-h">
+    <form method="dialog" id="wipe-dialog-form">
+      <h2 id="wipe-h">🗑️ Delete for good?</h2>
+      <p>This deletes, with no way back:</p>
+      <ul class="wipe-sum" id="wipe-sum"></ul>
+      <p class="wipe-alert" id="wipe-alert" hidden>⚠️ <b>That's everything you've tracked.</b> Every day,
+        every food and every saved meal will be gone, as if you had just started using Pamela.
+        Your settings stay.</p>
+      <label class="field"><span>Type <b id="wipe-phrase">delete</b> to confirm</span>
+        <input type="text" id="wipe-input" autocomplete="off" spellcheck="false"></label>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="wipe-cancel" autofocus>Cancel</button>
+        <button type="submit" class="btn danger" id="wipe-confirm" disabled>Delete</button>
+      </div>
+    </form>
   </dialog>
 
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>

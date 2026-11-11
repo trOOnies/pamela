@@ -496,6 +496,34 @@ class Profile(BaseModel):
     )
 
 
+# --- wiping data --------------------------------------------------------------
+
+# What the Danger Zone can wipe: key -> (label, what it means).
+WIPE_TARGETS = {
+    "food_log": ("Food log", "Every food entry logged on any day"),
+    "activities": ("Activities", "Every activity logged on any day"),
+    "checkins": ("Check-ins", "Steps, sleep, mood, feelings, weight and body fat of every day"),
+    "notes": ("Day notes", "The note of every day"),
+    "saved_meals": ("Saved meals", "All your saved meals"),
+    "foods": (
+        "Food catalog",
+        "Every food in Foods. Logged days keep their values; saved meals lose those foods",
+    ),
+}
+
+
+class WipeIn(_In):
+    what: list[Literal[tuple(WIPE_TARGETS)]] = Field(  # type: ignore[valid-type]
+        min_length=1, description="What to delete for good"
+    )
+
+
+class Deleted(BaseModel):
+    """How many rows went, per kind."""
+
+    counts: dict[str, int]
+
+
 # --- aggregates --------------------------------------------------------------
 
 
@@ -584,6 +612,12 @@ class Choice(BaseModel):
     group: str | None = None
 
 
+class WipeChoice(BaseModel):
+    key: str
+    label: str
+    hint: str
+
+
 class FoodGroupChoice(BaseModel):
     key: str
     label: str
@@ -597,6 +631,7 @@ class Vocabulary(BaseModel):
     diet_implies: dict[str, list[str]] = Field(description="tag -> the broader tags it implies")
     auto_tags: list[Choice] = Field(description="Tags derived from the values; not settable")
     food_groups: list[FoodGroupChoice]
+    wipe_targets: list[WipeChoice] = Field(description="What the Danger Zone can wipe")
     units: list[str] = Field(description="Suggested food units")
     moods: list[Choice]
     feelings: list[Choice]

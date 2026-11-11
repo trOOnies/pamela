@@ -578,3 +578,63 @@ def test_target_unknown_key(client):
         ).status_code
         == 200
     )
+
+
+# --- clearing a day and the Danger Zone --------------------------------------
+
+
+def _fill_day(client, day, oats):
+    entry = {"day": day, "meal": "Lunch", "food_id": oats["id"], "quantity": 50}
+    client.post("/api/entries", json=entry)
+    run = {"day": day, "type": "Running", "duration_min": 20, "kcal": 200}
+    client.post("/api/activities", json=run)
+    client.put(f"/api/days/{day}/metrics", json={"steps": 5000, "mood": 4})
+    client.put(f"/api/days/{day}/note", json={"text": "good day"})
+
+
+def test_clear_day_only_touches_that_day(client, oats):
+    other = "2026-11-08"
+    _fill_day(client, DAY, oats)
+    _fill_day(client, other, oats)
+    r = client.delete(f"/api/days/{DAY}")
+    assert r.status_code == 200
+    assert r.json()["counts"] == {"food_log": 1, "activities": 1, "checkins": 1, "notes": 1}
+    d = client.get(f"/api/days/{DAY}").json()
+    assert d["entries"] == [] and d["activities"] == []
+    assert d["metrics"]["steps"] is None and d["metrics"]["mood"] is None
+    assert client.get(f"/api/days/{DAY}/note").json()["text"] == ""
+    kept = client.get(f"/api/days/{other}").json()
+    assert len(kept["entries"]) == 1 and kept["metrics"]["steps"] == 5000
+    # the catalog is untouched; clearing an empty day is fine
+    assert client.get(f"/api/foods/{oats['id']}").status_code == 200
+    assert client.delete(f"/api/days/{DAY}").json()["counts"]["food_log"] == 0
+
+
+def test_wipe_selected_kinds(client, oats):
+    _fill_day(client, DAY, oats)
+    meal = {"name": "m", "items": [{"food_id": oats["id"], "quantity": 10}]}
+    client.post("/api/saved-meals", json=meal)
+    r = client.post("/api/wipe", json={"what": ["activities", "notes"]})
+    assert r.json()["counts"] == {"activities": 1, "notes": 1}
+    d = client.get(f"/api/days/{DAY}").json()
+    assert d["activities"] == [] and len(d["entries"]) == 1 and d["metrics"]["steps"] == 5000
+
+    # wiping the catalog keeps logged entries, and drops saved meals left empty
+    r = client.post("/api/wipe", json={"what": ["foods"]})
+    assert r.json()["counts"] == {"foods": 1, "saved_meals": 1}
+    d = client.get(f"/api/days/{DAY}").json()
+    assert d["entries"][0]["food_id"] is None and d["entries"][0]["kcal"] > 0
+    assert client.get("/api/saved-meals").json() == []
+
+
+def test_wipe_everything_and_validation(client, oats):
+    _fill_day(client, DAY, oats)
+    keys = [t["key"] for t in client.get("/api/vocab").json()["wipe_targets"]]
+    assert client.post("/api/wipe", json={"what": keys}).status_code == 200
+    d = client.get(f"/api/days/{DAY}").json()
+    assert d["entries"] == [] and d["activities"] == [] and d["metrics"]["steps"] is None
+    assert client.get("/api/foods").json() == []
+    # settings survive: targets and exercise types
+    assert client.get("/api/activity-types").json()
+    assert client.post("/api/wipe", json={"what": []}).status_code == 422
+    assert client.post("/api/wipe", json={"what": ["profile"]}).status_code == 422

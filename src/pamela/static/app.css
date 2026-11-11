@@ -756,6 +756,36 @@ kbd {
 .exit-dialog h2 { margin-bottom: 10px; }
 .exit-dialog p { margin: 0 0 10px; color: var(--text-2); line-height: 1.5; }
 .exit-warn { color: var(--warn) !important; }
+/* deleting things */
+.btn.danger-outline { background: transparent; color: var(--danger); border-color: var(--danger); }
+.btn.danger-outline:hover:not(:disabled) { background: var(--danger); color: var(--surface); }
+.btn.danger { background: var(--danger); color: var(--surface); border-color: transparent; font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+.clear-day { display: flex; justify-content: flex-end; }
+.danger-zone { grid-column: 1 / -1; border-color: var(--danger); }
+.danger-zone h2 { color: var(--danger); }
+.danger-zone > .hint { margin-bottom: 12px; }
+.wipe-form { display: grid; gap: 10px; }
+.wipe-all { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; width: max-content; cursor: pointer; }
+.wipe-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.wipe-item {
+  display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.wipe-item:has(input:checked) { border-color: var(--danger); }
+.wipe-item input { margin-top: 3px; flex: none; }
+.wipe-item span { display: grid; gap: 2px; }
+.wipe-item small { color: var(--text-2); font-size: .82rem; line-height: 1.4; }
+.wipe-all input, .wipe-item input { accent-color: var(--danger); width: 16px; height: 16px; }
+.wipe-form > .btn { justify-self: start; }
+.wipe-dialog { max-width: 480px; }
+.wipe-sum { margin: 0 0 10px; padding-left: 1.2em; color: var(--text-2); font-size: .9rem; line-height: 1.5; }
+.wipe-alert {
+  color: var(--text) !important; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.wipe-dialog.everything { border-color: var(--danger); }
+.wipe-dialog .field input { width: 100%; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .closed { display: grid; place-items: center; min-height: 100vh; padding: 24px; }
 .closed-card { max-width: 460px; text-align: center; }
