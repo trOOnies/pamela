@@ -29,6 +29,8 @@ const state = {
   dayData: null,
   foods: [],            // full catalog (Foods view)
   foodTagFilter: new Set(),
+  foodSort: null, // { key, dir: 1 | -1 }; null = the API's order (most used first)
+  hideTags: prefGet("pamela-hide-tags") === "1",
   editingFoodId: null,
   selectedFood: null,   // food chosen in the entry form
   draft: null,          // saved meal being prepared for logging: { name, items }
@@ -97,6 +99,22 @@ function parseSleep(s) {
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
+/** Per-browser preferences; storage can be missing or blocked, so never rely on it. */
+function prefGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function prefSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // fine: the preference just isn't remembered
+  }
+}
+
 function num(v) {
   if (v === "" || v == null) return null;
   const n = Number(v);
@@ -1238,6 +1256,23 @@ function renderFoods() {
     box.innerHTML = `<p class="empty-note">${state.foods.length ? "No matches" : "No foods yet - add your first one with the form."}</p>`;
     return;
   }
+  if (state.foodSort) {
+    const { key, dir } = state.foodSort;
+    const col = FOOD_SORT[key];
+    rows.sort((a, b) => {
+      const va = col.get(a), vb = col.get(b);
+      if (va == null || vb == null) return (va == null) - (vb == null); // empty last, either way
+      return dir * (col.text ? collator.compare(va, vb) : va - vb) || collator.compare(a.name, b.name);
+    });
+  }
+  box.classList.toggle("hide-tags", state.hideTags);
+  const th = (key, label, cls = "", title = "") => {
+    const sorted = state.foodSort?.key === key ? state.foodSort.dir : 0;
+    const aria = sorted ? ` aria-sort="${sorted > 0 ? "ascending" : "descending"}"` : "";
+    const arrow = sorted ? (sorted > 0 ? " ▲" : " ▼") : "";
+    return `<th class="${cls}"${aria}${title ? ` title="${title}"` : ""}><button type="button" class="sort-btn" data-sort="${key}">${label}<span class="sort-arrow" aria-hidden="true">${arrow}</span></button></th>`;
+  };
+  const head = `<tr>${th("name", "Name")}${th("brand", "Brand")}${th("per", "Per", "n")}${th("kcal", "kcal", "n")}${th("protein_g", "P", "n")}${th("carbs_g", "C", "n")}${th("fat_g", "F", "n")}${th("fiber_g", "Fib", "n")}${th("uses", "Uses", "n", "Times logged in the last 90 days")}<th class="act"><span class="sr">Actions</span></th></tr>`;
   // One table per group, in the vocabulary's order; foods without a group last.
   const sections = [...state.vocab.food_groups, { key: "", label: "No group", emoji: "📦" }]
     .map((g) => [g, rows.filter((f) => (f.food_group || "") === g.key)])
@@ -1249,13 +1284,40 @@ function renderFoods() {
       <div class="table-wrap">
         <table class="foods-table">
           <colgroup><col class="c-name"><col class="c-brand"><col class="c-per"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-act"></colgroup>
-          <thead><tr><th>Name</th><th>Brand</th><th class="n">Per</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="n">Fib</th><th class="n" title="Times logged in the last 90 days">Uses</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+          <thead>${head}</thead>
           <tbody>${list.map(row).join("")}</tbody>
         </table>
       </div>
     </section>`
     )
     .join("");
+}
+
+const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+// Sortable catalog columns: the value to sort by, and whether it's text. The first
+// click sorts text A→Z and numbers high→low.
+const FOOD_SORT = {
+  name: { get: (f) => f.name, text: true },
+  brand: { get: (f) => f.brand || null, text: true },
+  per: { get: (f) => `${f.unit} ${String(f.basis_qty).padStart(10, "0")}`, text: true },
+  kcal: { get: (f) => f.kcal },
+  protein_g: { get: (f) => f.protein_g },
+  carbs_g: { get: (f) => f.carbs_g },
+  fat_g: { get: (f) => f.fat_g },
+  fiber_g: { get: (f) => f.fiber_g },
+  uses: { get: (f) => f.uses },
+};
+
+/** First click: natural order; second: reversed; third: back to most used first. */
+function sortFoodsBy(key) {
+  const first = FOOD_SORT[key].text ? 1 : -1;
+  const cur = state.foodSort;
+  if (cur?.key !== key) state.foodSort = { key, dir: first };
+  else if (cur.dir === first) state.foodSort = { key, dir: -first };
+  else state.foodSort = null;
+  renderFoods();
+  // keep focus on the header that was clicked (the tables were redrawn)
+  $(`#foods-groups [data-sort="${key}"]`)?.focus();
 }
 
 /** Scrolls to a food's catalog row and flashes it, clearing filters that hide it. */
@@ -2521,7 +2583,17 @@ function wire() {
     const go = e.target.closest("[data-goto-food]");
     if (go) goToFood(Number(go.dataset.gotoFood));
   });
+  const hideBtn = $("#hide-tags");
+  hideBtn.setAttribute("aria-pressed", String(state.hideTags));
+  hideBtn.addEventListener("click", () => {
+    state.hideTags = !state.hideTags;
+    prefSet("pamela-hide-tags", state.hideTags ? "1" : "0");
+    hideBtn.setAttribute("aria-pressed", String(state.hideTags));
+    $("#foods-groups").classList.toggle("hide-tags", state.hideTags);
+  });
   $("#foods-groups").addEventListener("click", (e) => {
+    const sort = e.target.closest("[data-sort]");
+    if (sort) return sortFoodsBy(sort.dataset.sort);
     const edit = e.target.closest("[data-edit-food]");
     if (edit) return editFood(Number(edit.dataset.editFood));
     const del = e.target.closest("[data-del-food]");

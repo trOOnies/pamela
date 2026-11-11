@@ -238,6 +238,7 @@
           <div class="filters">
             <div class="chips tag-filter" id="tag-filter" role="group" aria-label="Only show foods that are"></div>
             <select id="group-filter" aria-label="Only show foods in this group"><option value="">All groups</option></select>
+            <button type="button" class="chip" id="hide-tags" aria-pressed="false">Hide all tags</button>
             <input type="search" id="foods-filter" placeholder="Filter…" aria-label="Filter foods">
           </div>
         </div>
@@ -531,6 +532,13 @@
             table per group, with foods without one last; the menu above it shows a single group.</p>
           <p>✅ After saving, the name of the food shows next to the form's title: click it to jump to
             its row.</p>
+          <p>↕️ Click a column title to sort every table by it. Click again to reverse, and a third
+            time to go back to the usual order (most used first). <b>Hide all tags</b> makes the
+            list more compact.</p>
+          <p>⚡ <b>Scanning many products?</b> If a barcode is already in your list, its name shows with
+            an <b>Edit</b> link instead of opening it, so you can scan the next one right away.</p>
+          <p>🧮 A hint shows the calories your macros add up to, which helps catch typos.</p>
+          <p>🔒 Editing or deleting a food never changes days you already logged.</p>
         </section>
 
         <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">

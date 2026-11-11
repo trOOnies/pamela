@@ -439,6 +439,15 @@ input.invalid { border-color: var(--danger); }
 .foods-table col.c-n { width: 52px; }
 .foods-table col.c-act { width: 76px; }
 .foods-table td { overflow-wrap: anywhere; }
+.foods-groups.hide-tags .tags { display: none; }
+.sort-btn {
+  border: 0; padding: 0; background: none; font: inherit; color: inherit; text-transform: inherit;
+  letter-spacing: inherit; cursor: pointer; text-align: inherit; width: 100%;
+}
+.sort-btn:hover { color: var(--text); }
+th[aria-sort] { color: var(--text); }
+.sort-arrow { font-size: .7em; }
+#hide-tags[aria-pressed="true"] { background: var(--accent-2-soft); border-color: var(--accent-2-line); color: var(--text); font-weight: 600; }
 .foods-table tr.flash td { animation: row-flash 1.8s ease-out; }
 @keyframes row-flash { from { background: var(--accent-2-soft); } }
 @media (prefers-reduced-motion: reduce) { .foods-table tr.flash td { animation-duration: .01s; } }
