@@ -304,6 +304,14 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transpa
 .log-table tr.empty td { color: var(--text-3); font-style: italic; }
 .log-table .add-to { font-size: .8rem; color: var(--accent); }
 .log-table .head-btns { white-space: nowrap; }
+.log-table th, .log-table td { padding-left: 6px; padding-right: 6px; }
+/* The middle column is narrowest just above the one-column breakpoint: let a meal's
+   "+ add" and "☆ save" stack so the food names keep their room. The wrapper scrolls
+   instead of overflowing the card if it's still too tight. */
+@media (min-width: 1400px) and (max-width: 1599px) {
+  .log-table .head-btns { white-space: normal; }
+  .log-table .head-btns .row-btn { display: block; margin-left: auto; padding: 0 2px; }
+}
 .log-table .qty-input { width: 80px; height: 28px; text-align: right; }
 .log-table td.n.qty { white-space: nowrap; cursor: text; }
 .log-table td .quick-tag { font-size: .72rem; color: var(--text-3); margin-left: 6px; }
