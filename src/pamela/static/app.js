@@ -288,7 +288,10 @@ function render() {
   if (state.view === "meals") return loadMealsView();
   if (state.view === "history") return loadHistory();
   if (state.view === "settings") return loadSettings();
-  if (state.view === "help") return Promise.all([loadTargets(), loadProfile()]).then(renderHelp, showError);
+  if (state.view === "help") {
+    markHelpIndex();
+    return Promise.all([loadTargets(), loadProfile()]).then(renderHelp, showError);
+  }
 }
 
 function goDay(iso) {
@@ -2106,6 +2109,8 @@ function renderHelp() {
 
 /** Index links scroll within the Help tab (a plain #anchor would change the route),
  * and the section being read is marked in the index. */
+let markHelpIndex = () => {};
+
 function wireHelpIndex() {
   const links = $$(".help-index a[data-jump]");
   $(".help-index").addEventListener("click", (e) => {
@@ -2141,7 +2146,29 @@ function wireHelpIndex() {
     setCurrent(current);
   };
   addEventListener("scroll", mark, { passive: true });
-  addEventListener("hashchange", () => requestAnimationFrame(mark));
+  markHelpIndex = () => requestAnimationFrame(mark); // also on a direct load of #/help
+}
+
+// --- light / dark mode -------------------------------------------------------------
+
+/** The theme on screen: the one picked with the toggle, else the system's. */
+function currentTheme() {
+  return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+}
+
+function labelThemeButton() {
+  const label = currentTheme() === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  $("#theme-btn").title = label;
+  $("#theme-btn").setAttribute("aria-label", label);
+}
+
+function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try {
+    localStorage.setItem("pamela-theme", next); // only a per-browser preference
+  } catch {}
+  labelThemeButton(); // everything else, charts included, is drawn with CSS variables
 }
 
 // --- exit ("Save & close") ------------------------------------------------------
@@ -2190,6 +2217,9 @@ async function saveAndClose() {
 function wire() {
   window.addEventListener("hashchange", route);
   $("#exit-btn").addEventListener("click", openExitDialog);
+  $("#theme-btn").addEventListener("click", toggleTheme);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => labelThemeButton());
+  labelThemeButton();
   $("#exit-cancel").addEventListener("click", () => $("#exit-dialog").close());
   $("#exit-confirm").addEventListener("click", saveAndClose);
   wireHelpIndex();

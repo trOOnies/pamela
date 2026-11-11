@@ -3,19 +3,23 @@
 
 :root {
   color-scheme: light;
-  --bg: #f4f4f2;
-  --surface: #fcfcfb;
-  --surface-2: #efeeeb;
-  --border: #dcdbd6;
-  --text: #0b0b0b;
-  --text-2: #52514e;
-  --text-3: #7a7974;
-  --accent: #2a78d6;
+  /* light green, with light yellow as the second color */
+  --bg: #e7f0dc;
+  --surface: #fbfdf8;
+  --surface-2: #e2edd5;
+  --border: #cad9ba;
+  --text: #13200f;
+  --text-2: #475844;
+  --text-3: #6f7f69;
+  --accent: #2f7d32;
   --accent-text: #ffffff;
-  --accent-soft: #dce9f9;
+  --accent-soft: #d9eecf;
+  --accent-2: #8a6d00;
+  --accent-2-line: #d9bf45;
+  --accent-2-soft: #fbf3c8;
   --danger: #c0392b;
   --warn: #b26a00;
-  --track: #e4e3df;
+  --track: #d8e5ca;
   /* macro identity colors (categorical slots 1-4, always shown with a text label) */
   --c-kcal: #2a78d6;
   --c-protein: #eb6834;
@@ -41,21 +45,27 @@
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
 }
 
+/* Dark: follows the system unless the toggle picked a theme (html[data-theme]). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #121211;
-    --surface: #1a1a19;
-    --surface-2: #242422;
-    --border: #33332f;
-    --text: #f0efec;
-    --text-2: #c3c2b7;
-    --text-3: #8e8d85;
-    --accent: #3987e5;
-    --accent-soft: #1d2f47;
+    /* deep green, with a muted dark yellow as the second color */
+    --bg: #0e140c;
+    --surface: #151d12;
+    --surface-2: #1e2919;
+    --border: #2d3b27;
+    --text: #ecf3e6;
+    --text-2: #b8c6b0;
+    --text-3: #88977f;
+    --accent: #6fbf62;
+    --accent-text: #0c1a0a;
+    --accent-soft: #213a1c;
+    --accent-2: #e2c75a;
+    --accent-2-line: #8d7a26;
+    --accent-2-soft: #332d12;
     --danger: #e66767;
     --warn: #e0a030;
-    --track: #2c2c29;
+    --track: #263321;
     --c-kcal: #3987e5;
     --c-protein: #d95926;
     --c-carbs: #199e70;
@@ -77,23 +87,28 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #121211;
-  --surface: #1a1a19;
-  --surface-2: #242422;
-  --border: #33332f;
-  --text: #f0efec;
-  --text-2: #c3c2b7;
-  --text-3: #8e8d85;
-  --accent: #3987e5;
-  --accent-soft: #1d2f47;
+  /* deep green, with a muted dark yellow as the second color */
+  --bg: #0e140c;
+  --surface: #151d12;
+  --surface-2: #1e2919;
+  --border: #2d3b27;
+  --text: #ecf3e6;
+  --text-2: #b8c6b0;
+  --text-3: #88977f;
+  --accent: #6fbf62;
+  --accent-text: #0c1a0a;
+  --accent-soft: #213a1c;
+  --accent-2: #e2c75a;
+  --accent-2-line: #8d7a26;
+  --accent-2-soft: #332d12;
   --danger: #e66767;
   --warn: #e0a030;
-  --track: #2c2c29;
+  --track: #263321;
   --c-kcal: #3987e5;
   --c-protein: #d95926;
   --c-carbs: #199e70;
   --c-fat: #c98500;
-    --c-fiber: #9085e9;
+  --c-fiber: #9085e9;
   --c-steps: #2bb3bf;
   --c-sleep: #7f8ef0;
   --c-weight: #df7ac4;
@@ -333,8 +348,8 @@ td > .tags { display: flex; margin-top: 3px; }
 
 /* --- saved meal draft & item tables ------------------------------------ */
 .draft {
-  border: 1.5px dashed var(--accent); border-radius: 8px; padding: 12px; margin-bottom: 14px;
-  background: color-mix(in srgb, var(--accent-soft) 45%, transparent);
+  border: 1.5px dashed var(--accent-2-line); border-radius: 8px; padding: 12px; margin-bottom: 14px;
+  background: var(--accent-2-soft);
 }
 .draft-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
 .draft-head h3 { margin: 0; color: var(--text); }
@@ -405,7 +420,7 @@ input.invalid { border-color: var(--danger); }
 .preview:empty, .hint:empty { display: none; }
 .count { color: var(--text-3); font-weight: 400; font-size: .9rem; }
 #foods-filter { width: 240px; }
-.foods-table tr.editing td, .at-table tr.editing td { background: var(--accent-soft); }
+.foods-table tr.editing td, .at-table tr.editing td { background: var(--accent-2-soft); }
 
 /* --- saved meals view ------------------------------------------------- */
 .meals-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: minmax(460px, 640px) minmax(0, 1fr); }
@@ -416,7 +431,7 @@ input.invalid { border-color: var(--danger); }
 .sm-fields select { width: 150px; }
 .sm-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .sm-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-.sm-card.editing { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
+.sm-card.editing { border-color: var(--accent-2-line); background: var(--accent-2-soft); }
 .sm-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .sm-top h3 { margin: 0; color: var(--text); font-size: 1rem; }
 .sm-for { font-size: .78rem; color: var(--text-2); background: var(--surface-2); padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
@@ -508,7 +523,7 @@ input.invalid { border-color: var(--danger); }
   color: var(--text-2); text-decoration: none;
 }
 .help-index a:hover { background: var(--surface-2); color: var(--text); }
-.help-index a[aria-current="location"] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.help-index a[aria-current="location"] { background: var(--accent-2-soft); color: var(--text); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent-2-line); }
 .help-tour { margin: 0 0 8px; padding-left: 1.4em; color: var(--text-2); line-height: 1.6; }
 .help-intro { border-left: 4px solid var(--accent); }
 .help-intro h2 { font-size: 1.35rem; }
@@ -572,7 +587,7 @@ kbd {
 .targets-table td.periods { color: var(--text-2); font-size: .88rem; }
 .targets-table .period { display: inline-block; margin-right: 14px; white-space: nowrap; }
 .targets-table .period b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.targets-table tr.editing td { background: var(--accent-soft); }
+.targets-table tr.editing td { background: var(--accent-2-soft); }
 .targets-table tr.target-editor td { background: var(--surface-2); padding: 12px; }
 .targets-table tbody tr.target-editor:hover td { background: var(--surface-2); }
 .muted { color: var(--text-3); }
@@ -603,9 +618,9 @@ kbd {
 .icon-btn:disabled, .btn:disabled { opacity: .45; cursor: default; }
 .icon-btn:disabled:hover { background: transparent; }
 #today-btn:disabled {
-  opacity: 1; background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600;
+  opacity: 1; background: var(--accent-2-soft); border-color: var(--accent-2-line); color: var(--text); font-weight: 600;
 }
-.daypick.is-today .btn { border-color: var(--accent); }
+.daypick.is-today .btn { border-color: var(--accent-2-line); }
 
 /* --- body (weight, body fat) & notes ---------------------------------------- */
 .body-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
@@ -674,7 +689,7 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
    gets a line of its own under the tabs, and Exit stays in the top right corner. */
 @media (max-width: 999px) {
   .topbar { flex-wrap: wrap; row-gap: 8px; }
-  .exit-btn { margin-left: auto; }
+  .theme-btn { margin-left: auto; }
   .daynav { order: 1; flex-basis: 100%; margin-left: 0; justify-content: center; }
   body:not([data-view="day"]) .daynav { display: none; }
 }
@@ -694,3 +709,20 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 }
 .add-btn:hover { background: var(--accent-soft); color: var(--text); }
 .metric .field.num .add-wrap input { width: 84px; }
+
+/* --- theme toggle ------------------------------------------------------------- */
+.theme-btn { display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); }
+.theme-btn:hover { color: var(--accent-2); border-color: var(--accent-2-line); }
+/* the sun shows in light mode, the moon in dark mode */
+.theme-btn .moon { display: none; }
+:root[data-theme="dark"] .theme-btn .sun { display: none; }
+:root[data-theme="dark"] .theme-btn .moon { display: block; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-btn .sun { display: none; }
+  :root:not([data-theme="light"]) .theme-btn .moon { display: block; }
+}
+/* the brand picks up the palette: a green leaf-ish dot with a yellow core */
+.brand::before {
+  content: ""; display: inline-block; width: .7em; height: .7em; margin-right: .4em; vertical-align: .02em;
+  border-radius: 50% 0; background: var(--accent); box-shadow: inset 0 0 0 .18em var(--accent-2-line);
+}

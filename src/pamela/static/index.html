@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pamela</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M7 20h5l3-9 4 13 3-7h3' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f7d32'/%3E%3Cpath d='M7 20h5l3-9 4 13 3-7h3' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <script>try { const t = localStorage.getItem("pamela-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/app.js"></script>
 </head>
@@ -29,6 +30,7 @@
       <button type="button" class="btn ghost" id="today-btn" title="Go to today">Today</button>
       <span class="sr" id="day-today" aria-live="polite"></span>
     </div>
+    <button type="button" class="icon-btn theme-btn" id="theme-btn" title="Switch to dark mode" aria-label="Switch to dark mode"><svg class="ico sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="ico moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg></button>
     <button type="button" class="btn ghost exit-btn" id="exit-btn" title="Save &amp; close Pamela"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.56v16.16a1 1 0 0 1-1.24.97L5 20V5.56a2 2 0 0 1 1.52-1.94l4-1A2 2 0 0 1 13 4.56z"/></svg><span>Exit</span></button>
   </header>
 
@@ -416,6 +418,8 @@
             <li><b>Settings</b>: your targets, profile and exercise types.</li>
             <li><b>Help</b>: this page. Press <kbd>?</kbd> to come back any time.</li>
           </ul>
+          <p>☀️ <b>Light or dark?</b> The sun / moon button next to Exit switches between the two.
+            Pamela starts out matching your system's setting, and remembers your choice in this browser.</p>
           <p>When you're done, press <b>🚪 Exit</b> in the top right corner to close Pamela properly.</p>
         </section>
 
