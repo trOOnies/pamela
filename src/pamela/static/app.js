@@ -2203,6 +2203,7 @@ async function saveAndClose() {
   document.body.innerHTML = `
     <main class="closed">
       <div class="card closed-card">
+        <img src="/static/pamela.svg" alt="" width="72" height="72">
         <h1>👋 Pamela is closed</h1>
         <p>Everything is saved and the server has stopped.</p>
         <p class="hint">You can close this tab. To open Pamela again, run <code>make serve</code>.</p>

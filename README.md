@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/pamela/static/pamela.svg" alt="Pamela logo: a sun hat whose crown is a rising sun and whose brim is a leaf" width="128">
+</p>
+
 # pamela
 
 Personal physical activity and macro tracker app.

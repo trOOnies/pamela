@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pamela">
+  <title>Pamela</title>
+  <!-- A sun hat, loosely: the crown is a rising sun, the brim a wide leaf. -->
+  <!-- sun rays, peeking over the crown -->
+  <g stroke="#e3b81f" stroke-width="3.4" stroke-linecap="round">
+    <path d="M32 7v6"/>
+    <path d="M14.6 14.6l4 4"/>
+    <path d="M49.4 14.6l-4 4"/>
+  </g>
+  <!-- crown: a yellow dome, with a soft shine -->
+  <path d="M15 41a17 17 0 0 1 34 0z" fill="#f4d44d"/>
+  <path d="M22 31a11.5 11.5 0 0 1 9-6.5" fill="none" stroke="#fbf3c8" stroke-width="3" stroke-linecap="round"/>
+  <!-- brim: a wide, gently tilted leaf -->
+  <path d="M2 47c10-10.5 50-12.5 60-3.5-6 10.5-50 14.5-60 3.5z" fill="#7cc46a"/>
+  <path d="M7.5 47.5c15-4.5 36-6 50-4" fill="none" stroke="#2f7d32" stroke-width="1.8" stroke-linecap="round" opacity=".5"/>
+  <!-- band, with its ribbon flicking off like a stem -->
+  <path d="M15.6 37.6h32.8" stroke="#2f7d32" stroke-width="4.6" stroke-linecap="round"/>
+  <path d="M47.6 37.6c4.6.6 8.2 3 10 7.6" fill="none" stroke="#2f7d32" stroke-width="3" stroke-linecap="round"/>
+</svg>

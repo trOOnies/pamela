@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pamela</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f7d32'/%3E%3Cpath d='M7 20h5l3-9 4 13 3-7h3' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="/static/pamela.svg" type="image/svg+xml">
   <script>try { const t = localStorage.getItem("pamela-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#/">Pamela</a>
+    <a class="brand" href="#/"><img class="brand-logo" src="/static/pamela.svg" alt="" width="28" height="28">Pamela</a>
     <nav class="tabs" aria-label="Sections">
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
@@ -400,7 +400,13 @@
 
       <div class="help-content">
         <section class="card help-card help-intro" id="help-intro" aria-labelledby="help-intro-h">
-          <h2 id="help-intro-h">👋 Welcome to Pamela</h2>
+          <div class="help-hero">
+            <img src="/static/pamela.svg" alt="" width="88" height="88">
+            <div>
+              <h2 id="help-intro-h">Welcome to Pamela</h2>
+              <p class="help-tagline">Your food and fitness diary, under a sun hat. 🌞</p>
+            </div>
+          </div>
           <p>Pamela is your personal food and fitness diary. Each day you can log what you eat,
             how you move, how you slept and how you feel, and then look back over weeks and months
             to see how it all adds up.</p>
