@@ -1804,6 +1804,7 @@ async function loadHistory() {
   const end = todayISO();
   const start = addDays(end, -(state.historyRange - 1));
   try {
+    $("#history-range").textContent = `${fmtDayWd(start)} → ${fmtDayWd(end)}`;
     const days = await api("GET", `/history?start=${start}&end=${end}`);
     for (const d of days) d.sleep_h = d.sleep_min != null ? d.sleep_min / 60 : null;
     renderHistory(days);
@@ -1831,19 +1832,30 @@ function renderHistory(days) {
     const d = w.at(-1).weight_kg - w[0].weight_kg;
     return `${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt(Math.abs(d), 1)} kg in range`;
   };
+  // [label, value, note, gauge?]; a gauge fills the tile up to value / target, and
+  // turns amber when an overshoot counts (kcal, protein: more than 10% over).
+  const gauge = (value, target, overshoot = false) =>
+    value != null && target ? { pct: value / target, overshoot: overshoot && value > target * 1.1 } : null;
+  const sleepAvgH = sleepAvg != null ? sleepAvg / 60 : null;
   $("#history-tiles").innerHTML = [
-    ["Avg kcal / logged day", fmt(avg("kcal")), t.kcal ? `target ${fmt(t.kcal)}` : ""],
-    ["Avg protein", `${fmt(avg("protein_g"))} g`, t.protein_g ? `target ${fmt(t.protein_g)} g` : ""],
+    ["Avg kcal / logged day", fmt(avg("kcal")), t.kcal ? `target ${fmt(t.kcal)}` : "", gauge(avg("kcal"), t.kcal, true)],
+    ["Avg protein", `${fmt(avg("protein_g"))} g`, t.protein_g ? `target ${fmt(t.protein_g)} g` : "", gauge(avg("protein_g"), t.protein_g, true)],
     ["Days logged", `${logged.length}`, `of ${days.length}`],
     ["Active days", `${activeDays}`, `of ${days.length}`],
     ["Avg burned / day", fmt(avg("burned_kcal", days)), "kcal"],
-    ["Avg steps", fmt(avg("steps", withKey("steps"))), t.steps ? `target ${fmt(t.steps)}` : ""],
-    ["Avg sleep", sleepAvg != null ? fmtSleep(sleepAvg) : "–", t.sleep_h ? `target ${fmtSleep(t.sleep_h * 60)} h` : "h"],
+    ["Avg steps", fmt(avg("steps", withKey("steps"))), t.steps ? `target ${fmt(t.steps)}` : "", gauge(avg("steps", withKey("steps")), t.steps)],
+    ["Avg sleep", sleepAvg != null ? fmtSleep(sleepAvg) : "–", t.sleep_h ? `target ${fmtSleep(t.sleep_h * 60)} h` : "h", gauge(sleepAvgH, t.sleep_h)],
     ["Latest weight", lastOf("weight_kg") ? `${fmt(lastOf("weight_kg").weight_kg, 1)} kg` : "–", weightChange()],
     ["Latest body fat", lastOf("body_fat_pct") ? `${fmt(lastOf("body_fat_pct").body_fat_pct, 1)} %` : "–", lastOf("body_fat_pct") ? fmtDay(lastOf("body_fat_pct").day) : ""],
     ["Avg mood", moodAvg != null ? `${MOOD_EMOJI[Math.round(moodAvg)]}` : "–", moodAvg != null ? `${moodLabel(Math.round(moodAvg))} · ${fmt(moodAvg, 1)} / 5` : ""],
   ]
-    .map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v} <small>${s}</small></div></div>`)
+    .map(([k, v, s, g]) => {
+      if (!g) return `<div class="tile"><div class="k">${k}</div><div class="v">${v} <small>${s}</small></div></div>`;
+      const pct = Math.round(g.pct * 100);
+      const style = `--fill:${Math.min(100, pct)}%`;
+      const title = `${pct}% of target${g.overshoot ? ": more than 10% over" : ""}`;
+      return `<div class="tile gauge${g.overshoot ? " overshoot" : ""}" style="${style}" title="${title}"><div class="k">${k}</div><div class="v">${v} <small>${s}</small></div></div>`;
+    })
     .join("");
 
   barChart($("#chart-kcal"), days, "kcal", "kcal");
@@ -1857,7 +1869,8 @@ function renderHistory(days) {
     .reverse()
     .map(
       (d) => `<tr class="${d.entry_count || d.active_min || d.has_note || ["steps", "sleep_min", "mood", "weight_kg", "body_fat_pct"].some((k) => d[k] != null) ? "" : "nodata"}">
-      <td><a href="#/day/${d.day}">${fmtDayWd(d.day)}</a>${d.has_note ? `<span class="note-flag" title="Has a note">📝</span>` : ""}</td>
+      <td class="dow">${weekdayShort.format(parseISO(d.day))}</td>
+      <td><a href="#/day/${d.day}">${fmtDay(d.day)}</a>${d.has_note ? `<span class="note-flag" title="Has a note">📝</span>` : ""}</td>
       <td class="n">${fmt(d.kcal)}</td>
       ${MACROS.map((m) => `<td class="n">${fmt(d[m.key])}</td>`).join("")}
       <td class="n">${fmt(d.burned_kcal)}</td><td class="n">${fmt(d.active_min)}</td>

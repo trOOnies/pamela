@@ -37,7 +37,39 @@
   <main>
     <!-- Day ------------------------------------------------------------- -->
     <section id="view-day" class="view day-grid" hidden>
-      <aside class="card summary" id="summary" aria-label="Daily summary"></aside>
+      <div class="day-main">
+        <aside class="card summary" id="summary" aria-label="Daily summary"></aside>
+
+        <section class="card checkin" aria-labelledby="checkin-h">
+          <div class="card-head">
+            <h2 id="checkin-h">Check-in</h2>
+            <span class="status-note" id="checkin-status" aria-live="polite"></span>
+          </div>
+          <div class="metric">
+            <label class="field num"><span>Steps</span>
+              <input type="number" id="steps-input" min="0" max="200000" step="1" inputmode="numeric" placeholder="–"></label>
+            <div class="metric-meter"><div class="meter" style="--c:var(--c-steps)"><span id="steps-bar"></span></div><span class="metric-sub" id="steps-sub"></span></div>
+          </div>
+          <div class="metric">
+            <label class="field num"><span>Sleep</span>
+              <input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal" title="Hours, as 7:30, 7.5 or 7h30"></label>
+            <div class="metric-meter"><div class="meter" style="--c:var(--c-sleep)"><span id="sleep-bar"></span></div><span class="metric-sub" id="sleep-sub"></span></div>
+          </div>
+          <div class="body-row">
+            <label class="field num"><span>⚖️ Weight (kg)</span>
+              <input type="text" id="weight-input" inputmode="decimal" maxlength="6" placeholder="–" title="Kilograms, like 72.5"></label>
+            <label class="field num"><span>Body fat (%)</span>
+              <input type="text" id="bodyfat-input" inputmode="decimal" maxlength="5" placeholder="–" title="Percent, like 18.5"></label>
+            <span class="body-sub" id="body-sub"></span>
+          </div>
+          <div class="mood-block">
+            <span class="mini-label" id="mood-label">Mood</span>
+            <div class="mood-scale" id="mood-scale" role="radiogroup" aria-labelledby="mood-label"></div>
+            <span class="mini-label" id="feelings-label">Feelings <small>(any that apply)</small></span>
+            <div class="feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
+          </div>
+        </section>
+      </div>
 
       <section class="card food-log" aria-labelledby="food-h">
         <div class="card-head">
@@ -120,58 +152,28 @@
       </section>
 
       <div class="day-side">
-      <section class="card checkin" aria-labelledby="checkin-h">
-        <div class="card-head">
-          <h2 id="checkin-h">Check-in</h2>
-          <span class="status-note" id="checkin-status" aria-live="polite"></span>
-        </div>
-        <div class="metric">
-          <label class="field num"><span>Steps</span>
-            <input type="number" id="steps-input" min="0" max="200000" step="1" inputmode="numeric" placeholder="–"></label>
-          <div class="metric-meter"><div class="meter" style="--c:var(--c-steps)"><span id="steps-bar"></span></div><span class="metric-sub" id="steps-sub"></span></div>
-        </div>
-        <div class="metric">
-          <label class="field num"><span>Sleep</span>
-            <input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal" title="Hours, as 7:30, 7.5 or 7h30"></label>
-          <div class="metric-meter"><div class="meter" style="--c:var(--c-sleep)"><span id="sleep-bar"></span></div><span class="metric-sub" id="sleep-sub"></span></div>
-        </div>
-        <div class="body-row">
-          <label class="field num"><span>⚖️ Weight (kg)</span>
-            <input type="text" id="weight-input" inputmode="decimal" maxlength="6" placeholder="–" title="Kilograms, like 72.5"></label>
-          <label class="field num"><span>Body fat (%)</span>
-            <input type="text" id="bodyfat-input" inputmode="decimal" maxlength="5" placeholder="–" title="Percent, like 18.5"></label>
-          <span class="body-sub" id="body-sub"></span>
-        </div>
-        <div class="mood-block">
-          <span class="mini-label" id="mood-label">Mood</span>
-          <div class="mood-scale" id="mood-scale" role="radiogroup" aria-labelledby="mood-label"></div>
-          <span class="mini-label" id="feelings-label">Feelings <small>(any that apply)</small></span>
-          <div class="feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
-        </div>
-      </section>
+        <section class="card activity" aria-labelledby="act-h">
+          <div class="card-head"><h2 id="act-h">Activity</h2></div>
+          <form id="activity-form" class="activity-form" autocomplete="off">
+            <label class="field type-field"><span>Type</span><select name="type" id="act-type"></select></label>
+            <label class="field num"><span>Minutes</span><input type="number" name="duration_min" min="1" step="any" required></label>
+            <label class="field num" id="act-distance"><span>Km</span><input type="number" name="distance_km" min="0" step="any"></label>
+            <label class="field num"><span>kcal</span><input type="number" name="kcal" min="0" step="any" id="act-kcal" placeholder="auto"></label>
+            <label class="field grow"><span>Notes</span><input type="text" name="notes" maxlength="1000"></label>
+            <button class="btn primary" type="submit">Add</button>
+          </form>
+          <ul class="act-list" id="act-list"></ul>
+        </section>
 
-      <section class="card notes-card" aria-labelledby="notes-h">
-        <div class="card-head">
-          <h2 id="notes-h">Notes <small>(optional)</small></h2>
-          <span class="status-note" id="notes-status" aria-live="polite"></span>
-        </div>
-        <textarea id="notes-input" maxlength="2000" aria-labelledby="notes-h"
-                  placeholder="A few words on how the day went…"></textarea>
-        <div class="notes-foot"><span>Saves when you click away.</span><span id="notes-count"></span></div>
-      </section>
-
-      <section class="card activity" aria-labelledby="act-h">
-        <div class="card-head"><h2 id="act-h">Activity</h2></div>
-        <form id="activity-form" class="activity-form" autocomplete="off">
-          <label class="field type-field"><span>Type</span><select name="type" id="act-type"></select></label>
-          <label class="field num"><span>Minutes</span><input type="number" name="duration_min" min="1" step="any" required></label>
-          <label class="field num" id="act-distance"><span>Km</span><input type="number" name="distance_km" min="0" step="any"></label>
-          <label class="field num"><span>kcal</span><input type="number" name="kcal" min="0" step="any" id="act-kcal" placeholder="auto"></label>
-          <label class="field grow"><span>Notes</span><input type="text" name="notes" maxlength="1000"></label>
-          <button class="btn primary" type="submit">Add</button>
-        </form>
-        <ul class="act-list" id="act-list"></ul>
-      </section>
+        <section class="card notes-card" aria-labelledby="notes-h">
+          <div class="card-head">
+            <h2 id="notes-h">Notes <small>(optional)</small></h2>
+            <span class="status-note" id="notes-status" aria-live="polite"></span>
+          </div>
+          <textarea id="notes-input" maxlength="2000" aria-labelledby="notes-h"
+                    placeholder="A few words on how the day went…"></textarea>
+          <div class="notes-foot"><span>Saves when you click away.</span><span id="notes-count"></span></div>
+        </section>
       </div>
     </section>
 
@@ -269,7 +271,7 @@
     <!-- History --------------------------------------------------------- -->
     <section id="view-history" class="view" hidden>
       <div class="history-head">
-        <h2>History</h2>
+        <h2>History <span class="history-range" id="history-range" aria-live="polite"></span></h2>
         <div class="seg" role="radiogroup" aria-label="Range">
           <label><input type="radio" name="range" value="7"><span>7 days</span></label>
           <label><input type="radio" name="range" value="30" checked><span>30 days</span></label>
@@ -288,7 +290,7 @@
       <section class="card">
         <div class="table-wrap">
           <table class="history-table">
-            <thead><tr><th>Day</th><th class="n">kcal</th><th class="n">Protein</th><th class="n">Carbs</th><th class="n">Fat</th><th class="n">Fiber</th><th class="n">Burned</th><th class="n">Active min</th><th class="n">Steps</th><th class="n">Sleep</th><th class="n">Weight</th><th class="n">Body fat</th><th>Mood</th></tr></thead>
+            <thead><tr><th class="dow"><abbr title="Day of the week">DoW</abbr></th><th>Date</th><th class="n">kcal</th><th class="n">Protein</th><th class="n">Carbs</th><th class="n">Fat</th><th class="n">Fiber</th><th class="n">Burned</th><th class="n">Active min</th><th class="n">Steps</th><th class="n">Sleep</th><th class="n">Weight</th><th class="n">Body fat</th><th>Mood</th></tr></thead>
             <tbody id="history-body"></tbody>
           </table>
         </div>
@@ -499,6 +501,8 @@
           <p>Calories, protein, steps, sleep, body weight and body fat for the last 7, 30 or 90 days. The dashed line is
             your target, and it steps up or down where a target changed. Click a bar or a row to
             jump to that day.</p>
+          <p>🫙 The cards on top with a target fill up as you get closer to it (hover one to see the %).
+            Average calories or protein more than 10% above target turn the card amber.</p>
         </section>
 
         <section class="card help-card" id="help-settings-tab" aria-labelledby="help-settings-tab-h">
@@ -577,6 +581,11 @@
       </div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 Pamela by trOOnies</p>
+    <p>Made with Claude Code</p>
+  </footer>
 
   <dialog id="exit-dialog" class="exit-dialog" aria-labelledby="exit-h">
     <h2 id="exit-h">🚪 Save &amp; close Pamela?</h2>
