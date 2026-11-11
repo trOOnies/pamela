@@ -319,6 +319,11 @@ MIGRATIONS: list[str] = [
     UPDATE foods SET unit = 'whole' WHERE unit = 'unit';
     UPDATE food_entries SET unit = 'whole' WHERE unit = 'unit';
     """,
+    # 8: the user's own BMI cutoffs for the weight references (a JSON list); NULL
+    # means the defaults for their gender.
+    """
+    ALTER TABLE profile ADD COLUMN bmi_cutoffs TEXT;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

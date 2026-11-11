@@ -448,6 +448,27 @@ input.invalid { border-color: var(--danger); }
 th[aria-sort] { color: var(--text); }
 .sort-arrow { font-size: .7em; }
 #hide-tags[aria-pressed="true"] { background: var(--accent-2-soft); border-color: var(--accent-2-line); color: var(--text); font-weight: 600; }
+/* weight chart: kg/BMI switch and the references below */
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.chart-head h3 { margin: 0; }
+.seg input:disabled + span { opacity: .45; cursor: not-allowed; }
+.body-refs { margin-top: 10px; }
+.refs-table { font-size: .85rem; }
+.refs-table caption { text-align: left; font-weight: 600; padding-bottom: 4px; color: var(--text); }
+.refs-table caption small { font-weight: 400; color: var(--text-2); }
+.refs-table td, .refs-table th { padding: 3px 8px; }
+.refs-table tr.current td { background: var(--accent-2-soft); font-weight: 600; }
+.refs-table .you { color: var(--text-2); font-weight: 400; font-size: .8rem; white-space: nowrap; }
+/* settings: weight references editor */
+.refs-form { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.refs-form h3 { margin: 0; font-size: 1rem; }
+.refs-form h3 small { color: var(--text-2); font-weight: 400; }
+.refs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px 10px; }
+.refs-grid input { width: 100%; }
+.refs-grid input[aria-invalid="true"] { border-color: var(--danger); }
+.refs-kg { color: var(--text-2); font-size: .78rem; min-height: 1em; }
+.refs-error { color: var(--danger); }
+.refs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .foods-table tr.flash td { animation: row-flash 1.8s ease-out; }
 @keyframes row-flash { from { background: var(--accent-2-soft); } }
 @media (prefers-reduced-motion: reduce) { .foods-table tr.flash td { animation-duration: .01s; } }

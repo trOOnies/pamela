@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
 from collections.abc import Iterator
 from typing import Annotated
@@ -13,6 +14,9 @@ from . import barcode, db
 from .config import AppConfig
 from .schemas import (
     AUTO_TAGS,
+    BMI_DEFAULTS,
+    BODY_BRACKETS,
+    BODY_TYPES,
     DIET_FIELDS,
     DIET_IMPLIES,
     DIET_TAGS,
@@ -29,6 +33,8 @@ from .schemas import (
     ActivityTypeIn,
     BarcodeLookup,
     BodyBaseline,
+    BodyReferences,
+    BodyReferencesIn,
     Day,
     DayMetrics,
     DayMetricsIn,
@@ -48,6 +54,7 @@ from .schemas import (
     Target,
     TargetIn,
     Vocabulary,
+    gender_group,
 )
 from .tracking import estimate_kcal, scale_macros, target_on
 
@@ -141,6 +148,39 @@ def _profile(conn: sqlite3.Connection, config: AppConfig) -> dict:
     row = conn.execute("SELECT gender, height_cm FROM profile WHERE id = 1").fetchone()
     last = _last_weight(conn, dt.date.today().isoformat())
     return {**row, "last_weight": last, "estimate_weight_kg": _estimate_weight(last, config)}
+
+
+def _body_references(conn: sqlite3.Connection) -> dict:
+    row = conn.execute("SELECT gender, bmi_cutoffs FROM profile WHERE id = 1").fetchone()
+    group = gender_group(row["gender"])
+    custom = row["bmi_cutoffs"] is not None
+    cutoffs = json.loads(row["bmi_cutoffs"]) if custom else list(BMI_DEFAULTS[group])
+    bounds = [None, *cutoffs, None]
+    return {
+        "gender_group": group,
+        "cutoffs": cutoffs,
+        "custom": custom,
+        "defaults": {k: list(v) for k, v in BMI_DEFAULTS.items()},
+        "brackets": [
+            {"key": k, "label": label, "body_type": BODY_TYPES[group][i],
+             "min_bmi": bounds[i], "max_bmi": bounds[i + 1]}
+            for i, (k, label) in enumerate(BODY_BRACKETS.items())
+        ],
+    }
+
+
+@router.get("/body-references", response_model=BodyReferences)
+def read_body_references(conn: Conn) -> dict:
+    """Weight brackets by BMI, with a stereotypical body type for each."""
+    return _body_references(conn)
+
+
+@router.put("/body-references", response_model=BodyReferences)
+def update_body_references(refs: BodyReferencesIn, conn: Conn) -> dict:
+    """Set your own cutoffs, or ``null`` to go back to the defaults for your gender."""
+    value = json.dumps(refs.cutoffs) if refs.cutoffs is not None else None
+    conn.execute("UPDATE profile SET bmi_cutoffs = ? WHERE id = 1", (value,))
+    return _body_references(conn)
 
 
 @router.get("/profile", response_model=Profile)

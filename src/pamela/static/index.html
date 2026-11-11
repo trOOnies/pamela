@@ -295,7 +295,17 @@
         <section class="card" style="--series:var(--c-protein)"><h3>Protein (g)</h3><div class="chart" id="chart-protein"></div></section>
         <section class="card" style="--series:var(--c-steps)"><h3>Steps</h3><div class="chart" id="chart-steps"></div></section>
         <section class="card" style="--series:var(--c-sleep)"><h3>Sleep (hours)</h3><div class="chart" id="chart-sleep"></div></section>
-        <section class="card" style="--series:var(--c-weight)"><h3>Body weight (kg)</h3><div class="chart" id="chart-weight"></div></section>
+        <section class="card weight-card" style="--series:var(--c-weight)">
+          <div class="chart-head">
+            <h3 id="weight-h">Body weight (kg)</h3>
+            <div class="seg" role="radiogroup" aria-label="Show weight as">
+              <label><input type="radio" name="weight-unit" value="kg" checked><span>kg</span></label>
+              <label><input type="radio" name="weight-unit" value="bmi"><span>BMI</span></label>
+            </div>
+          </div>
+          <div class="chart" id="chart-weight"></div>
+          <div class="body-refs" id="body-refs"></div>
+        </section>
         <section class="card" style="--series:var(--c-bodyfat)"><h3>Body fat (%)</h3><div class="chart" id="chart-bodyfat"></div></section>
       </div>
       <section class="card">
@@ -319,6 +329,22 @@
           <button class="btn primary" type="submit">Save profile</button>
         </form>
         <dl class="profile-stats" id="profile-stats"></dl>
+        <form id="refs-form" class="refs-form" autocomplete="off" novalidate>
+          <h3>Weight references <small>(BMI)</small></h3>
+          <p class="hint" id="refs-status"></p>
+          <div class="refs-grid" id="refs-inputs"></div>
+          <p class="hint refs-error" id="refs-error" aria-live="polite"></p>
+          <div class="refs-actions">
+            <span class="hint">Fill with defaults:</span>
+            <button type="button" class="chip" data-refs-preset="male">Male</button>
+            <button type="button" class="chip" data-refs-preset="female">Female</button>
+            <button type="button" class="chip" data-refs-preset="other">Other</button>
+          </div>
+          <div class="refs-actions">
+            <button class="btn primary" type="submit" id="refs-save">Save references</button>
+            <button class="btn ghost" type="button" id="refs-reset">Use my gender's defaults</button>
+          </div>
+        </form>
         <p class="hint at-explain">Log your weight and body fat in the Day tab's check-in. Calorie
           estimates use the latest weight logged on or before each day.</p>
       </section>
@@ -559,6 +585,17 @@
           <p>⚖️ Latest weight and body fat show <span class="trend-demo up">▲</span> up,
             <span class="trend-demo flat">–</span> no change or <span class="trend-demo down">▼</span> down,
             compared with the latest value logged <i>before</i> the period. Hover for the exact change.</p>
+          <p>⚖️ <b>kg or BMI</b>: the switch on the body weight chart shows your weight in kg or as
+            BMI (body mass index: kg divided by your height in meters, squared). BMI needs your
+            height, set in Settings.</p>
+          <p>📐 <b>Weight references</b>, below that chart, split weight into six brackets, from
+            <i>Underweight</i> to <i>Severely obese</i>, each with the body type it's usually
+            associated with (e.g. <i>Lean</i>, <i>Curvy</i>, <i>Stocky</i>). They follow the switch, in
+            kg or BMI, and your latest weight's bracket is highlighted. They're defined in BMI, so they
+            also need your height.</p>
+          <p>The default values follow a stereotypical Western idea of body shapes, with one set for
+            men, one for women and one for everyone else (from your gender in Settings). They're a
+            rough guide, not a medical assessment: you can set your own in Settings.</p>
         </section>
 
         <section class="card help-card" id="help-settings-tab" aria-labelledby="help-settings-tab-h">
@@ -567,8 +604,12 @@
             for every day, or <i>custom periods</i> if your goal changed over time. Each day uses
             the target from its own period, so old days keep their old goals. Going back to a single
             value deletes the periods (you'll be asked first).</p>
-          <p>🧍 <b>Profile</b>: your gender and height (cm). Height is used for BMI; gender is
-            only stored and isn't used in any calculation.</p>
+          <p>🧍 <b>Profile</b>: your gender and height (cm). Height is used for BMI; gender picks
+            the default weight references (male, female or other) and isn't used in any calculation.</p>
+          <p>📐 <b>Weight references</b>: the five BMI values where each bracket starts, from
+            <i>Slim</i> to <i>Severely obese</i>. Each must be above 0 and higher than the one before.
+            With your height set, the kg each one means shows next to it. Fill in the defaults for men,
+            women or other and adjust from there, or go back to your gender's defaults.</p>
           <p>🏋️ <b>Exercise types</b>: about 75 built in, from CrossFit to padel. Add your own
             or adjust how many calories each one burns. Each type can have its own emoji; leave it
             empty and it uses its group's (🏃 cardio, 🏋️ gym &amp; strength, 🧘 mind &amp; body,

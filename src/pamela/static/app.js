@@ -31,6 +31,9 @@ const state = {
   foodTagFilter: new Set(),
   foodSort: null, // { key, dir: 1 | -1 }; null = the API's order (most used first)
   hideTags: prefGet("pamela-hide-tags") === "1",
+  weightUnit: prefGet("pamela-weight-unit") === "bmi" ? "bmi" : "kg",
+  bodyRefs: null, // GET /body-references
+  historyDays: null,
   editingFoodId: null,
   selectedFood: null,   // food chosen in the entry form
   draft: null,          // saved meal being prepared for logging: { name, items }
@@ -1642,12 +1645,72 @@ function renderProfile() {
   $("#profile-stats").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 }
 
+/** The references editor: one BMI input per bracket boundary, kg next to it. */
+function renderRefsForm(values) {
+  const refs = state.bodyRefs;
+  if (!refs) return;
+  const cut = values ?? refs.cutoffs;
+  const groupLabel = { male: "men", female: "women", other: "everyone else" }[refs.gender_group];
+  $("#refs-status").textContent = refs.custom
+    ? "Using your own values."
+    : `Using the defaults for ${groupLabel} (from your gender).`;
+  $("#refs-inputs").innerHTML = refs.brackets
+    .slice(1)
+    .map(
+      (b, i) => `<label class="field"><span>${esc(b.label)} from</span>
+        <input type="number" name="cut${i}" min="0" step="0.1" inputmode="decimal" value="${cut[i]}" data-cut="${i}">
+        <small class="refs-kg" data-kg="${i}"></small></label>`
+    )
+    .join("");
+  checkRefs();
+}
+
+/** Validates the inputs (above 0, strictly increasing), shows kg, toggles Save. */
+function checkRefs() {
+  const inputs = $$("#refs-inputs [data-cut]");
+  const vals = inputs.map((el) => num(el.value));
+  const h = heightM();
+  inputs.forEach((el, i) => {
+    $(`[data-kg="${i}"]`).textContent = h && vals[i] > 0 ? `≈ ${fmt(vals[i] * h ** 2, 1)} kg` : "";
+  });
+  let error = "";
+  const bad = new Set();
+  vals.forEach((v, i) => {
+    const problem =
+      v == null || v <= 0
+        ? "Every value must be a number above 0."
+        : i && vals[i - 1] != null && v <= vals[i - 1]
+          ? "Each value must be higher than the one before."
+          : "";
+    if (problem) {
+      bad.add(i);
+      error ||= problem;
+    }
+  });
+  inputs.forEach((el, i) => el.setAttribute("aria-invalid", String(bad.has(i))));
+  $("#refs-error").textContent = error;
+  $("#refs-save").disabled = !!error;
+  return error ? null : vals;
+}
+
+async function saveRefs(cutoffs) {
+  try {
+    state.bodyRefs = await api("PUT", "/body-references", { cutoffs });
+    renderRefsForm();
+    toast(cutoffs ? "References saved" : "Back to your gender's defaults");
+  } catch (err) {
+    showError(err);
+  }
+}
+
 async function submitProfile(ev) {
   ev.preventDefault();
   const v = formValues(ev.currentTarget);
   try {
     state.profile = await api("PUT", "/profile", { gender: v.gender, height_cm: num(v.height_cm) });
+    state.bodyRefs = await api("GET", "/body-references"); // the defaults follow the gender
     renderProfile();
+    renderRefsForm();
     toast("Profile saved");
   } catch (err) {
     showError(err);
@@ -1657,8 +1720,14 @@ async function submitProfile(ev) {
 async function loadSettings() {
   document.title = "Settings · Pamela";
   try {
-    await Promise.all([loadActivityTypes(), loadTargets(), loadProfile()]);
+    await Promise.all([
+      loadActivityTypes(),
+      loadTargets(),
+      loadProfile(),
+      api("GET", "/body-references").then((r) => (state.bodyRefs = r)),
+    ]);
     renderProfile();
+    renderRefsForm();
     renderTargets();
     renderTypes();
     updateTypeEmojiPlaceholder();
@@ -1988,6 +2057,9 @@ async function loadHistory() {
       api("GET", `/history/baseline?before=${start}`),
     ]);
     for (const d of days) d.sleep_h = d.sleep_min != null ? d.sleep_min / 60 : null;
+    // the profile (height) and the weight references, for the BMI view
+    [state.profile, state.bodyRefs] = await Promise.all([api("GET", "/profile"), api("GET", "/body-references")]);
+    state.historyDays = days;
     renderHistory(days, baseline);
   } catch (err) {
     showError(err);
@@ -2055,7 +2127,7 @@ function renderHistory(days, baseline) {
   barChart($("#chart-protein"), days, "protein_g", "g");
   barChart($("#chart-steps"), days, "steps", "steps");
   barChart($("#chart-sleep"), days, "sleep_h", "h", 1);
-  lineChart($("#chart-weight"), days, "weight_kg", "kg", 1);
+  renderWeight();
   lineChart($("#chart-bodyfat"), days, "body_fat_pct", "%", 1);
 
   $("#history-body").innerHTML = [...days]
@@ -2073,6 +2145,61 @@ function renderHistory(days, baseline) {
     </tr>`
     )
     .join("");
+}
+
+/** Height in meters, or null when it isn't set (no BMI then). */
+function heightM() {
+  const h = state.profile?.height_cm;
+  return h ? h / 100 : null;
+}
+
+/** The body weight chart in kg or BMI, and the weight references below it. */
+function renderWeight() {
+  const days = state.historyDays;
+  if (!days) return;
+  const h = heightM();
+  const bmiRadio = $('input[name="weight-unit"][value="bmi"]');
+  bmiRadio.disabled = !h;
+  bmiRadio.parentElement.title = h ? "" : "Set your height in Settings to see BMI";
+  const unit = h && state.weightUnit === "bmi" ? "bmi" : "kg";
+  $(`input[name="weight-unit"][value="${unit}"]`).checked = true;
+  $("#weight-h").textContent = unit === "bmi" ? "Body mass index (BMI)" : "Body weight (kg)";
+  if (unit === "bmi") {
+    const withBmi = days.map((d) => ({ ...d, bmi: d.weight_kg != null ? d.weight_kg / h ** 2 : null }));
+    lineChart($("#chart-weight"), withBmi, "bmi", "BMI", 1);
+  } else {
+    lineChart($("#chart-weight"), days, "weight_kg", "kg", 1);
+  }
+  renderBodyRefs(unit);
+}
+
+/** The weight brackets as a list, in kg or BMI, with the latest weight's highlighted. */
+function renderBodyRefs(unit) {
+  const box = $("#body-refs");
+  const refs = state.bodyRefs, h = heightM();
+  if (!refs) return (box.innerHTML = "");
+  if (!h) {
+    box.innerHTML = `<p class="hint">📐 Weight references are based on BMI, so they need your height: add it in <a href="#/settings">Settings</a>.</p>`;
+    return;
+  }
+  const last = [...state.historyDays].reverse().find((d) => d.weight_kg != null);
+  const lastBmi = last ? last.weight_kg / h ** 2 : state.profile.last_weight ? state.profile.last_weight.weight_kg / h ** 2 : null;
+  const show = (bmi) => (unit === "bmi" ? fmt(bmi, 1) : `${fmt(bmi * h ** 2, 1)} kg`);
+  const range = (b) =>
+    b.min_bmi == null ? `under ${show(b.max_bmi)}` : b.max_bmi == null ? `${show(b.min_bmi)} and up` : `${show(b.min_bmi)} – ${show(b.max_bmi)}`;
+  const inside = (b) => lastBmi != null && (b.min_bmi == null || lastBmi >= b.min_bmi) && (b.max_bmi == null || lastBmi < b.max_bmi);
+  const groupLabel = { male: "men", female: "women", other: "everyone else" }[refs.gender_group];
+  box.innerHTML = `
+    <table class="refs-table">
+      <caption>Weight references <small>${refs.custom ? "your own values" : `defaults for ${groupLabel}`} · <a href="#/settings">edit</a></small></caption>
+      <thead><tr><th>Bracket</th><th>Body type</th><th class="n">${unit === "bmi" ? "BMI" : "Weight"}</th></tr></thead>
+      <tbody>${refs.brackets
+        .map(
+          (b) => `<tr class="${inside(b) ? "current" : ""}">
+        <td>${esc(b.label)}${inside(b) ? ` <span class="you">← latest</span>` : ""}</td><td>${esc(b.body_type)}</td><td class="n">${range(b)}</td></tr>`
+        )
+        .join("")}</tbody>
+    </table>`;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -2632,6 +2759,18 @@ function wire() {
   // settings
   wireTargets();
   $("#profile-form").addEventListener("submit", submitProfile);
+  const refsForm = $("#refs-form");
+  refsForm.addEventListener("input", checkRefs);
+  refsForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const vals = checkRefs();
+    if (vals) saveRefs(vals);
+  });
+  refsForm.addEventListener("click", (e) => {
+    const preset = e.target.closest("[data-refs-preset]");
+    if (preset) renderRefsForm(state.bodyRefs.defaults[preset.dataset.refsPreset]);
+  });
+  $("#refs-reset").addEventListener("click", () => saveRefs(null));
   $("#at-form").addEventListener("submit", submitType);
   $("#at-form").elements.met.addEventListener("input", updateTypeHint);
   $("#at-form").elements.category.addEventListener("input", updateTypeEmojiPlaceholder);
@@ -2645,6 +2784,13 @@ function wire() {
   });
 
   // history
+  for (const r of $$('input[name="weight-unit"]')) {
+    r.addEventListener("change", () => {
+      state.weightUnit = r.value;
+      prefSet("pamela-weight-unit", r.value);
+      renderWeight();
+    });
+  }
   for (const r of $$('input[name="range"]')) {
     r.addEventListener("change", () => {
       state.historyRange = Number(r.value);

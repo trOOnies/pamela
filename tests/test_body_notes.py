@@ -112,3 +112,42 @@ def test_history_baseline_is_latest_before_period(client):
     assert r["body_fat_pct"] == {"day": "2026-10-01", "value": 20}
     r = client.get("/api/history/baseline", params={"before": "2026-10-01"}).json()
     assert r == {"weight_kg": None, "body_fat_pct": None}
+
+
+def test_body_references_defaults_follow_gender(client):
+    r = client.get("/api/body-references").json()
+    assert r["gender_group"] == "other" and r["custom"] is False
+    assert r["cutoffs"] == r["defaults"]["other"]
+    assert [b["key"] for b in r["brackets"]][0] == "underweight"
+    assert r["brackets"][0]["min_bmi"] is None and r["brackets"][-1]["max_bmi"] is None
+    assert r["brackets"][1]["min_bmi"] == r["cutoffs"][0]
+
+    client.put("/api/profile", json={"gender": "female_trans", "height_cm": 165})
+    r = client.get("/api/body-references").json()
+    assert (r["gender_group"], r["cutoffs"]) == ("female", r["defaults"]["female"])
+    assert r["brackets"][3]["body_type"] == "Curvy"
+
+
+def test_body_references_custom_and_reset(client):
+    cut = [17, 19.5, 23, 27.5, 31]
+    r = client.put("/api/body-references", json={"cutoffs": cut}).json()
+    assert (r["cutoffs"], r["custom"]) == (cut, True)
+    # a gender change keeps the user's own cutoffs
+    client.put("/api/profile", json={"gender": "male_cis"})
+    assert client.get("/api/body-references").json()["cutoffs"] == cut
+    r = client.put("/api/body-references", json={"cutoffs": None}).json()
+    assert (r["cutoffs"], r["custom"]) == (r["defaults"]["male"], False)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        [18, 20, 25, 30],  # too few
+        [0, 20, 25, 30, 35],  # not positive
+        [-1, 20, 25, 30, 35],
+        [18, 20, 20, 30, 35],  # not strictly increasing
+        [18, 25, 20, 30, 35],
+    ],
+)
+def test_body_references_validation(client, bad):
+    assert client.put("/api/body-references", json={"cutoffs": bad}).status_code == 422

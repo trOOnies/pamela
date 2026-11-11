@@ -109,6 +109,38 @@ GENDERS = {
 
 NOTE_MAX = 2000
 
+# Weight references: six brackets split by five BMI cutoffs (the lower bound of
+# each bracket after the first). The defaults follow a stereotypical Western idea
+# of body shapes, per gender group; the user can set their own cutoffs.
+BODY_BRACKETS = {
+    "underweight": "Underweight",
+    "slim": "Slim",
+    "average": "Average",
+    "overweight": "Overweight",
+    "obese": "Obese",
+    "severely_obese": "Severely obese",
+}
+BODY_TYPES = {
+    "male": ("Skinny", "Lean", "Average build", "Stocky", "Heavyset", "Very heavyset"),
+    "female": ("Skinny", "Slender", "Average build", "Curvy", "Full-figured", "Plus-size"),
+    "other": ("Skinny", "Slim", "Average build", "Sturdy", "Heavy", "Very heavy"),
+}
+BMI_DEFAULTS = {
+    "male": (18.5, 21.0, 25.0, 30.0, 35.0),
+    "female": (18.5, 20.0, 24.0, 28.0, 33.0),
+    "other": (18.5, 20.5, 24.5, 29.0, 34.0),
+}
+BMI_CUTOFFS = len(BODY_BRACKETS) - 1
+
+
+def gender_group(gender: str) -> str:
+    """"male", "female" or "other", for the weight references."""
+    if gender.startswith("male"):
+        return "male"
+    if gender.startswith("female"):
+        return "female"
+    return "other"
+
 # Daily targets: key -> (label, unit, max). Values are positive integers.
 TARGETS = {
     "kcal": ("Calories", "kcal", None),
@@ -402,6 +434,41 @@ class ProfileIn(_In):
         if v not in GENDERS:
             raise ValueError(f"unknown gender {v!r}")
         return v
+
+
+class BodyReferencesIn(_In):
+    cutoffs: list[float] | None = Field(
+        description="BMI cutoffs between the brackets; null = the defaults for the gender",
+    )
+
+    @field_validator("cutoffs")
+    @classmethod
+    def _increasing(cls, v: list[float] | None) -> list[float] | None:
+        if v is None:
+            return v
+        if len(v) != BMI_CUTOFFS:
+            raise ValueError(f"exactly {BMI_CUTOFFS} cutoffs are needed")
+        if any(not 0 < c <= 200 for c in v):
+            raise ValueError("cutoffs must be above 0 (and at most 200)")
+        if any(a >= b for a, b in pairwise(v)):
+            raise ValueError("each cutoff must be higher than the one before")
+        return v
+
+
+class BodyBracket(BaseModel):
+    key: str
+    label: str
+    body_type: str
+    min_bmi: float | None = Field(description="null for the first bracket")
+    max_bmi: float | None = Field(description="null for the last bracket")
+
+
+class BodyReferences(BaseModel):
+    gender_group: Literal["male", "female", "other"]
+    cutoffs: list[float]
+    custom: bool = Field(description="False while the defaults for the gender are used")
+    defaults: dict[str, list[float]]
+    brackets: list[BodyBracket]
 
 
 class Profile(BaseModel):
