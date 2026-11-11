@@ -204,6 +204,18 @@ def test_kcal_empty_is_unknown_zero_is_calorie_free(client, oats):
     assert "calorie_free" not in sm["tags"]
 
 
+def test_food_group(client):
+    f = food(client, name="Apple", unit="whole", food_group="fruits")
+    assert (f["food_group"], f["unit"]) == ("fruits", "whole")
+    assert food(client, name="Plain")["food_group"] == ""
+    r = client.put(f"/api/foods/{f['id']}", json={"name": "Apple", "food_group": ""})
+    assert r.json()["food_group"] == ""
+    assert client.post("/api/foods", json={"name": "x", "food_group": "rocks"}).status_code == 422
+    v = client.get("/api/vocab").json()
+    assert {"key": "cookies", "label": "Cookies", "emoji": "🍪"} in v["food_groups"]
+    assert {"u", "whole", "g", "ml"} <= set(v["units"]) and "unit" not in v["units"]
+
+
 def test_brands_are_distinct_and_most_used_first(client):
     for name, brand in [("a", "Arcor"), ("b", "Check"), ("c", "check"), ("d", "Check"), ("e", "")]:
         food(client, name=name, brand=brand)

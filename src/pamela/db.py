@@ -312,6 +312,13 @@ MIGRATIONS: list[str] = [
     CREATE INDEX foods_name ON foods (name COLLATE NOCASE);
     CREATE UNIQUE INDEX foods_ean ON foods (ean) WHERE ean IS NOT NULL;
     """,
+    # 7: a food group per food ('' = none); the unit "unit" becomes "whole" (a whole
+    # item, like an apple), next to the new "u" (one piece of a pack).
+    """
+    ALTER TABLE foods ADD COLUMN food_group TEXT NOT NULL DEFAULT '';
+    UPDATE foods SET unit = 'whole' WHERE unit = 'unit';
+    UPDATE food_entries SET unit = 'whole' WHERE unit = 'unit';
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

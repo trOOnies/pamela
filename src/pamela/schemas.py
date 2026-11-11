@@ -35,6 +35,38 @@ DIET_TAGS = {
     "tacc_free": "TACC-free",
 }
 DIET_FIELDS = tuple(DIET_TAGS)
+
+# What kind of food it is: key -> (label, emoji). One group per food, optional.
+FOOD_GROUPS = {
+    "carbs": ("Carbs (bread, pasta, rice, grains)", "🍞"),
+    "legumes": ("Legumes", "🫘"),
+    "vegetables": ("Vegetables", "🥦"),
+    "fruits": ("Fruits", "🍎"),
+    "fish": ("Fish & seafood", "🐟"),
+    "meat": ("Meat", "🥩"),
+    "chicken": ("Chicken & poultry", "🍗"),
+    "eggs": ("Eggs", "🥚"),
+    "dairy": ("Dairy", "🧀"),
+    "nuts_seeds": ("Nuts & seeds", "🥜"),
+    "oils_fats": ("Oils & fats", "🫒"),
+    "sweets": ("Sweets", "🍫"),
+    "cookies": ("Cookies", "🍪"),
+    "snacks": ("Snacks", "🍿"),
+    "drinks": ("Drinks", "🥤"),
+    "alcoholic": ("Alcoholic drinks", "🍷"),
+    "sweeteners": ("Sweeteners", "🍯"),
+    "seasoning": ("Seasoning & spices", "🧂"),
+    "sauces": ("Sauces & spreads", "🥫"),
+    "base": ("Base ingredients (flour, premixes)", "🥣"),
+    "prepared": ("Prepared meals", "🍱"),
+    "supplements": ("Supplements", "💊"),
+    "other": ("Other", "✨"),
+}
+FoodGroup = Literal[tuple(FOOD_GROUPS)]  # type: ignore[valid-type]
+
+# Suggested units; any other is fine too. "u" is one piece of a pack (an egg from
+# a carton, a cookie), "whole" one whole item (an apple).
+UNITS = ("g", "ml", "u", "whole", "slice", "serving", "cup", "tbsp")
 # tag -> the broader tags it implies (applied transitively).
 DIET_IMPLIES: dict[str, tuple[str, ...]] = {
     "vegan": ("vegetarian",),
@@ -133,6 +165,7 @@ class FoodIn(DietTags, _In):
     fiber_g: float = NonNeg
     serving_qty: float | None = Field(None, gt=0, description="One serving, in `unit`")
     package_qty: float | None = Field(None, gt=0, description="Whole package, in `unit`")
+    food_group: FoodGroup | Literal[""] = Field("", description="'' = no group")
 
     @field_validator("ean")
     @classmethod
@@ -158,6 +191,7 @@ class Food(Macros, DietTags):
     unit: str
     serving_qty: float | None = None
     package_qty: float | None = None
+    food_group: str = ""
     uses: int = 0
 
     @computed_field
@@ -470,12 +504,20 @@ class Choice(BaseModel):
     group: str | None = None
 
 
+class FoodGroupChoice(BaseModel):
+    key: str
+    label: str
+    emoji: str
+
+
 class Vocabulary(BaseModel):
     """Fixed choices the frontend shows (labels live here, in one place)."""
 
     diet_tags: list[Choice]
     diet_implies: dict[str, list[str]] = Field(description="tag -> the broader tags it implies")
     auto_tags: list[Choice] = Field(description="Tags derived from the values; not settable")
+    food_groups: list[FoodGroupChoice]
+    units: list[str] = Field(description="Suggested food units")
     moods: list[Choice]
     feelings: list[Choice]
     genders: list[Choice]

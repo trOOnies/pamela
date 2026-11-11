@@ -29,11 +29,11 @@ FOODS = [
      {"vegetarian", "kosher", "peanut_free", "tacc_free"}),
     ("Greek yogurt, plain", "La Vaquita", 100, "g", 97, 9, 4, 5, 0, 170, 170,
      {"vegetarian", "kosher", "peanut_free", "tacc_free"}),
-    ("Banana", "", 1, "unit", 105, 1.3, 27, 0.4, 3.1, None, None,
+    ("Banana", "", 1, "whole", 105, 1.3, 27, 0.4, 3.1, None, None,
      {"vegetarian", "vegan", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
-    ("Apple", "", 1, "unit", 95, 0.5, 25, 0.3, 4.4, None, None,
+    ("Apple", "", 1, "whole", 95, 0.5, 25, 0.3, 4.4, None, None,
      {"vegetarian", "vegan", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
-    ("Egg", "", 1, "unit", 72, 6.3, 0.4, 4.8, 0, None, 12,
+    ("Egg", "", 1, "whole", 72, 6.3, 0.4, 4.8, 0, None, 12,
      {"vegetarian", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
     ("Wholemeal bread", "Panadería Norte", 1, "slice", 80, 4, 13, 1.1, 2, None, 20,
      {"vegetarian", "vegan", "kosher", "lactose_free", "peanut_free"}),
@@ -69,7 +69,7 @@ FOODS = [
      {"vegetarian", "vegan", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
     ("Dark chocolate 70%", "Cacao Sur", 100, "g", 598, 7.8, 46, 43, 11, 25, 100,
      {"vegetarian", "vegan", "kosher", "lactose_free"}),
-    ("Rice cakes", "Crocante", 1, "unit", 35, 0.7, 7.3, 0.3, 0.4, None, 18,
+    ("Rice cakes", "Crocante", 1, "whole", 35, 0.7, 7.3, 0.3, 0.4, None, 18,
      {"vegetarian", "vegan", "kosher", "lactose_free", "peanut_free", "tacc_free"}),
     ("Pizza slice, mozzarella", "", 1, "slice", 285, 12, 36, 10, 2.5, None, 8,
      {"vegetarian"}),
@@ -150,9 +150,9 @@ def _slot(meal_names: list[str], index: int) -> str:
 
 def _amount(rng: random.Random, qty: float, spread: float, unit: str) -> float:
     value = qty * rng.uniform(1 - spread, 1 + spread)
-    if unit not in ("unit", "slice"):
+    if unit not in ("whole", "u", "slice"):
         value *= 1.25  # the plates above are on the light side
-    return round(value) if unit in ("unit", "slice") else round(value / 5) * 5 or qty
+    return round(value) if unit in ("whole", "u", "slice") else round(value / 5) * 5 or qty
 
 
 def seed(conn: sqlite3.Connection, meal_names: list[str], weight_kg: float,

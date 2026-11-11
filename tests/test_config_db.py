@@ -163,3 +163,23 @@ def test_food_rebuild_keeps_ids_links_and_tags(tmp_path):
     conn.execute("DELETE FROM foods WHERE id = 8")
     assert conn.execute("SELECT COUNT(*) AS n FROM saved_meal_items").fetchone()["n"] == 0
     conn.close()
+
+
+def test_unit_becomes_whole(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    conn = db.connect(path)
+    for i, script in enumerate(db.MIGRATIONS[:6], start=1):
+        conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {i};\nCOMMIT;")
+    conn.execute("INSERT INTO foods (id, name, unit, basis_qty) VALUES (1, 'Apple', 'unit', 1)")
+    conn.execute(
+        "INSERT INTO food_entries (day, meal, food_id, name, quantity, unit) "
+        "VALUES ('2026-01-01', 'L', 1, 'Apple', 2, 'unit')"
+    )
+    conn.commit()
+    conn.close()
+    db.migrate(path)
+    conn = db.connect(path)
+    f = conn.execute("SELECT unit, food_group FROM foods").fetchone()
+    assert (f["unit"], f["food_group"]) == ("whole", "")
+    assert conn.execute("SELECT unit FROM food_entries").fetchone()["unit"] == "whole"
+    conn.close()

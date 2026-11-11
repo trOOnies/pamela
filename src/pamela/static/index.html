@@ -187,7 +187,10 @@
     <section id="view-foods" class="view foods-grid" hidden>
       <section class="card" aria-labelledby="food-form-h">
         <div class="card-head">
-          <h2 id="food-form-h">New food</h2>
+          <div class="food-form-title">
+            <h2 id="food-form-h">New food</h2>
+            <span class="food-saved" id="food-saved" aria-live="polite"></span>
+          </div>
           <button type="button" class="btn ghost" id="food-cancel" hidden>Cancel edit</button>
         </div>
         <form id="food-form" class="food-form" autocomplete="off">
@@ -206,7 +209,7 @@
           <label class="field"><span>Values per</span><input type="number" name="basis_qty" min="0" step="any" value="100" required></label>
           <label class="field"><span>Unit</span>
             <input type="text" name="unit" value="g" required maxlength="20" list="unit-options">
-            <datalist id="unit-options"><option value="g"><option value="ml"><option value="unit"><option value="serving"><option value="slice"><option value="cup"><option value="tbsp"></datalist>
+            <datalist id="unit-options"></datalist>
           </label>
           <label class="field"><span>kcal</span><input type="number" name="kcal" min="0" step="any" placeholder="unknown"></label>
           <label class="field"><span>Protein (g)</span><input type="number" name="protein_g" min="0" step="any" value="0"></label>
@@ -218,6 +221,10 @@
             <span class="with-unit"><input type="number" name="serving_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
           <label class="field"><span>Package size <small>(optional)</small></span>
             <span class="with-unit"><input type="number" name="package_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
+          <label class="field span2"><span>Group <small>(optional)</small></span>
+            <select name="food_group" id="food-group"><option value="">No group</option></select></label>
+          <p class="hint span2 unit-hint">Units: <b>u</b> is one piece of a pack (an egg from a carton),
+            <b>whole</b> one whole item (an apple). Any other unit works too.</p>
           <fieldset class="span2 tag-picks" id="tag-picks">
             <legend>Diet</legend>
           </fieldset>
@@ -230,15 +237,11 @@
           <h2 id="foods-h">Catalog <span class="count" id="foods-count"></span></h2>
           <div class="filters">
             <div class="chips tag-filter" id="tag-filter" role="group" aria-label="Only show foods that are"></div>
+            <select id="group-filter" aria-label="Only show foods in this group"><option value="">All groups</option></select>
             <input type="search" id="foods-filter" placeholder="Filter…" aria-label="Filter foods">
           </div>
         </div>
-        <div class="table-wrap">
-          <table class="foods-table">
-            <thead><tr><th>Name</th><th>Brand</th><th class="n">Per</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="n">Fib</th><th class="n" title="Times logged in the last 90 days">Uses</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
-            <tbody id="foods-body"></tbody>
-          </table>
-        </div>
+        <div id="foods-groups" class="foods-groups"></div>
       </section>
     </section>
 
@@ -522,8 +525,12 @@
             Entering <b>0</b> means it really has none, and it gets the
             <span class="tag tag-calorie_free">Calorie-free</span> tag on its own (you can't set that tag yourself).</p>
           <p>✍️ The <b>Brand</b> field suggests brands you've already used.</p>
-          <p>🧮 A hint shows the calories your macros add up to, which helps catch typos.</p>
-          <p>🔒 Editing or deleting a food never changes days you already logged.</p>
+          <p>📏 <b>Units</b>: besides <b>g</b> and <b>ml</b>, use <b>u</b> for one piece of a pack
+            (one egg of a carton, one cookie) and <b>whole</b> for one whole item (an apple).</p>
+          <p>🗂️ <b>Groups</b>: give each food one group (Fruits, Cookies, Drinks…). Your list has one
+            table per group, with foods without one last; the menu above it shows a single group.</p>
+          <p>✅ After saving, the name of the food shows next to the form's title: click it to jump to
+            its row.</p>
         </section>
 
         <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">

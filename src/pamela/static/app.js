@@ -254,6 +254,10 @@ function buildVocabControls() {
     "beforeend",
     tags.map((t) => `<label class="tag-pick tag-${t.key}"><input type="checkbox" name="${t.key}"><span>${esc(t.label)}</span></label>`).join("")
   );
+  const groups = state.vocab.food_groups.map((g) => `<option value="${g.key}">${g.emoji} ${esc(g.label)}</option>`).join("");
+  $("#food-group").insertAdjacentHTML("beforeend", groups);
+  $("#group-filter").insertAdjacentHTML("beforeend", groups);
+  $("#unit-options").innerHTML = state.vocab.units.map((u) => `<option value="${esc(u)}">`).join("");
   $("#tag-filter").innerHTML = allTags()
     .map((t) => `<button type="button" class="chip tag-chip tag-${t.key}" data-tag="${t.key}" aria-pressed="false">${esc(t.label)}</button>`)
     .join("");
@@ -1192,7 +1196,7 @@ async function submitActivity(ev) {
 
 // --- foods view --------------------------------------------------------------
 
-const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty"];
+const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty", "food_group"];
 
 // Shown in place of the kcal of a food that has none entered yet.
 const NO_KCAL_CELL = `<td class="n"><span class="warn-kcal" title="No kcal entered yet: counted as 0 until you add it. Enter 0 if it really has none.">⚠ ?<span class="sr"> No kcal entered yet, counted as 0</span></span></td>`;
@@ -1212,28 +1216,71 @@ async function loadFoods() {
 function renderFoods() {
   const words = $("#foods-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
   const tags = [...state.foodTagFilter];
+  const group = $("#group-filter").value;
   const rows = state.foods.filter((f) => {
     const hay = `${f.name} ${f.brand} ${f.ean ?? ""}`.toLowerCase();
-    return words.every((w) => hay.includes(w)) && tags.every((t) => f[t]);
+    return words.every((w) => hay.includes(w)) && tags.every((t) => f[t]) && (!group || f.food_group === group);
   });
   const missing = state.foods.filter((f) => f.kcal == null).length;
   $("#foods-count").textContent =
     (rows.length === state.foods.length ? `(${rows.length})` : `(${rows.length} of ${state.foods.length})`) +
     (missing ? ` · ⚠ ${missing} without kcal` : "");
-  $("#foods-body").innerHTML = rows.length
-    ? rows
-        .map(
-          (f) => `<tr class="${f.id === state.editingFoodId ? "editing" : ""}">
+  const row = (f) => `<tr id="food-row-${f.id}" class="${f.id === state.editingFoodId ? "editing" : ""}">
       <td>${esc(f.name)}${tagPills(f)}</td>
       <td>${esc(f.brand)}${f.ean ? `<span class="ean" title="Barcode">${esc(f.ean)}</span>` : ""}</td>
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
       ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
       <td class="n">${f.uses}</td>
       <td class="act"><button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
-    </tr>`
-        )
-        .join("")
-    : `<tr class="empty"><td colspan="10">${state.foods.length ? "No matches" : "No foods yet - add your first one with the form."}</td></tr>`;
+    </tr>`;
+  const box = $("#foods-groups");
+  if (!rows.length) {
+    box.innerHTML = `<p class="empty-note">${state.foods.length ? "No matches" : "No foods yet - add your first one with the form."}</p>`;
+    return;
+  }
+  // One table per group, in the vocabulary's order; foods without a group last.
+  const sections = [...state.vocab.food_groups, { key: "", label: "No group", emoji: "📦" }]
+    .map((g) => [g, rows.filter((f) => (f.food_group || "") === g.key)])
+    .filter(([, list]) => list.length);
+  box.innerHTML = sections
+    .map(
+      ([g, list]) => `<section class="food-group" aria-labelledby="fg-${g.key || "none"}">
+      <h3 id="fg-${g.key || "none"}"><span aria-hidden="true">${g.emoji}</span> ${esc(g.label)} <span class="count">(${list.length})</span></h3>
+      <div class="table-wrap">
+        <table class="foods-table">
+          <colgroup><col class="c-name"><col class="c-brand"><col class="c-per"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-act"></colgroup>
+          <thead><tr><th>Name</th><th>Brand</th><th class="n">Per</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="n">Fib</th><th class="n" title="Times logged in the last 90 days">Uses</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+          <tbody>${list.map(row).join("")}</tbody>
+        </table>
+      </div>
+    </section>`
+    )
+    .join("");
+}
+
+/** Scrolls to a food's catalog row and flashes it, clearing filters that hide it. */
+function goToFood(id) {
+  if (!document.getElementById(`food-row-${id}`)) {
+    $("#foods-filter").value = "";
+    $("#group-filter").value = "";
+    state.foodTagFilter.clear();
+    for (const chip of $$("#tag-filter [data-tag]")) chip.setAttribute("aria-pressed", "false");
+    renderFoods();
+  }
+  const tr = document.getElementById(`food-row-${id}`);
+  if (!tr) return;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  tr.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  tr.classList.remove("flash");
+  void tr.offsetWidth; // restart the animation
+  tr.classList.add("flash");
+}
+
+/** "✓ Added <name>" next to the form title, linking to the food's row. */
+function setFoodSaved(food, verb) {
+  $("#food-saved").innerHTML = food
+    ? `✓ ${verb} <button type="button" class="link-btn" data-goto-food="${food.id}">${esc(food.name)}</button>`
+    : "";
 }
 
 function setEanStatus(html, kind = "") {
@@ -1275,6 +1322,7 @@ function editFood(id) {
   state.editingFoodId = id;
   fillFoodForm(f);
   $("#food-form-h").textContent = "Edit food";
+  setFoodSaved(null);
   $("#food-submit").textContent = "Update food";
   $("#food-cancel").hidden = false;
   setEanStatus("");
@@ -1310,8 +1358,13 @@ async function lookupBarcode() {
     if (r.source === "catalog") {
       if (state.editingFoodId === r.food.id) return setEanStatus("That's the food you're editing.");
       if (!state.foods.some((f) => f.id === r.food.id)) state.foods.push(r.food);
-      editFood(r.food.id);
-      setEanStatus(`Already in your catalog: <b>${esc(r.food.name)}</b>. Opened it for editing.`, "ok");
+      // Don't open it: when loading many products, the next scan should just work.
+      const brand = r.food.brand ? ` (${esc(r.food.brand)})` : "";
+      setEanStatus(
+        `Already in your catalog: <b>${esc(r.food.name)}</b>${brand}. <button type="button" class="link-btn" data-edit-food="${r.food.id}">Edit</button>`,
+        "ok"
+      );
+      input.select(); // the next barcode replaces this one
     } else if (r.source === "openfoodfacts") {
       if (state.editingFoodId && !confirm("Replace the values in the form with the ones from Open Food Facts?")) {
         return setEanStatus("Kept your values.");
@@ -1347,18 +1400,16 @@ async function submitFood(ev) {
     kcal: num(v.kcal), // empty = not known yet, unlike 0
     serving_qty: num(v.serving_qty) || null,
     package_qty: num(v.package_qty) || null,
+    food_group: v.food_group,
   };
   for (const m of MACROS) body[m.key] = num(v[m.key]) ?? 0;
   for (const t of state.vocab.diet_tags) body[t.key] = form.elements[t.key].checked;
   try {
-    if (state.editingFoodId) {
-      await api("PUT", `/foods/${state.editingFoodId}`, body);
-      toast("Food updated");
-    } else {
-      await api("POST", "/foods", body);
-      toast("Food added");
-    }
+    const editing = state.editingFoodId;
+    const saved = editing ? await api("PUT", `/foods/${editing}`, body) : await api("POST", "/foods", body);
+    toast(editing ? "Food updated" : "Food added");
     resetFoodForm();
+    setFoodSaved(saved, editing ? "Updated" : "Added");
     await loadFoods();
     form.elements.ean.focus();
   } catch (err) {
@@ -2452,6 +2503,11 @@ function wire() {
   });
   $("#food-cancel").addEventListener("click", resetFoodForm);
   $("#foods-filter").addEventListener("input", renderFoods);
+  $("#group-filter").addEventListener("change", renderFoods);
+  $("#ean-status").addEventListener("click", (e) => {
+    const edit = e.target.closest("[data-edit-food]");
+    if (edit) editFood(Number(edit.dataset.editFood));
+  });
   $("#tag-filter").addEventListener("click", (e) => {
     const chip = e.target.closest("[data-tag]");
     if (!chip) return;
@@ -2461,7 +2517,11 @@ function wire() {
     chip.setAttribute("aria-pressed", String(on));
     renderFoods();
   });
-  $("#foods-body").addEventListener("click", (e) => {
+  $("#food-saved").addEventListener("click", (e) => {
+    const go = e.target.closest("[data-goto-food]");
+    if (go) goToFood(Number(go.dataset.gotoFood));
+  });
+  $("#foods-groups").addEventListener("click", (e) => {
     const edit = e.target.closest("[data-edit-food]");
     if (edit) return editFood(Number(edit.dataset.editFood));
     const del = e.target.closest("[data-del-food]");

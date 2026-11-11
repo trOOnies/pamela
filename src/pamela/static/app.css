@@ -421,6 +421,28 @@ input.invalid { border-color: var(--danger); }
 .ean-row input { flex: 1; width: 100%; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
 .ean-status.ok { color: var(--text); }
 .ean-status.error { color: var(--danger); }
+.link-btn {
+  border: 0; padding: 0; background: none; font: inherit; font-weight: 600;
+  color: var(--accent); text-decoration: underline; cursor: pointer;
+}
+.link-btn:hover { text-decoration-thickness: 2px; }
+.food-form-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+.food-saved { color: var(--text-2); font-size: .9rem; overflow-wrap: anywhere; }
+.food-saved:empty { display: none; }
+/* the catalog: one table per food group, columns lined up across tables */
+.food-group + .food-group { margin-top: 18px; }
+.food-group h3 { margin: 0 0 4px; font-size: 1rem; }
+.food-group h3 .count { color: var(--text-3); font-weight: 400; font-size: .85rem; }
+.foods-table { table-layout: fixed; min-width: 640px; }
+.foods-table col.c-brand { width: 20%; }
+.foods-table col.c-per { width: 82px; }
+.foods-table col.c-n { width: 52px; }
+.foods-table col.c-act { width: 76px; }
+.foods-table td { overflow-wrap: anywhere; }
+.foods-table tr.flash td { animation: row-flash 1.8s ease-out; }
+@keyframes row-flash { from { background: var(--accent-2-soft); } }
+@media (prefers-reduced-motion: reduce) { .foods-table tr.flash td { animation-duration: .01s; } }
+#group-filter { width: auto; max-width: 220px; }
 .ean { display: block; font: .75rem ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: var(--text-3); }
 .food-form .with-unit input { width: 100%; }
 .filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }

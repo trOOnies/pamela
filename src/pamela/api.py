@@ -17,10 +17,12 @@ from .schemas import (
     DIET_IMPLIES,
     DIET_TAGS,
     FEELING_GROUPS,
+    FOOD_GROUPS,
     GENDERS,
     MACRO_FIELDS,
     MOODS,
     TARGETS,
+    UNITS,
     Activity,
     ActivityIn,
     ActivityType,
@@ -108,6 +110,10 @@ def read_vocab() -> dict:
         "diet_tags": choices(DIET_TAGS),
         "diet_implies": DIET_IMPLIES,
         "auto_tags": choices(AUTO_TAGS),
+        "food_groups": [
+            {"key": k, "label": label, "emoji": emoji} for k, (label, emoji) in FOOD_GROUPS.items()
+        ],
+        "units": list(UNITS),
         "moods": choices(MOODS),
         "feelings": feelings,
         "genders": choices(GENDERS),
