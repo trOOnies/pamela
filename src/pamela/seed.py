@@ -19,7 +19,8 @@ from .config import ConfigStore, Settings
 from .schemas import DIET_FIELDS, FEELING_GROUPS, close_diet_tags
 from .tracking import estimate_kcal, scale_macros
 
-USER_TABLES = ("foods", "food_entries", "activities", "day_metrics", "day_notes", "saved_meals")
+USER_TABLES = ("foods", "food_entries", "activities", "day_metrics", "day_notes", "saved_meals",
+               "carts")
 
 # name, brand, basis_qty, unit, kcal, protein, carbs, fat, fiber, serving, package, tags
 FOODS = [

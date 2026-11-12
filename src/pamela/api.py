@@ -36,6 +36,8 @@ from .schemas import (
     BodyBaseline,
     BodyReferences,
     BodyReferencesIn,
+    Cart,
+    CartIn,
     Day,
     DayMetrics,
     DayMetricsIn,
@@ -45,9 +47,12 @@ from .schemas import (
     Entry,
     EntryBatchIn,
     EntryIn,
+    ExpiredIn,
     Food,
     FoodIn,
+    Groceries,
     HistoryDay,
+    Lot,
     Macros,
     Profile,
     ProfileIn,
@@ -258,14 +263,27 @@ def update_target(key: str, target: TargetIn, conn: Conn) -> dict:
 
 # --- foods -------------------------------------------------------------------
 
-_FOOD_SELECT = """
-    SELECT f.*, COALESCE(u.uses, 0) AS uses
+# What's left of each lot: its quantity minus everything eaten or thrown out.
+_LOT_LEFT = """
+    SELECT l.*, c.bought_on, c.store,
+           COALESCE(SUM(CASE WHEN u.kind = 'eaten' THEN u.quantity END), 0) AS eaten,
+           COALESCE(SUM(CASE WHEN u.kind = 'expired' THEN u.quantity END), 0) AS expired,
+           l.quantity - COALESCE(SUM(u.quantity), 0) AS remaining
+    FROM stock_lots l JOIN carts c ON c.id = l.cart_id
+    LEFT JOIN stock_uses u ON u.lot_id = l.id
+"""
+_FOOD_SELECT = f"""
+    SELECT f.*, COALESCE(u.uses, 0) AS uses, s.in_stock
     FROM foods f
     LEFT JOIN (
         SELECT food_id, COUNT(*) AS uses FROM food_entries
         WHERE food_id IS NOT NULL AND day >= date('now', '-90 days')
         GROUP BY food_id
     ) u ON u.food_id = f.id
+    LEFT JOIN (
+        SELECT food_id, SUM(MAX(remaining, 0)) AS in_stock
+        FROM ({_LOT_LEFT} GROUP BY l.id) GROUP BY food_id
+    ) s ON s.food_id = f.id
 """
 
 
@@ -380,9 +398,11 @@ def update_food(food_id: int, food: FoodIn, conn: Conn) -> dict:
 @router.delete("/foods/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_food(food_id: int, conn: Conn) -> Response:
     """Logged entries keep their macro snapshot; they just lose the link.
-    The food is also removed from any saved meal that contains it."""
+    The food is also removed from any saved meal and cart that contains it; a cart
+    left empty goes too."""
     if conn.execute("DELETE FROM foods WHERE id = ?", (food_id,)).rowcount == 0:
         raise _not_found("food")
+    _drop_empty_carts(conn)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -535,8 +555,15 @@ def _entry_values(entry: EntryIn, conn: sqlite3.Connection, config: AppConfig) -
     return values
 
 
+_ENTRY_SELECT = """
+    SELECT e.*, COALESCE((SELECT SUM(quantity) FROM stock_uses WHERE entry_id = e.id), 0)
+           AS from_stock
+    FROM food_entries e
+"""
+
+
 def _entry_row(conn: sqlite3.Connection, entry_id: int) -> dict:
-    row = conn.execute("SELECT * FROM food_entries WHERE id = ?", (entry_id,)).fetchone()
+    row = conn.execute(_ENTRY_SELECT + " WHERE e.id = ?", (entry_id,)).fetchone()
     if row is None:
         raise _not_found("entry")
     return row
@@ -549,6 +576,7 @@ def _insert_entry(conn: sqlite3.Connection, entry: EntryIn, config: AppConfig) -
     cur = conn.execute(
         f"INSERT INTO food_entries ({cols}) VALUES ({marks})", tuple(values.values())
     )
+    _take_stock(conn, cur.lastrowid, values)
     return cur.lastrowid
 
 
@@ -577,13 +605,366 @@ def update_entry(entry_id: int, entry: EntryIn, conn: Conn, config: Config) -> d
     values = _entry_values(entry, conn, config)
     sets = ", ".join(f"{k} = ?" for k in values)
     conn.execute(f"UPDATE food_entries SET {sets} WHERE id = ?", (*values.values(), entry_id))
+    _take_stock(conn, entry_id, values)
     return _entry_row(conn, entry_id)
 
 
 @router.delete("/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_entry(entry_id: int, conn: Conn) -> Response:
+    """What the entry took from Groceries goes back there."""
     if conn.execute("DELETE FROM food_entries WHERE id = ?", (entry_id,)).rowcount == 0:
         raise _not_found("entry")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- groceries ---------------------------------------------------------------
+
+# Amounts below this count as nothing left (sums of floats rarely land on 0 exactly).
+EPS = 1e-6
+
+
+def _open_lots(conn: sqlite3.Connection, food_id: int, day: str) -> list[dict]:
+    """Lots of a food bought by ``day`` with something left, in the order they're
+    used: the one that expires first, then the oldest; lots without a date last."""
+    return conn.execute(
+        _LOT_LEFT
+        + """ WHERE l.food_id = ? AND c.bought_on <= ? GROUP BY l.id HAVING remaining > ?
+             ORDER BY l.expires_on IS NULL, l.expires_on, c.bought_on, l.id""",
+        (food_id, day, EPS),
+    ).fetchall()
+
+
+def _take_stock(conn: sqlite3.Connection, entry_id: int, values: dict) -> None:
+    """(Re)takes what a logged entry ate from Groceries, as far as there is any. An
+    entry eating more than is left simply takes what's there."""
+    conn.execute("DELETE FROM stock_uses WHERE entry_id = ?", (entry_id,))
+    need = values["quantity"] or 0
+    if values["food_id"] is None or need <= 0:
+        return
+    _take_from_lots(conn, entry_id, values["food_id"], values["day"], need)
+
+
+def _take_from_lots(
+    conn: sqlite3.Connection, entry_id: int, food_id: int, day: str, need: float
+) -> None:
+    for lot in _open_lots(conn, food_id, day):
+        take = min(lot["remaining"], need)
+        conn.execute(
+            "INSERT INTO stock_uses (lot_id, kind, entry_id, day, quantity) "
+            "VALUES (?, 'eaten', ?, ?, ?)",
+            (lot["id"], entry_id, day, take),
+        )
+        need -= take
+        if need <= EPS:
+            break
+
+
+def _lot_row(conn: sqlite3.Connection, lot_id: int) -> dict:
+    row = conn.execute(_LOT_LEFT + " WHERE l.id = ? GROUP BY l.id", (lot_id,)).fetchone()
+    if row is None:
+        raise _not_found("cart item")
+    return row
+
+
+def _food_exists(conn: sqlite3.Connection, ids: set[int]) -> None:
+    marks = ", ".join("?" * len(ids))
+    known = {r["id"] for r in conn.execute(f"SELECT id FROM foods WHERE id IN ({marks})", (*ids,))}
+    if missing := ids - known:
+        raise HTTPException(UNPROCESSABLE, f"food not found: {', '.join(map(str, missing))}")
+
+
+def _foods_info(conn: sqlite3.Connection) -> dict[int, dict]:
+    return {
+        f["id"]: f
+        for f in conn.execute(
+            "SELECT id, name, brand, unit, serving_qty, package_qty, food_group FROM foods"
+        )
+    }
+
+
+def _carts(conn: sqlite3.Connection, cart_id: int | None = None) -> list[dict]:
+    """Carts, newest first, each with its items in the order they were entered."""
+    where, params = ("WHERE id = ?", (cart_id,)) if cart_id is not None else ("", ())
+    carts = conn.execute(
+        f"SELECT * FROM carts {where} ORDER BY bought_on DESC, created_at DESC, id DESC", params
+    ).fetchall()
+    lot_where = "WHERE l.cart_id = ?" if cart_id is not None else ""
+    lots = conn.execute(
+        _LOT_LEFT + f" {lot_where} GROUP BY l.id ORDER BY l.position, l.id", params
+    ).fetchall()
+    foods = _foods_info(conn)
+    by_cart: dict[int, list[dict]] = {c["id"]: [] for c in carts}
+    for lot in lots:
+        f = foods[lot["food_id"]]
+        by_cart[lot["cart_id"]].append(
+            lot | {k: f[k] for k in ("name", "brand", "unit", "package_qty")}
+        )
+    extras: dict[int, list[dict]] = {c["id"]: [] for c in carts}
+    extra_where = "WHERE cart_id = ?" if cart_id is not None else ""
+    for x in conn.execute(
+        f"SELECT * FROM cart_extras {extra_where} ORDER BY position, id", params
+    ):
+        extras[x["cart_id"]].append(x)
+    out = []
+    for c in carts:
+        items, others = by_cart[c["id"]], extras[c["id"]]
+        prices = [it["price"] for it in [*items, *others] if it["price"] is not None]
+        subtotal = sum(prices) if prices else None
+        off = _discount_amount(subtotal or 0, c["discount"], c["discount_pct"])
+        fee = c["delivery_fee"]
+        total = None
+        if subtotal is not None or fee is not None:
+            total = (subtotal or 0) - off + (fee or 0)
+        out.append(
+            c
+            | {
+                "items": items,
+                "extras": others,
+                "subtotal": subtotal,
+                "discount_amount": off,
+                "total_price": total,
+            }
+        )
+    return out
+
+
+def _discount_amount(subtotal: float, discount: float | None, pct: float | None) -> float:
+    if discount is not None:
+        return discount
+    if pct is not None:
+        return round(subtotal * pct / 100, 2)
+    return 0
+
+
+def _cart(conn: sqlite3.Connection, cart_id: int) -> dict:
+    found = _carts(conn, cart_id)
+    if not found:
+        raise _not_found("cart")
+    return found[0]
+
+
+@router.get("/groceries", response_model=Groceries)
+def read_groceries(
+    conn: Conn, days: Annotated[int, Query(ge=1, le=MAX_HISTORY_DAYS)] = 30
+) -> dict:
+    """Every food ever bought with what's left of it (foods that ran out have no
+    lots), every cart, and what expired in the last ``days`` days."""
+    lots = conn.execute(
+        _LOT_LEFT
+        + """ GROUP BY l.id
+             ORDER BY l.expires_on IS NULL, l.expires_on, c.bought_on, l.id"""
+    ).fetchall()
+    by_food: dict[int, list[dict]] = {}
+    for lot in lots:
+        by_food.setdefault(lot["food_id"], []).append(lot)
+    foods = _foods_info(conn)
+    items = []
+    for food_id, food_lots in by_food.items():
+        f = foods[food_id]
+        open_lots = [lot for lot in food_lots if lot["remaining"] > EPS]
+        expiries = [lot["expires_on"] for lot in open_lots if lot["expires_on"]]
+        last = max(food_lots, key=lambda lot: (lot["bought_on"], lot["id"]))
+        items.append(
+            {
+                "food_id": food_id,
+                **{k: f[k] for k in ("name", "brand", "unit", "serving_qty", "package_qty")},
+                "food_group": f["food_group"],
+                "in_stock": sum(lot["remaining"] for lot in open_lots),
+                "next_expiry": min(expiries, default=None),
+                "last_bought": last["bought_on"],
+                "last_quantity": last["quantity"],
+                "lots": open_lots,
+            }
+        )
+    items.sort(key=lambda it: (it["name"].casefold(), it["brand"].casefold()))
+
+    since = (dt.date.today() - dt.timedelta(days=days - 1)).isoformat()
+    expired = conn.execute(
+        """SELECT u.id, u.lot_id, l.cart_id, u.day, l.food_id, u.quantity
+           FROM stock_uses u JOIN stock_lots l ON l.id = u.lot_id
+           WHERE u.kind = 'expired' AND u.day >= ?
+           ORDER BY u.day DESC, u.created_at DESC, u.id DESC LIMIT 500""",
+        (since,),
+    ).fetchall()
+    for ev in expired:
+        f = foods[ev["food_id"]]
+        ev.update(name=f["name"], brand=f["brand"], unit=f["unit"], food_group=f["food_group"])
+    return {"items": items, "carts": _carts(conn), "expired": expired}
+
+
+def _fill_shortfalls(conn: sqlite3.Connection, food_id: int, since: str) -> None:
+    """Entries of a food logged on or after ``since`` that couldn't take all they ate
+    (nothing was in stock yet) take the rest now, oldest first. This way a cart
+    entered a few days late still covers what was eaten from it meanwhile."""
+    rows = conn.execute(
+        """SELECT e.id, e.day, e.quantity - COALESCE(SUM(u.quantity), 0) AS short
+           FROM food_entries e LEFT JOIN stock_uses u ON u.entry_id = e.id
+           WHERE e.food_id = ? AND e.day >= ? AND e.quantity IS NOT NULL
+           GROUP BY e.id HAVING short > ? ORDER BY e.day, e.created_at, e.id""",
+        (food_id, since, EPS),
+    ).fetchall()
+    for e in rows:
+        _take_from_lots(conn, e["id"], food_id, e["day"], e["short"])
+
+
+def _store_cart_items(conn: sqlite3.Connection, cart_id: int, cart: CartIn) -> set[int]:
+    """Makes the cart's lots match ``cart.items``: items with an id update that lot,
+    the others are added, and lots left out are removed. Its other items are replaced,
+    and its discount checked against the new subtotal. Returns the foods touched."""
+    prices = [it.price for it in [*cart.items, *cart.extras] if it.price is not None]
+    subtotal = sum(prices)
+    if cart.discount is not None and cart.discount > subtotal + EPS:
+        raise HTTPException(
+            UNPROCESSABLE,
+            f"the discount ({cart.discount:g}) is more than the cart's subtotal ({subtotal:g})",
+        )
+    conn.execute(
+        "UPDATE carts SET discount = ?, discount_pct = ?, delivery_fee = ? WHERE id = ?",
+        (cart.discount, cart.discount_pct, cart.delivery_fee, cart_id),
+    )
+    conn.execute("DELETE FROM cart_extras WHERE cart_id = ?", (cart_id,))
+    conn.executemany(
+        "INSERT INTO cart_extras (cart_id, name, quantity, unit, price, position) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [(cart_id, x.name, x.quantity, x.unit, x.price, i) for i, x in enumerate(cart.extras)],
+    )
+    old = {
+        lot["id"]: lot
+        for lot in conn.execute(
+            _LOT_LEFT + " WHERE l.cart_id = ? GROUP BY l.id", (cart_id,)
+        ).fetchall()
+    }
+    ids = [it.id for it in cart.items if it.id is not None]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(UNPROCESSABLE, "an item appears twice in the cart")
+    if strangers := set(ids) - old.keys():
+        raise HTTPException(
+            UNPROCESSABLE, f"not in this cart: item {', '.join(map(str, sorted(strangers)))}"
+        )
+    if cart.items:
+        _food_exists(conn, {it.food_id for it in cart.items})
+    foods = _foods_info(conn)
+    for gone in old.keys() - set(ids):
+        conn.execute("DELETE FROM stock_lots WHERE id = ?", (gone,))
+    for pos, it in enumerate(cart.items):
+        expires = it.expires_on.isoformat() if it.expires_on else None
+        if it.id is None:
+            conn.execute(
+                "INSERT INTO stock_lots (cart_id, food_id, quantity, expires_on, price, position)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (cart_id, it.food_id, it.quantity, expires, it.price, pos),
+            )
+            continue
+        lot = old[it.id]
+        f = foods[lot["food_id"]]
+        if it.food_id != lot["food_id"]:
+            raise HTTPException(
+                UNPROCESSABLE, f"an item's food can't change (it's {f['name']}): remove it instead"
+            )
+        used = lot["eaten"] + lot["expired"]
+        if it.quantity < used - EPS:
+            raise HTTPException(
+                UNPROCESSABLE,
+                f"{f['name']}: {used:g} {f['unit']} of it is already used; "
+                "the amount bought can't be less than that",
+            )
+        conn.execute(
+            "UPDATE stock_lots SET quantity = ?, expires_on = ?, price = ?, position = ? "
+            "WHERE id = ?",
+            (it.quantity, expires, it.price, pos, it.id),
+        )
+    return {lot["food_id"] for lot in old.values()} | {it.food_id for it in cart.items}
+
+
+@router.post("/groceries/carts", response_model=Cart, status_code=status.HTTP_201_CREATED)
+def create_cart(cart: CartIn, conn: Conn) -> dict:
+    """Log a trip to the shops: each item goes into the stock. Foods already logged
+    on or after that day, while none were in stock, are taken from it."""
+    _not_future(cart.bought_on)
+    for it in cart.items:
+        if it.id is not None:
+            raise HTTPException(UNPROCESSABLE, "a new cart's items have no id yet")
+    cur = conn.execute(
+        "INSERT INTO carts (bought_on, store) VALUES (?, ?)",
+        (cart.bought_on.isoformat(), cart.store),
+    )
+    for food_id in _store_cart_items(conn, cur.lastrowid, cart):
+        _fill_shortfalls(conn, food_id, cart.bought_on.isoformat())
+    return _cart(conn, cur.lastrowid)
+
+
+@router.get("/groceries/carts/{cart_id}", response_model=Cart)
+def read_cart(cart_id: int, conn: Conn) -> dict:
+    return _cart(conn, cart_id)
+
+
+@router.put("/groceries/carts/{cart_id}", response_model=Cart)
+def update_cart(cart_id: int, cart: CartIn, conn: Conn) -> dict:
+    """Change a cart: its day and store, and its items (send every item; those with
+    an ``id`` are kept and updated, new ones have none, missing ones are removed).
+    An item can't be made smaller than what was already eaten or thrown out of it."""
+    old = _cart(conn, cart_id)
+    _not_future(cart.bought_on)
+    day = cart.bought_on.isoformat()
+    conn.execute(
+        "UPDATE carts SET bought_on = ?, store = ?, updated_at = datetime('now') WHERE id = ?",
+        (day, cart.store, cart_id),
+    )
+    foods = _store_cart_items(conn, cart_id, cart)
+    # Bought later than thought: what was eaten before that day didn't come from it.
+    conn.execute(
+        "DELETE FROM stock_uses WHERE kind = 'eaten' AND day < ? "
+        "AND lot_id IN (SELECT id FROM stock_lots WHERE cart_id = ?)",
+        (day, cart_id),
+    )
+    for food_id in foods:
+        _fill_shortfalls(conn, food_id, min(day, old["bought_on"]))
+    return _cart(conn, cart_id)
+
+
+@router.delete("/groceries/carts/{cart_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_cart(cart_id: int, conn: Conn) -> Response:
+    """Everything in it leaves the stock. Logged entries stay as they are; what they
+    ate from it is taken from other carts, if there's any."""
+    old = _cart(conn, cart_id)
+    conn.execute("DELETE FROM carts WHERE id = ?", (cart_id,))
+    for food_id in {it["food_id"] for it in old["items"]}:
+        _fill_shortfalls(conn, food_id, old["bought_on"])
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _lot_unit(conn: sqlite3.Connection, lot: dict) -> str:
+    return conn.execute("SELECT unit FROM foods WHERE id = ?", (lot["food_id"],)).fetchone()["unit"]
+
+
+@router.post("/groceries/lots/{lot_id}/expired", response_model=Lot)
+def expire_lot(lot_id: int, body: ExpiredIn, conn: Conn) -> dict:
+    """It expired or went off: take it (or part of it) out of the stock."""
+    lot = _lot_row(conn, lot_id)
+    _not_future(body.day)
+    if body.day.isoformat() < lot["bought_on"]:
+        raise HTTPException(UNPROCESSABLE, "it can't expire before the day it was bought")
+    left = lot["remaining"]
+    if left <= EPS:
+        raise HTTPException(UNPROCESSABLE, "nothing is left of it")
+    qty = body.quantity if body.quantity is not None else left
+    if qty > left + EPS:
+        raise HTTPException(
+            UNPROCESSABLE, f"only {left:g} {_lot_unit(conn, lot)} of it is left"
+        )
+    conn.execute(
+        "INSERT INTO stock_uses (lot_id, kind, day, quantity) VALUES (?, 'expired', ?, ?)",
+        (lot_id, body.day.isoformat(), min(qty, left)),
+    )
+    return _lot_row(conn, lot_id)
+
+
+@router.delete("/groceries/expired/{use_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_expired(use_id: int, conn: Conn) -> Response:
+    """Undo marking something as expired: it's back in stock."""
+    cur = conn.execute("DELETE FROM stock_uses WHERE id = ? AND kind = 'expired'", (use_id,))
+    if cur.rowcount == 0:
+        raise _not_found("expiry")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -814,6 +1195,13 @@ def clear_day(day: dt.date, conn: Conn) -> dict:
     return {"counts": counts}
 
 
+def _drop_empty_carts(conn: sqlite3.Connection) -> int:
+    return conn.execute(
+        "DELETE FROM carts WHERE id NOT IN (SELECT cart_id FROM stock_lots) "
+        "AND id NOT IN (SELECT cart_id FROM cart_extras)"
+    ).rowcount
+
+
 # table that each wipe target empties
 _WIPE_TABLES = {
     "food_log": "food_entries",
@@ -821,6 +1209,7 @@ _WIPE_TABLES = {
     "checkins": "day_metrics",
     "notes": "day_notes",
     "saved_meals": "saved_meals",
+    "groceries": "carts",
     "foods": "foods",
 }
 
@@ -836,6 +1225,8 @@ def wipe(body: WipeIn, conn: Conn) -> dict:
         counts["saved_meals"] = conn.execute(
             "DELETE FROM saved_meals WHERE id NOT IN (SELECT saved_meal_id FROM saved_meal_items)"
         ).rowcount
+    if "foods" in counts and "groceries" not in counts:
+        counts["groceries"] = _drop_empty_carts(conn)
     return {"counts": counts}
 
 
@@ -843,7 +1234,7 @@ def wipe(body: WipeIn, conn: Conn) -> dict:
 def read_day(day: dt.date, conn: Conn, config: Config) -> dict:
     iso = day.isoformat()
     entries = conn.execute(
-        "SELECT * FROM food_entries WHERE day = ? ORDER BY created_at, id", (iso,)
+        _ENTRY_SELECT + " WHERE e.day = ? ORDER BY e.created_at, e.id", (iso,)
     ).fetchall()
     activities = conn.execute(
         "SELECT * FROM activities WHERE day = ? "

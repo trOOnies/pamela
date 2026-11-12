@@ -332,6 +332,92 @@ MIGRATIONS: list[str] = [
     ALTER TABLE activities ADD COLUMN wind_kmh     REAL CHECK (wind_kmh >= 0);
     ALTER TABLE activities ADD COLUMN comfort      INTEGER CHECK (comfort BETWEEN 1 AND 5);
     """,
+    # 10: groceries. A lot is one purchase of a catalog food, in the food's unit.
+    # What's left of it is its quantity minus its uses: eaten (taken by a logged food
+    # entry, which goes with the entry) or expired (thrown out).
+    """
+    CREATE TABLE stock_lots (
+        id          INTEGER PRIMARY KEY,
+        food_id     INTEGER NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+        quantity    REAL    NOT NULL CHECK (quantity > 0),
+        bought_on   TEXT    NOT NULL,               -- YYYY-MM-DD
+        expires_on  TEXT,                           -- YYYY-MM-DD, NULL = no date
+        price       REAL    CHECK (price >= 0),
+        store       TEXT    NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX stock_lots_food ON stock_lots (food_id);
+
+    CREATE TABLE stock_uses (
+        id          INTEGER PRIMARY KEY,
+        lot_id      INTEGER NOT NULL REFERENCES stock_lots (id) ON DELETE CASCADE,
+        kind        TEXT    NOT NULL CHECK (kind IN ('eaten', 'expired')),
+        entry_id    INTEGER REFERENCES food_entries (id) ON DELETE CASCADE,
+        day         TEXT    NOT NULL,               -- YYYY-MM-DD
+        quantity    REAL    NOT NULL CHECK (quantity > 0),
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        CHECK ((kind = 'eaten') = (entry_id IS NOT NULL))
+    );
+    CREATE INDEX stock_uses_lot ON stock_uses (lot_id);
+    CREATE INDEX stock_uses_entry ON stock_uses (entry_id);
+    """,
+    # 11: purchases come in carts, one per trip to the shops; the day and the store
+    # move from each lot to its cart. Lots bought on the same day at the same store
+    # become one cart. The table is rebuilt (ids kept, so stock_uses stay linked).
+    """
+    CREATE TABLE carts (
+        id          INTEGER PRIMARY KEY,
+        bought_on   TEXT    NOT NULL,               -- YYYY-MM-DD
+        store       TEXT    NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX carts_day ON carts (bought_on);
+    INSERT INTO carts (bought_on, store, created_at)
+    SELECT bought_on, store, MIN(created_at) FROM stock_lots
+    GROUP BY bought_on, store ORDER BY bought_on, MIN(created_at);
+
+    CREATE TABLE stock_lots_new (
+        id          INTEGER PRIMARY KEY,
+        cart_id     INTEGER NOT NULL REFERENCES carts (id) ON DELETE CASCADE,
+        food_id     INTEGER NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+        quantity    REAL    NOT NULL CHECK (quantity > 0),
+        expires_on  TEXT,                           -- YYYY-MM-DD, NULL = no date
+        price       REAL    CHECK (price >= 0),
+        position    INTEGER NOT NULL DEFAULT 0,     -- order within the cart
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO stock_lots_new (id, cart_id, food_id, quantity, expires_on, price, position,
+                                created_at)
+    SELECT l.id, c.id, l.food_id, l.quantity, l.expires_on, l.price, l.id, l.created_at
+    FROM stock_lots l JOIN carts c ON c.bought_on = l.bought_on AND c.store = l.store;
+    DROP TABLE stock_lots;
+    ALTER TABLE stock_lots_new RENAME TO stock_lots;
+    CREATE INDEX stock_lots_food ON stock_lots (food_id);
+    CREATE INDEX stock_lots_cart ON stock_lots (cart_id, position);
+    """,
+    # 12: a discount on a cart's subtotal (an amount or a percentage, not both), and
+    # other items in a cart that aren't food (cleaning products, bags...). Those only
+    # make the cart's total match the receipt: they're not in the catalog or the stock.
+    """
+    ALTER TABLE carts ADD COLUMN discount     REAL CHECK (discount > 0);
+    ALTER TABLE carts ADD COLUMN discount_pct REAL CHECK (discount_pct > 0 AND discount_pct <= 100);
+
+    CREATE TABLE cart_extras (
+        id          INTEGER PRIMARY KEY,
+        cart_id     INTEGER NOT NULL REFERENCES carts (id) ON DELETE CASCADE,
+        name        TEXT    NOT NULL,
+        quantity    REAL    NOT NULL DEFAULT 1 CHECK (quantity > 0),
+        unit        TEXT    NOT NULL DEFAULT 'u',
+        price       REAL    CHECK (price >= 0),
+        position    INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX cart_extras_cart ON cart_extras (cart_id, position);
+    """,
+    # 13: an optional delivery fee per cart, added to the total after the discount.
+    """
+    ALTER TABLE carts ADD COLUMN delivery_fee REAL CHECK (delivery_fee >= 0);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

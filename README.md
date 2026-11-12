@@ -51,6 +51,19 @@ included. Ctrl+C in the terminal still works too.
   sent), and the form is filled in for you to review. Foods are saved with their barcode.
   Foods you log often are listed first. Editing or deleting a food doesn't change past log
   entries, because each entry stores a snapshot of its macros.
+- **Groceries**: your stock at home, in carts (one per trip to the shops). A cart has a day,
+  an optional store, and per food the amount or number of packs, an optional expiry date and
+  price. A cart can also hold other items that aren't food (name, amount, unit, price):
+  they only count towards its total, never in Foods or the stock. A discount (an amount
+  or a %) comes off the subtotal, and an optional delivery fee is added after it, so the
+  total matches the receipt. Carts can be edited (day, store, discount, delivery fee, items
+  added, changed or removed) or deleted.
+  Logging a catalog food in the Day tab takes it out of the stock, soonest expiry first;
+  editing or deleting the entry (or clearing the day) puts it back. A cart entered late
+  also covers what was logged since its day. Mark an item (or part of it) as *Expired* to
+  take it out, with an undo. Expiry dates turn amber three days ahead and red once past;
+  *Ran out* lists finished foods with *Buy again*, and tiles sum up what's expiring, what was
+  spent and what was thrown out in the last 30 days.
 - **Saved meals**: fixed mixes of catalog foods (or *☆ save* a meal from the Day tab).
 - **History**: daily kcal, protein, steps and sleep charts against your targets, body weight
   and body fat line charts, averages, and a per-day table with mood and notes (click a day

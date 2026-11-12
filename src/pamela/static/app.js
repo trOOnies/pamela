@@ -1,5 +1,5 @@
 // Pamela frontend - vanilla JS, no build step.
-// Views are routed by URL hash: #/ (today), #/day/YYYY-MM-DD, #/foods, #/meals, #/history,
+// Views are routed by URL hash: #/ (today), #/day/YYYY-MM-DD, #/foods, #/groceries, #/meals, #/history,
 // #/settings, #/help
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -42,6 +42,11 @@ const state = {
   editingSavedMealId: null,
   editingTypeId: null,
   historyRange: 30,
+  groceries: null,      // GET /groceries: { items, carts, expired }
+  trip: [],             // food items of the cart being entered or edited in Groceries
+  tripExtras: [],       // its other items (not food)
+  editingCartId: null,
+  cartsShown: 8,        // carts listed before "Show more"
 };
 
 // --- helpers -----------------------------------------------------------------
@@ -288,7 +293,7 @@ function buildVocabControls() {
 
 // --- routing -----------------------------------------------------------------
 
-const VIEWS = ["day", "foods", "meals", "history", "settings", "help"];
+const VIEWS = ["day", "foods", "groceries", "meals", "history", "settings", "help"];
 
 function route() {
   flushNote(); // the textarea still holds the previous day's note
@@ -317,6 +322,7 @@ function render() {
   if (!state.config) return;
   if (state.view === "day") return loadDay();
   if (state.view === "foods") return loadFoods();
+  if (state.view === "groceries") return loadGroceries();
   if (state.view === "meals") return loadMealsView();
   if (state.view === "history") return loadHistory();
   if (state.view === "settings") return loadSettings();
@@ -382,7 +388,7 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
       .map(
         (f, i) => `<li role="option" id="${idp}-${i}" data-i="${i}" aria-selected="${i === c.active}">
           <span class="s-name">${esc(f.name)} ${f.brand ? `<span class="brand-tag">${esc(f.brand)}</span>` : ""}${tagPills(f, "mini")}</span>
-          <span class="meta">${f.kcal == null ? `<span class="warn-kcal">⚠ no kcal</span>` : `${fmt(f.kcal)} kcal`} / ${fmtQty(f.basis_qty)} ${esc(f.unit)}</span></li>`
+          <span class="meta">${f.kcal == null ? `<span class="warn-kcal">⚠ no kcal</span>` : `${fmt(f.kcal)} kcal`} / ${fmtQty(f.basis_qty)} ${esc(f.unit)}${stockMeta(f)}</span></li>`
       )
       .join("");
     if (q && onCreate) {
@@ -478,6 +484,14 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
     if (li) pick(li.dataset.create ? c.results.length : Number(li.dataset.i));
   });
   return { close };
+}
+
+/** "· 🛒 350 g" in a search suggestion, for foods bought in Groceries. */
+function stockMeta(f) {
+  if (f.in_stock == null) return "";
+  return f.in_stock > 1e-6
+    ? `<span class="stock-meta" title="Left in Groceries"> · 🛒 ${fmtQty(f.in_stock)} ${esc(f.unit)}</span>`
+    : `<span class="stock-meta none" title="None left in Groceries"> · 🛒 none</span>`;
 }
 
 // --- editable item tables (saved meal draft and editor) ---------------------------
@@ -655,7 +669,12 @@ function renderLog() {
       continue;
     }
     for (const e of rows) {
-      const amount = e.quantity != null ? `${fmtQty(e.quantity)} ${esc(e.unit)}` : "";
+      let amount = e.quantity != null ? `${fmtQty(e.quantity)} ${esc(e.unit)}` : "";
+      if (e.from_stock > 1e-6) {
+        const all = e.from_stock >= e.quantity - 1e-6;
+        const t = all ? "Taken from Groceries" : `${fmtQty(e.from_stock)} ${e.unit} of it taken from Groceries`;
+        amount = `<span class="from-stock${all ? "" : " part"}" title="${esc(t)}" aria-label="${esc(t)}">🛒</span> ${amount}`;
+      }
       const qtyAttrs = e.food_id != null ? ` class="n qty" data-edit-qty="${e.id}" title="Click to change amount"` : ' class="n"';
       html += `<tr data-entry="${e.id}">
         <td>${esc(e.name)}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
@@ -1045,16 +1064,24 @@ function updatePreview() {
   chips.innerHTML = portionOptions(f)
     .map(([label, q]) => `<button type="button" class="chip" data-portion="${q}" aria-pressed="${qty != null && Math.abs(qty - q) < 1e-6}">${label} <small>${fmtQty(q)} ${esc(f.unit)}</small></button>`)
     .join("");
+  // what's left in Groceries (only for foods bought there, and only today's stock)
+  let stock = "";
+  if (f.in_stock != null) {
+    const left = Math.max(f.in_stock, 0);
+    if (left <= 1e-6) stock = " · 🛒 none left in Groceries";
+    else if (qty && qty > left + 1e-6) stock = ` · 🛒 only ${fmtQty(left)} ${f.unit} in Groceries`;
+    else stock = ` · 🛒 ${fmtQty(left)} ${f.unit} in Groceries`;
+  }
   if (!qty) {
     $("#entry-preview").textContent =
-      f.kcal == null
+      (f.kcal == null
         ? `${f.name}: no kcal entered yet (counted as 0), per ${fmtQty(f.basis_qty)} ${f.unit}`
-        : `${f.name}: ${fmt(f.kcal)} kcal per ${fmtQty(f.basis_qty)} ${f.unit}`;
+        : `${f.name}: ${fmt(f.kcal)} kcal per ${fmtQty(f.basis_qty)} ${f.unit}`) + stock;
     return;
   }
   const k = qty / f.basis_qty;
   $("#entry-preview").textContent =
-    (f.kcal == null ? "kcal unknown (counted as 0) · " : `≈ ${fmt(f.kcal * k)} kcal · `) + MACROS.map((m) => `${m.short} ${fmt(f[m.key] * k, 1)}`).join(" · ");
+    (f.kcal == null ? "kcal unknown (counted as 0) · " : `≈ ${fmt(f.kcal * k)} kcal · `) + MACROS.map((m) => `${m.short} ${fmt(f[m.key] * k, 1)}`).join(" · ") + stock;
 }
 
 function selectFood(food) {
@@ -1367,13 +1394,10 @@ function renderFoods() {
   };
   const head = `<tr>${th("name", "Name")}${th("brand", "Brand")}${th("per", "Per", "n")}${th("kcal", "kcal", "n")}${th("protein_g", "P", "n")}${th("carbs_g", "C", "n")}${th("fat_g", "F", "n")}${th("fiber_g", "Fib", "n")}${th("uses", "Uses", "n", "Times logged in the last 90 days")}<th class="act"><span class="sr">Actions</span></th></tr>`;
   // One table per group, in the vocabulary's order; foods without a group last.
-  const sections = [...state.vocab.food_groups, { key: "", label: "No group", emoji: "📦" }]
-    .map((g) => [g, rows.filter((f) => (f.food_group || "") === g.key)])
-    .filter(([, list]) => list.length);
-  box.innerHTML = sections
+  box.innerHTML = byFoodGroup(rows)
     .map(
       ([g, list]) => `<section class="food-group" aria-labelledby="fg-${g.key || "none"}">
-      <h3 id="fg-${g.key || "none"}"><span aria-hidden="true">${g.emoji}</span> ${esc(g.label)} <span class="count">(${list.length})</span></h3>
+      ${groupHeading(g, list.length, `fg-${g.key || "none"}`)}
       <div class="table-wrap">
         <table class="foods-table">
           <colgroup><col class="c-name"><col class="c-brand"><col class="c-per"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-act"></colgroup>
@@ -1387,6 +1411,18 @@ function renderFoods() {
 }
 
 const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+/** ``rows`` split by food group, in the vocabulary's order, foods without a group last;
+ * empty groups are left out. Each row needs a ``food_group``. */
+function byFoodGroup(rows) {
+  return [...state.vocab.food_groups, { key: "", label: "No group", emoji: "📦" }]
+    .map((g) => [g, rows.filter((r) => (r.food_group || "") === g.key)])
+    .filter(([, list]) => list.length);
+}
+/** A group's heading, as in the Foods tab. */
+function groupHeading(g, n, id) {
+  return `<h3${id ? ` id="${id}"` : ""}><span aria-hidden="true">${g.emoji}</span> ${esc(g.label)} <span class="count">(${n})</span></h3>`;
+}
 // Sortable catalog columns: the value to sort by, and whether it's text. The first
 // click sorts text A→Z and numbers high→low.
 const FOOD_SORT = {
@@ -1574,12 +1610,576 @@ async function submitFood(ev) {
 
 async function deleteFood(id) {
   const f = state.foods.find((x) => x.id === id);
-  if (!f || !confirm(`Delete “${f.name}”? Past log entries keep their values. It's also removed from saved meals.`)) return;
+  if (!f || !confirm(`Delete “${f.name}”? Past log entries keep their values. It's also removed from saved meals and groceries.`)) return;
   try {
     await api("DELETE", `/foods/${id}`);
     if (state.editingFoodId === id) resetFoodForm();
     await loadFoods();
     loadSavedMeals().catch(showError);
+  } catch (err) {
+    showError(err);
+  }
+}
+
+// --- groceries view ----------------------------------------------------------------
+
+const SOON_DAYS = 3; // expiry dates turn amber this many days before
+
+function daysBetween(a, b) {
+  return Math.round((parseISO(b) - parseISO(a)) / 86_400_000);
+}
+function fmtMoney(n) {
+  if (n == null) return "–";
+  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+/** "500 g", plus "· 2 packs" when the food has a package size. */
+function fmtStock(qty, f) {
+  let s = `${fmtQty(qty)} ${esc(f.unit)}`;
+  if (f.package_qty && qty > 0) {
+    const p = qty / f.package_qty;
+    s += ` <small>· ${fmt(p, 1)} pack${Math.abs(p - 1) < 0.05 ? "" : "s"}</small>`;
+  }
+  return s;
+}
+/** "past", "soon" or "" for an expiry date. */
+function expiryClass(iso) {
+  if (!iso) return "";
+  const d = daysBetween(todayISO(), iso);
+  return d < 0 ? "past" : d <= SOON_DAYS ? "soon" : "";
+}
+function expiryBadge(iso) {
+  if (!iso) return `<span class="muted">–</span>`;
+  const d = daysBetween(todayISO(), iso);
+  const rel = d < 0 ? `${-d} d ago` : d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} d`;
+  return `<span class="exp ${expiryClass(iso)}" title="${d < 0 ? "Expired" : "Expires"} ${iso}">${iso} <small>${rel}</small></span>`;
+}
+function foodLabel(f) {
+  return `${esc(f.name)}${f.brand ? ` <span class="brand-tag">${esc(f.brand)}</span>` : ""}`;
+}
+
+async function loadGroceries() {
+  document.title = "Groceries · Pamela";
+  const day = $("#trip-day");
+  day.max = todayISO();
+  if (!day.value || (!state.editingCartId && day.value > todayISO())) day.value = todayISO();
+  renderTrip();
+  try {
+    state.groceries = await api("GET", "/groceries");
+    // the cart being edited was deleted meanwhile (e.g. its foods were)
+    if (state.editingCartId && !state.groceries.carts.some((c) => c.id === state.editingCartId)) resetCartForm();
+    renderGroceries();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function renderGroceries() {
+  const g = state.groceries;
+  if (!g) return;
+  const inStock = g.items.filter((it) => it.lots.length);
+  const ranOut = g.items.filter((it) => !it.lots.length).sort((a, b) => b.last_bought.localeCompare(a.last_bought));
+  const lots = inStock.flatMap((it) => it.lots);
+  const soon = lots.filter((l) => expiryClass(l.expires_on) === "soon").length;
+  const past = lots.filter((l) => expiryClass(l.expires_on) === "past").length;
+  const since = addDays(todayISO(), -29);
+  const recent = g.carts.filter((c) => c.bought_on >= since && c.total_price != null);
+  const tile = (k, v, cls = "", title = "") => `<div class="tile ${cls}"${title ? ` title="${title}"` : ""}><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  $("#groc-tiles").innerHTML =
+    tile("Foods in stock", fmt(inStock.length)) +
+    tile(`Expiring within ${SOON_DAYS} days`, fmt(soon), soon ? "warn" : "", "Items whose expiry date is today or in the next days") +
+    tile("Past their date", fmt(past), past ? "bad" : "", "Items still in stock whose expiry date has passed") +
+    tile("Spent, 30 days", recent.length ? fmtMoney(recent.reduce((a, c) => a + c.total_price, 0)) : "–", "", "What carts of the last 30 days cost (items with a price)") +
+    tile("Thrown out, 30 days", fmt(g.expired.length), "", "Times something expired in the last 30 days");
+
+  const stores = new Set(g.carts.map((c) => c.store).filter(Boolean));
+  $("#store-options").innerHTML = [...stores].map((s) => `<option value="${esc(s)}">`).join("");
+
+  renderStock(inStock);
+  renderCarts();
+
+  $("#ranout-count").textContent = ranOut.length ? `(${ranOut.length})` : "";
+  $("#ranout-list").innerHTML = ranOut.length
+    ? groupedList(
+        ranOut,
+        (it) => `<li><span>${foodLabel(it)} <small>last bought ${fmtDay(it.last_bought)}</small></span>
+          <button type="button" class="row-btn add-to" data-buy-again="${it.food_id}">+ Buy again</button></li>`
+      )
+    : `<li class="empty">Nothing yet. Foods you finish show up here.</li>`;
+
+  $("#groc-expired").innerHTML = g.expired.length
+    ? groupedList(
+        g.expired,
+        (h) => `<li><span class="hday">${fmtDay(h.day)}</span><span><b>${fmtQty(h.quantity)} ${esc(h.unit)}</b> ${foodLabel(h)}</span>
+            <button type="button" class="row-btn" data-undo-expired="${h.id}" title="Put it back in stock">Undo</button></li>`
+      )
+    : `<li class="empty">Nothing expired in the last 30 days.</li>`;
+}
+
+/** List items under a heading per food group (rows keep their order within a group). */
+function groupedList(rows, li) {
+  return byFoodGroup(rows)
+    .map(([grp, list]) => `<li class="group-head">${groupHeading(grp, list.length)}</li>${list.map(li).join("")}`)
+    .join("");
+}
+
+/** "Thu 2026-11-12 · Corner shop" */
+function cartName(c) {
+  return `${fmtDayWd(c.bought_on)}${c.store ? ` · ${c.store}` : ""}`;
+}
+
+function renderStock(items) {
+  const words = $("#stock-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = items.filter((it) => words.every((w) => `${it.name} ${it.brand}`.toLowerCase().includes(w)));
+  const byExpiry = $('input[name="stock-sort"]:checked').value === "expiry";
+  rows.sort(
+    (a, b) =>
+      (byExpiry ? (a.next_expiry == null) - (b.next_expiry == null) || (a.next_expiry ?? "").localeCompare(b.next_expiry ?? "") : 0) ||
+      collator.compare(a.name, b.name) ||
+      collator.compare(a.brand, b.brand)
+  );
+  $("#stock-count").textContent = rows.length === items.length ? `(${items.length})` : `(${rows.length} of ${items.length})`;
+  const box = $("#stock-groups");
+  if (!rows.length) {
+    box.innerHTML = `<p class="empty-note">${items.length ? "No matches" : "Nothing in stock yet. Add a cart with what you bought."}</p>`;
+    return;
+  }
+  const row = (it) => {
+      const head = `<tr class="stock-food">
+        <td>${foodLabel(it)}</td>
+        <td class="n">${fmtStock(it.in_stock, it)}</td>
+        <td>${expiryBadge(it.next_expiry)}</td>
+        <td></td>
+        <td class="act"><button type="button" class="row-btn add-to" data-buy-again="${it.food_id}" title="Add it to the cart on the left">+ Buy</button></td>
+      </tr>`;
+      const lots = it.lots
+        .map(
+          (l) => `<tr class="stock-lot">
+        <td><button type="button" class="link-btn lot-cart" data-edit-cart="${l.cart_id}" title="Open this cart">🛒 ${esc(cartName(l))}</button></td>
+        <td class="n">${l.remaining < l.quantity ? `${fmtQty(l.remaining)} <small>of ${fmtQty(l.quantity)}</small>` : fmtQty(l.quantity)} <small>${esc(it.unit)}</small></td>
+        <td>${expiryBadge(l.expires_on)}</td>
+        <td class="n">${fmtMoney(l.price)}</td>
+        <td class="act"><button type="button" class="row-btn expire-btn" data-expire-lot="${l.id}" title="It expired or went off">🗑️ Expired</button></td>
+      </tr>`
+        )
+        .join("");
+      return head + lots;
+  };
+  // One table per food group, as in Foods; fixed columns keep them lined up.
+  box.innerHTML = byFoodGroup(rows)
+    .map(
+      ([g, list]) => `<section class="food-group" aria-labelledby="sg-${g.key || "none"}">
+      ${groupHeading(g, list.length, `sg-${g.key || "none"}`)}
+      <div class="table-wrap">
+        <table class="stock-table">
+          <colgroup><col><col class="c-left"><col class="c-exp"><col class="c-price"><col class="c-act"></colgroup>
+          <thead><tr><th>Food <small>/ cart</small></th><th class="n">Left</th><th>Expires</th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+          <tbody>${list.map(row).join("")}</tbody>
+        </table>
+      </div>
+    </section>`
+    )
+    .join("");
+}
+
+const CARTS_PAGE = 8;
+
+function renderCarts() {
+  const carts = state.groceries.carts;
+  $("#carts-count").textContent = carts.length ? `(${carts.length})` : "";
+  if (!carts.length) {
+    $("#cart-list").innerHTML = `<p class="empty-note">No carts yet. Back from the shops? Add one with the form.</p>`;
+    return;
+  }
+  const shown = carts.slice(0, state.cartsShown);
+  const more = carts.length - shown.length;
+  $("#cart-list").innerHTML =
+    shown
+      .map((c) => {
+        const items =
+          c.items
+            .map((it) => {
+              const left = it.remaining <= 1e-6 ? `<small class="muted">used up</small>` : it.remaining < it.quantity - 1e-6 ? `<small>${fmtQty(it.remaining)} left</small>` : "";
+              return `<li><span>${foodLabel(it)}</span><span class="n">${fmtQty(it.quantity)} ${esc(it.unit)} ${left}</span></li>`;
+            })
+            .join("") +
+          c.extras
+            .map((x) => `<li class="extra" title="Not food: only counts towards the total"><span>${esc(x.name)}</span><span class="n">${fmtQty(x.quantity)} ${esc(x.unit)}</span></li>`)
+            .join("");
+        return `<article class="cart${c.id === state.editingCartId ? " editing" : ""}" id="cart-${c.id}">
+          <div class="cart-top">
+            <div class="cart-title"><b>${esc(fmtDayWd(c.bought_on))}</b>${c.store ? ` <span class="cart-store">${esc(c.store)}</span>` : ""}</div>
+            <span class="cart-btns"><button type="button" class="row-btn icon" data-edit-cart="${c.id}" title="Edit cart" aria-label="Edit the cart of ${esc(cartName(c))}">${PENCIL}</button><button type="button" class="row-btn del" data-del-cart="${c.id}" title="Delete cart" aria-label="Delete the cart of ${esc(cartName(c))}">✕</button></span>
+          </div>
+          <ul class="cart-items">${items}</ul>
+          <div class="cart-sum">${cartCounts(c.items.length, c.extras.length)}${cartMoney(c)}</div>
+        </article>`;
+      })
+      .join("") +
+    (more > 0 ? `<button type="button" class="btn ghost carts-more" data-more-carts>Show ${Math.min(more, CARTS_PAGE)} more (${more} older)</button>` : "");
+}
+
+/** "3 foods · 2 other items" */
+function cartCounts(foods, extras) {
+  const bits = [];
+  if (foods) bits.push(`${foods} ${foods === 1 ? "food" : "foods"}`);
+  if (extras) bits.push(`${extras} other ${extras === 1 ? "item" : "items"}`);
+  return bits.join(" · ");
+}
+/** " · 17.63 (−1.96 discount, +2.00 delivery)" for a saved cart. */
+function cartMoney(c) {
+  if (c.total_price == null) return "";
+  const bits = [];
+  if (c.discount_amount) bits.push(`−${fmtMoney(c.discount_amount)}${c.discount_pct != null ? `, ${fmt(c.discount_pct, 2)}%` : ""} discount`);
+  if (c.delivery_fee != null) bits.push(`+${fmtMoney(c.delivery_fee)} delivery`);
+  const title = c.subtotal != null ? ` title="Subtotal ${fmtMoney(c.subtotal)}"` : "";
+  return ` · <b>${fmtMoney(c.total_price)}</b>${bits.length ? ` <small${title}>(${bits.join(", ")})</small>` : ""}`;
+}
+
+/** The lot with this id, and the stock item it belongs to. */
+function findLot(id) {
+  for (const it of state.groceries?.items ?? []) {
+    const lot = it.lots.find((l) => l.id === id);
+    if (lot) return { it, lot };
+  }
+  return {};
+}
+
+// the cart being entered or edited ---------------------------------------------------------
+
+/** Cart item: { id (null if new), food: { id, name, brand, unit, package_qty }, quantity,
+ * used (already eaten or thrown out), expires_on, price }. */
+function addTripItem(food, quantity) {
+  const q = quantity ?? food.package_qty ?? (["g", "ml"].includes(food.unit) ? food.basis_qty : 1) ?? 1;
+  state.trip.push({ id: null, food, quantity: Math.round(q * 100) / 100, used: 0, expires_on: "", price: "" });
+  renderTrip();
+  const i = state.trip.length - 1;
+  const first = $(`#trip-body tr[data-i="${i}"] input`);
+  first?.focus();
+  first?.select();
+}
+
+function renderTrip() {
+  const items = state.trip;
+  const min = $("#trip-day").value;
+  $("#trip-body").innerHTML = items.length
+    ? items
+        .map((it, i) => {
+          const f = it.food;
+          const packs = f.package_qty
+            ? `<input class="qty-input packs" type="number" min="0" step="any" value="${Math.round((it.quantity / f.package_qty) * 100) / 100}" data-trip-packs="${i}" aria-label="Packs of ${esc(f.name)}" title="Packs of ${fmtQty(f.package_qty)} ${esc(f.unit)}"><span class="unit">pack</span>`
+            : "";
+          const used = it.used > 1e-6 ? `<small class="trip-used" title="Already eaten or thrown out: the amount can't be less">${fmtQty(it.used)} ${esc(f.unit)} used</small>` : "";
+          return `<tr data-i="${i}">
+          <td>${foodLabel(f)}${used}</td>
+          <td class="n"><span class="with-unit qty-cell">${packs}<input class="qty-input" type="number" min="${it.used || 0}" step="any" value="${it.quantity}" data-trip-qty="${i}" aria-label="Amount of ${esc(f.name)}"><span class="unit">${esc(f.unit)}</span></span></td>
+          <td><input type="date" value="${it.expires_on}" min="${min}" data-trip-exp="${i}" aria-label="Expiry date of ${esc(f.name)}"></td>
+          <td class="n"><input class="price-input" type="number" min="0" step="any" value="${it.price}" data-trip-price="${i}" aria-label="Price of ${esc(f.name)}" placeholder="–"></td>
+          <td class="act"><button type="button" class="row-btn del" data-trip-del="${i}" title="Remove from the cart" aria-label="Remove ${esc(f.name)}">✕</button></td>
+        </tr>`;
+        })
+        .join("")
+    : `<tr class="empty"><td colspan="5">Add the foods you bought with the search below.</td></tr>`;
+  const what = cartCounts(items.length, state.tripExtras.length);
+  $("#trip-submit").textContent = state.editingCartId ? "Save cart" : what ? `Add cart (${what})` : "Add cart";
+  renderExtras();
+  renderTripTotal();
+}
+
+/** The cart's other items (not food): { name, quantity, unit, price }. */
+function renderExtras() {
+  const xs = state.tripExtras;
+  $("#extras-wrap").hidden = !xs.length;
+  $("#extra-body").innerHTML = xs
+    .map(
+      (x, i) => `<tr data-i="${i}">
+        <td><input type="text" class="extra-name" maxlength="200" value="${esc(x.name)}" data-extra-name="${i}" placeholder="e.g. Dish soap" aria-label="Item name"></td>
+        <td class="n"><span class="with-unit qty-cell"><input class="qty-input" type="number" min="0" step="any" value="${x.quantity}" data-extra-qty="${i}" aria-label="Amount of ${esc(x.name || "item")}"><input class="unit-input" type="text" maxlength="20" value="${esc(x.unit)}" list="unit-options" data-extra-unit="${i}" aria-label="Unit"></span></td>
+        <td class="n"><input class="price-input" type="number" min="0" step="any" value="${x.price}" data-extra-price="${i}" placeholder="–" aria-label="Price of ${esc(x.name || "item")}"></td>
+        <td class="act"><button type="button" class="row-btn del" data-extra-del="${i}" title="Remove" aria-label="Remove ${esc(x.name || "item")}">✕</button></td>
+      </tr>`
+    )
+    .join("");
+}
+
+function addExtra() {
+  state.tripExtras.push({ name: "", quantity: 1, unit: "u", price: "" });
+  renderTrip();
+  $(`#extra-body [data-extra-name="${state.tripExtras.length - 1}"]`)?.focus();
+}
+
+function extraInput(e) {
+  const t = e.target;
+  const d = t.dataset;
+  const x = state.tripExtras[Number(d.extraName ?? d.extraQty ?? d.extraUnit ?? d.extraPrice)];
+  if (!x) return;
+  if ("extraName" in d) x.name = t.value;
+  else if ("extraQty" in d) x.quantity = num(t.value) ?? 0;
+  else if ("extraUnit" in d) x.unit = t.value;
+  else x.price = t.value;
+  renderTripTotal();
+  $("#trip-submit").textContent = state.editingCartId ? "Save cart" : `Add cart (${cartCounts(state.trip.length, state.tripExtras.length)})`;
+}
+
+/** "2.50" -> { discount: 2.5 }, "10%" -> { discount_pct: 10 }, "" -> {}; NaN fields if invalid. */
+function parseDiscount(raw) {
+  raw = raw.trim().replace(",", ".").replace(/\s+/g, "");
+  if (!raw) return {};
+  const pct = raw.endsWith("%");
+  const n = Number(pct ? raw.slice(0, -1) : raw);
+  if (!Number.isFinite(n) || n <= 0 || (pct && n > 100)) return { invalid: true };
+  return pct ? { discount_pct: n } : { discount: Math.round(n * 100) / 100 };
+}
+
+function tripInput(e) {
+  const t = e.target;
+  const i = Number(t.dataset.tripQty ?? t.dataset.tripPacks ?? t.dataset.tripExp ?? t.dataset.tripPrice);
+  const it = state.trip[i];
+  if (!it) return;
+  const row = t.closest("tr");
+  if ("tripQty" in t.dataset) {
+    it.quantity = num(t.value) ?? 0;
+    const packs = $("[data-trip-packs]", row);
+    if (packs) packs.value = it.quantity ? Math.round((it.quantity / it.food.package_qty) * 100) / 100 : "";
+  } else if ("tripPacks" in t.dataset) {
+    it.quantity = Math.round((num(t.value) ?? 0) * it.food.package_qty * 100) / 100;
+    $("[data-trip-qty]", row).value = it.quantity || "";
+  } else if ("tripExp" in t.dataset) {
+    it.expires_on = t.value;
+  } else {
+    it.price = t.value;
+    renderTripTotal();
+  }
+}
+/** Subtotal, discount and total of the cart in the form. */
+function tripMoney() {
+  const prices = [...state.trip, ...state.tripExtras].map((it) => num(it.price)).filter((p) => p != null);
+  const subtotal = prices.reduce((a, p) => a + p, 0);
+  const d = parseDiscount($("#trip-discount").value);
+  const off = d.discount ?? (d.discount_pct != null ? Math.round(subtotal * d.discount_pct) / 100 : 0);
+  const fee = num($("#trip-fee").value);
+  return { priced: prices.length > 0, subtotal, d, off, fee, total: subtotal - off + (fee ?? 0) };
+}
+
+function renderTripTotal() {
+  $("#trip-total").textContent = cartCounts(state.trip.length, state.tripExtras.length);
+  const m = tripMoney();
+  const input = $("#trip-discount");
+  input.classList.toggle("invalid", !!m.d.invalid || m.off > m.subtotal + 1e-9);
+  $("#trip-fee").classList.toggle("invalid", m.fee != null && m.fee < 0);
+  if (!m.priced && !m.off && m.fee == null) {
+    $("#trip-sum").innerHTML = "";
+    return;
+  }
+  let html = `<dt>Subtotal</dt><dd>${fmtMoney(m.subtotal)}</dd>`;
+  if (m.d.invalid) html += `<dt>Discount</dt><dd class="bad">type an amount (2.50) or a % (10%)</dd>`;
+  else if (m.off) {
+    const pct = m.d.discount_pct != null ? ` <small>(${fmt(m.d.discount_pct, 2)}%)</small>` : "";
+    html += `<dt>Discount${pct}</dt><dd class="${m.off > m.subtotal + 1e-9 ? "bad" : ""}">−${fmtMoney(m.off)}</dd>`;
+  }
+  if (m.fee != null) html += `<dt>Delivery fee</dt><dd>+${fmtMoney(m.fee)}</dd>`;
+  html += `<dt class="tot">Total</dt><dd class="tot">${fmtMoney(Math.max(m.total, 0))}</dd>`;
+  $("#trip-sum").innerHTML = html;
+}
+
+async function submitTrip(ev) {
+  ev.preventDefault();
+  const form = ev.currentTarget; // null once an await has run
+  const v = formValues(form);
+  if (!v.bought_on || v.bought_on > todayISO()) {
+    toast("Pick the day you bought them (today or before)", true);
+    return $("#trip-day").focus();
+  }
+  if (!state.trip.length && !state.tripExtras.length) {
+    toast(state.editingCartId ? "A cart needs at least one item. To remove it all, delete the cart" : "Add what you bought first", true);
+    return $("#trip-search").focus();
+  }
+  const noName = state.tripExtras.findIndex((x) => !x.name.trim());
+  if (noName >= 0) {
+    toast("Give each other item a name (or remove it)", true);
+    return $(`#extra-body [data-extra-name="${noName}"]`)?.focus();
+  }
+  const noQty = state.tripExtras.findIndex((x) => !(x.quantity > 0) || !x.unit.trim());
+  if (noQty >= 0) {
+    toast(`${state.tripExtras[noQty].name}: enter an amount and a unit`, true);
+    return $(`#extra-body [data-extra-qty="${noQty}"]`)?.focus();
+  }
+  const money = tripMoney();
+  if (money.d.invalid) {
+    toast("Discount: type an amount (2.50) or a percentage (10%)", true);
+    return $("#trip-discount").focus();
+  }
+  if (money.fee != null && money.fee < 0) {
+    toast("The delivery fee can't be negative", true);
+    return $("#trip-fee").focus();
+  }
+  if (money.off > money.subtotal + 1e-9) {
+    toast(`The discount (${fmtMoney(money.off)}) is more than the subtotal (${fmtMoney(money.subtotal)})`, true);
+    return $("#trip-discount").focus();
+  }
+  const bad = state.trip.findIndex((it) => !(it.quantity > 0));
+  if (bad >= 0) {
+    toast(`Enter how much ${state.trip[bad].food.name} you bought`, true);
+    return $(`#trip-body [data-trip-qty="${bad}"]`)?.focus();
+  }
+  const low = state.trip.findIndex((it) => it.quantity < it.used - 1e-6);
+  if (low >= 0) {
+    const it = state.trip[low];
+    toast(`${it.food.name}: ${fmtQty(it.used)} ${it.food.unit} of it is already used, so you bought at least that`, true);
+    return $(`#trip-body [data-trip-qty="${low}"]`)?.focus();
+  }
+  const early = state.trip.findIndex((it) => it.expires_on && it.expires_on < v.bought_on);
+  if (early >= 0) {
+    toast(`${state.trip[early].food.name}: the expiry date is before the day you bought it`, true);
+    return $(`#trip-body [data-trip-exp="${early}"]`)?.focus();
+  }
+  const body = {
+    bought_on: v.bought_on,
+    store: v.store.trim(),
+    items: state.trip.map((it) => ({ id: it.id, food_id: it.food.id, quantity: it.quantity, expires_on: it.expires_on || null, price: num(it.price) })),
+    extras: state.tripExtras.map((x) => ({ name: x.name.trim(), quantity: x.quantity, unit: x.unit.trim(), price: num(x.price) })),
+    discount: money.d.discount ?? null,
+    discount_pct: money.d.discount_pct ?? null,
+    delivery_fee: money.fee,
+  };
+  const editing = state.editingCartId;
+  try {
+    const cart = editing ? await api("PUT", `/groceries/carts/${editing}`, body) : await api("POST", "/groceries/carts", body);
+    toast(editing ? "Cart updated" : `Added the cart of ${cartName(cart)}`);
+    resetCartForm();
+    await loadGroceries();
+    flashCart(cart.id);
+    if (!editing) $("#trip-search").focus();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+/** Back to an empty "New cart" form. */
+function resetCartForm() {
+  state.editingCartId = null;
+  state.trip = [];
+  state.tripExtras = [];
+  const form = $("#trip-form");
+  form.elements.store.value = "";
+  $("#trip-discount").value = "";
+  $("#trip-fee").value = "";
+  $("#trip-day").value = todayISO();
+  $("#trip-h").textContent = "🛒 New cart";
+  $("#cart-cancel").hidden = true;
+  $("#cart-delete").hidden = true;
+  renderTrip();
+  if (state.groceries) renderCarts();
+}
+
+function editCart(id) {
+  const c = state.groceries?.carts.find((x) => x.id === id);
+  if (!c) return;
+  const filling = state.trip.length || state.tripExtras.length;
+  if (filling && !state.editingCartId && !confirm("Drop the new cart you were filling in, to edit this one?")) return;
+  state.editingCartId = id;
+  state.trip = c.items.map((it) => ({
+    id: it.id,
+    food: { id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, package_qty: it.package_qty },
+    quantity: it.quantity,
+    used: it.eaten + it.expired,
+    expires_on: it.expires_on ?? "",
+    price: it.price ?? "",
+  }));
+  state.tripExtras = c.extras.map((x) => ({ name: x.name, quantity: x.quantity, unit: x.unit, price: x.price ?? "" }));
+  const form = $("#trip-form");
+  form.elements.store.value = c.store;
+  $("#trip-discount").value = c.discount_pct != null ? `${c.discount_pct}%` : c.discount ?? "";
+  $("#trip-fee").value = c.delivery_fee ?? "";
+  $("#trip-day").value = c.bought_on;
+  $("#trip-h").textContent = `✏️ Edit cart · ${fmtDayWd(c.bought_on)}`;
+  $("#cart-cancel").hidden = false;
+  $("#cart-delete").hidden = false;
+  renderTrip();
+  renderCarts();
+  $(".trip-card").scrollIntoView({ block: "nearest" });
+  $("#trip-day").focus();
+}
+
+async function deleteCart(id) {
+  const c = state.groceries?.carts.find((x) => x.id === id);
+  if (!c) return;
+  const msg = `Delete the cart of ${cartName(c)} (${cartCounts(c.items.length, c.extras.length)})?\n\nWhat's left of it leaves your stock. Logged days stay as they are. It can't be undone.`;
+  if (!confirm(msg)) return;
+  try {
+    await api("DELETE", `/groceries/carts/${id}`);
+    if (state.editingCartId === id) resetCartForm();
+    toast("Cart deleted");
+    await loadGroceries();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+/** Scrolls to a cart in the list and flashes it. */
+function flashCart(id) {
+  const idx = state.groceries.carts.findIndex((c) => c.id === id);
+  if (idx >= state.cartsShown) {
+    state.cartsShown = idx + 1;
+    renderCarts();
+  }
+  const el = document.getElementById(`cart-${id}`);
+  if (!el) return;
+  el.classList.remove("flash");
+  void el.offsetWidth; // restart the animation
+  el.classList.add("flash");
+}
+
+function buyAgain(foodId) {
+  const it = state.groceries.items.find((x) => x.food_id === foodId);
+  if (!it) return;
+  addTripItem({ id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, package_qty: it.package_qty }, it.last_quantity);
+  $(".trip-card").scrollIntoView({ block: "nearest" });
+}
+
+// expiring ----------------------------------------------------------------------------------
+
+let dialogLot = null;
+
+function openExpire(id) {
+  const { it, lot } = findLot(id);
+  if (!lot) return;
+  dialogLot = lot;
+  const el = $("#expire-form").elements;
+  $("#expire-what").innerHTML = `${foodLabel(it)}, from the cart of ${esc(cartName(lot))}: ${fmtQty(lot.remaining)} ${esc(it.unit)} left.`;
+  $("#expire-unit").textContent = it.unit;
+  el.quantity.value = Math.round(lot.remaining * 100) / 100;
+  el.quantity.max = lot.remaining;
+  el.day.value = todayISO();
+  el.day.min = lot.bought_on;
+  el.day.max = todayISO();
+  $("#expire-dialog").showModal();
+  el.quantity.select();
+}
+
+async function submitExpire(ev) {
+  ev.preventDefault();
+  const lot = dialogLot;
+  const el = ev.currentTarget.elements;
+  const qty = num(el.quantity.value);
+  if (!qty || qty <= 0) return toast("Enter how much expired", true);
+  if (!el.day.value || el.day.value > todayISO()) return toast("Pick when it expired (today or before)", true);
+  // all that's left: let the server take the exact amount (no rounding leftovers)
+  const all = qty >= lot.remaining - 0.005;
+  try {
+    await api("POST", `/groceries/lots/${lot.id}/expired`, { day: el.day.value, quantity: all ? null : qty });
+    $("#expire-dialog").close();
+    toast("Taken out of your stock");
+    await loadGroceries();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function undoExpired(id) {
+  try {
+    await api("DELETE", `/groceries/expired/${id}`);
+    toast("Back in your stock");
+    await loadGroceries();
   } catch (err) {
     showError(err);
   }
@@ -2622,6 +3222,8 @@ async function runWipe() {
     updateWipeForm();
     if (what.includes("foods")) state.draft = null; // its foods are gone
     state.foods = [];
+    state.groceries = null;
+    if (what.includes("foods") || what.includes("groceries")) resetCartForm();
     await loadSavedMeals().catch(() => {});
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     toast(`Deleted ${fmt(total)} item${total === 1 ? "" : "s"}`);
@@ -2952,6 +3554,68 @@ function wire() {
     const del = e.target.closest("[data-del-food]");
     if (del) deleteFood(Number(del.dataset.delFood));
   });
+
+  // groceries
+  foodCombo({
+    input: $("#trip-search"),
+    list: $("#trip-suggest"),
+    onPick: (f) => {
+      $("#trip-search").value = "";
+      addTripItem(f);
+    },
+  });
+  $("#trip-form").addEventListener("submit", submitTrip);
+  $("#trip-day").addEventListener("change", renderTrip); // expiry dates can't be before it
+  $("#trip-body").addEventListener("input", tripInput);
+  $("#trip-body").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.closest("input")) {
+      e.preventDefault(); // Enter in a row moves on to the next food instead of submitting
+      $("#trip-search").focus();
+    }
+  });
+  $("#trip-body").addEventListener("click", (e) => {
+    const del = e.target.closest("[data-trip-del]");
+    if (!del) return;
+    const it = state.trip[Number(del.dataset.tripDel)];
+    if (it.used > 1e-6 && !confirm(`Remove ${it.food.name} from this cart? ${fmtQty(it.used)} ${it.food.unit} of it was already eaten or thrown out; those meals will take it from other carts, if there's any.`)) return;
+    state.trip.splice(Number(del.dataset.tripDel), 1);
+    renderTrip();
+  });
+  $("#cart-cancel").addEventListener("click", resetCartForm);
+  $("#extra-add").addEventListener("click", addExtra);
+  $("#extra-body").addEventListener("input", extraInput);
+  $("#extra-body").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.closest("input")) e.preventDefault();
+  });
+  $("#extra-body").addEventListener("click", (e) => {
+    const del = e.target.closest("[data-extra-del]");
+    if (!del) return;
+    state.tripExtras.splice(Number(del.dataset.extraDel), 1);
+    renderTrip();
+  });
+  $("#trip-discount").addEventListener("input", renderTripTotal);
+  $("#trip-fee").addEventListener("input", renderTripTotal);
+  $("#trip-fee").addEventListener("keydown", (e) => e.key === "Enter" && e.preventDefault());
+  $("#trip-discount").addEventListener("keydown", (e) => e.key === "Enter" && e.preventDefault());
+  $("#cart-delete").addEventListener("click", () => deleteCart(state.editingCartId));
+  $("#stock-filter").addEventListener("input", () => renderGroceries());
+  for (const r of $$('input[name="stock-sort"]')) r.addEventListener("change", () => renderGroceries());
+  $("#view-groceries").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-buy-again], [data-expire-lot], [data-edit-cart], [data-del-cart], [data-undo-expired], [data-more-carts]");
+    if (!t) return;
+    const d = t.dataset;
+    if (d.buyAgain) buyAgain(Number(d.buyAgain));
+    else if (d.expireLot) openExpire(Number(d.expireLot));
+    else if (d.editCart) editCart(Number(d.editCart));
+    else if (d.delCart) deleteCart(Number(d.delCart));
+    else if (d.undoExpired) undoExpired(Number(d.undoExpired));
+    else if ("moreCarts" in d) {
+      state.cartsShown += CARTS_PAGE;
+      renderCarts();
+    }
+  });
+  $("#expire-form").addEventListener("submit", submitExpire);
+  $("#expire-cancel").addEventListener("click", () => $("#expire-dialog").close());
 
   // saved meals
   smTable = itemsTable({

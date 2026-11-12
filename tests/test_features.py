@@ -619,9 +619,9 @@ def test_wipe_selected_kinds(client, oats):
     d = client.get(f"/api/days/{DAY}").json()
     assert d["activities"] == [] and len(d["entries"]) == 1 and d["metrics"]["steps"] == 5000
 
-    # wiping the catalog keeps logged entries, and drops saved meals left empty
+    # wiping the catalog keeps logged entries, and drops saved meals and carts left empty
     r = client.post("/api/wipe", json={"what": ["foods"]})
-    assert r.json()["counts"] == {"foods": 1, "saved_meals": 1}
+    assert r.json()["counts"] == {"foods": 1, "saved_meals": 1, "groceries": 0}
     d = client.get(f"/api/days/{DAY}").json()
     assert d["entries"][0]["food_id"] is None and d["entries"][0]["kcal"] > 0
     assert client.get("/api/saved-meals").json() == []

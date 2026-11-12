@@ -183,3 +183,50 @@ def test_unit_becomes_whole(tmp_path):
     assert (f["unit"], f["food_group"]) == ("whole", "")
     assert conn.execute("SELECT unit FROM food_entries").fetchone()["unit"] == "whole"
     conn.close()
+
+
+def test_purchases_become_carts(tmp_path):
+    """Migration 11 groups lots into one cart per day and store, keeping their ids."""
+    path = tmp_path / "old.sqlite3"
+    conn = db.connect(path)
+    for i, script in enumerate(db.MIGRATIONS[:10], start=1):
+        conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {i};\nCOMMIT;")
+    conn.execute("INSERT INTO foods (id, name) VALUES (1, 'Milk'), (2, 'Eggs')")
+    conn.execute(
+        "INSERT INTO food_entries (id, day, meal, food_id, name, quantity) "
+        "VALUES (1, '2026-01-03', 'L', 1, 'Milk', 200)"
+    )
+    conn.executemany(
+        "INSERT INTO stock_lots (id, food_id, quantity, bought_on, store, price) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (5, 1, 1000, "2026-01-02", "Shop", 1.5),
+            (6, 2, 12, "2026-01-02", "Shop", None),
+            (7, 1, 1000, "2026-01-02", "Market", None),
+            (8, 2, 6, "2026-01-04", "Shop", 2),
+        ],
+    )
+    conn.execute(
+        "INSERT INTO stock_uses (lot_id, kind, entry_id, day, quantity) "
+        "VALUES (5, 'eaten', 1, '2026-01-03', 200)"
+    )
+    conn.commit()
+    conn.close()
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+    conn = db.connect(path)
+    carts = conn.execute("SELECT * FROM carts ORDER BY id").fetchall()
+    assert sorted((c["bought_on"], c["store"]) for c in carts) == [
+        ("2026-01-02", "Market"),
+        ("2026-01-02", "Shop"),
+        ("2026-01-04", "Shop"),
+    ]
+    lots = {r["id"]: r for r in conn.execute("SELECT * FROM stock_lots")}
+    assert lots[5]["cart_id"] == lots[6]["cart_id"] != lots[7]["cart_id"]
+    assert lots[5]["price"] == 1.5
+    assert conn.execute("SELECT lot_id FROM stock_uses").fetchone()["lot_id"] == 5
+    # deleting a cart takes its items and their uses with it
+    conn.execute("DELETE FROM carts WHERE id = ?", (lots[5]["cart_id"],))
+    assert set(r["id"] for r in conn.execute("SELECT id FROM stock_lots")) == {7, 8}
+    assert conn.execute("SELECT COUNT(*) AS n FROM stock_uses").fetchone()["n"] == 0
+    conn.close()

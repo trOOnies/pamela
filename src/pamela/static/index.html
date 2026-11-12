@@ -15,6 +15,7 @@
     <nav class="tabs" aria-label="Sections">
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
+      <a href="#/groceries" data-nav="groceries">Groceries</a>
       <a href="#/meals" data-nav="meals">Saved meals</a>
       <a href="#/history" data-nav="history">History</a>
       <a href="#/settings" data-nav="settings">Settings</a>
@@ -269,6 +270,95 @@
       </section>
     </section>
 
+    <!-- Groceries ------------------------------------------------------- -->
+    <section id="view-groceries" class="view groceries-grid" hidden>
+      <section class="card trip-card" aria-labelledby="trip-h">
+        <div class="card-head">
+          <h2 id="trip-h">🛒 New cart</h2>
+          <button type="button" class="btn ghost" id="cart-cancel" hidden>Cancel edit</button>
+        </div>
+        <form id="trip-form" class="trip-form" autocomplete="off" novalidate>
+          <div class="trip-fields">
+            <label class="field"><span>Bought on</span><input type="date" name="bought_on" id="trip-day" required></label>
+            <label class="field grow"><span>Store <small>(optional)</small></span>
+              <input type="text" name="store" maxlength="100" list="store-options" placeholder="e.g. Corner shop"></label>
+            <datalist id="store-options"></datalist>
+          </div>
+          <div class="table-wrap">
+            <table class="draft-table trip-items">
+              <thead><tr><th>Food</th><th class="n">Amount</th><th>Expires <small>(optional)</small></th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+              <tbody id="trip-body"></tbody>
+            </table>
+          </div>
+          <div class="combo">
+            <input type="search" id="trip-search" placeholder="+ Add a food you bought…"
+                   role="combobox" aria-expanded="false" aria-controls="trip-suggest"
+                   aria-autocomplete="list" aria-label="Add a food you bought">
+            <ul id="trip-suggest" class="suggest" role="listbox" hidden></ul>
+          </div>
+          <div class="extras-block">
+            <h3 id="extras-h">Other items <small>(not food: they only count towards the total)</small></h3>
+            <div class="table-wrap" id="extras-wrap" hidden>
+              <table class="draft-table trip-items extra-items" aria-labelledby="extras-h">
+                <thead><tr><th>Item</th><th class="n">Amount</th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+                <tbody id="extra-body"></tbody>
+              </table>
+            </div>
+            <button type="button" class="btn ghost extra-add" id="extra-add">+ Add an item that isn't food</button>
+          </div>
+          <div class="trip-money">
+            <label class="field discount-field"><span>Discount <small>(amount or %)</small></span>
+              <input type="text" id="trip-discount" name="discount" inputmode="decimal" maxlength="12" placeholder="e.g. 2.50 or 10%"
+                     title="Taken off the subtotal: type an amount (2.50) or a percentage (10%)"></label>
+            <label class="field fee-field"><span>Delivery fee <small>(optional)</small></span>
+              <input type="number" id="trip-fee" name="delivery_fee" min="0" step="any" inputmode="decimal" placeholder="–"
+                     title="Added to the total, after the discount"></label>
+            <dl class="trip-sum" id="trip-sum" aria-live="polite"></dl>
+          </div>
+          <p class="hint">One cart per trip to the shops. Amounts are in each food's unit; foods with a
+            package size also take a number of packs. Price is what that item cost in total.</p>
+          <div class="trip-actions">
+            <button class="btn primary" type="submit" id="trip-submit">Add cart</button>
+            <span class="trip-total" id="trip-total" aria-live="polite"></span>
+            <button type="button" class="btn danger-outline" id="cart-delete" hidden>Delete cart</button>
+          </div>
+        </form>
+      </section>
+
+      <div class="groceries-main">
+        <div class="tiles" id="groc-tiles"></div>
+        <section class="card" aria-labelledby="stock-h">
+          <div class="card-head">
+            <h2 id="stock-h">In stock <span class="count" id="stock-count"></span></h2>
+            <div class="filters">
+              <div class="seg" role="radiogroup" aria-label="Order">
+                <label><input type="radio" name="stock-sort" value="expiry" checked><span>Expires first</span></label>
+                <label><input type="radio" name="stock-sort" value="name"><span>A–Z</span></label>
+              </div>
+              <input type="search" id="stock-filter" placeholder="Filter…" aria-label="Filter groceries">
+            </div>
+          </div>
+          <div id="stock-groups" class="stock-groups"></div>
+        </section>
+        <div class="groc-lower">
+          <section class="card" aria-labelledby="carts-h">
+            <div class="card-head"><h2 id="carts-h">Carts <span class="count" id="carts-count"></span></h2></div>
+            <div class="cart-list" id="cart-list"></div>
+          </section>
+          <div class="groc-side">
+            <section class="card" aria-labelledby="ranout-h">
+              <div class="card-head"><h2 id="ranout-h">Ran out <span class="count" id="ranout-count"></span></h2></div>
+              <ul class="ranout-list" id="ranout-list"></ul>
+            </section>
+            <section class="card" aria-labelledby="groc-exp-h">
+              <div class="card-head"><h2 id="groc-exp-h">Expired <small>(last 30 days)</small></h2></div>
+              <ul class="groc-history" id="groc-expired"></ul>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Saved meals ----------------------------------------------------- -->
     <section id="view-meals" class="view meals-grid" hidden>
       <section class="card" aria-labelledby="sm-form-h">
@@ -453,6 +543,7 @@
               <li><a href="#/help" data-jump="help-day-summary">Summary</a></li>
             </ol></li>
           <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
+          <li><a href="#/help" data-jump="help-groceries">🛒 Groceries</a></li>
           <li><a href="#/help" data-jump="help-meals">⭐ Saved meals</a></li>
           <li><a href="#/help" data-jump="help-history">📈 History</a></li>
           <li><a href="#/help" data-jump="help-settings-tab">⚙️ Settings</a></li>
@@ -485,6 +576,7 @@
           <ul class="help-tour">
             <li><b>Day</b>: your diary for one day. This is where you'll spend most of your time.</li>
             <li><b>Foods</b>: your own list of foods and their nutrition.</li>
+            <li><b>Groceries</b>: what you have at home, what you bought and what expired.</li>
             <li><b>Saved meals</b>: combos you eat often, ready to log in one go.</li>
             <li><b>History</b>: charts and totals over 7, 30 or 90 days.</li>
             <li><b>Settings</b>: your targets, profile and exercise types.</li>
@@ -556,7 +648,8 @@
           <h3 id="help-day-clear">🗑️ Clearing a day</h3>
           <p><b>Clear this day</b>, below the notes, deletes everything logged on the day you're
             looking at: its food, activities, check-in and note, as if it had never been filled in.
-            You're asked first, and it can't be undone. Your foods and saved meals stay.</p>
+            What its food took from Groceries goes back. You're asked first, and it can't be undone.
+            Your foods and saved meals stay.</p>
 
           <h3 id="help-day-summary">📊 Summary</h3>
           <p>Calories and macros against that day's targets. Anything over target turns amber.
@@ -613,6 +706,48 @@
           <p>🔒 Editing or deleting a food never changes days you already logged.</p>
         </section>
 
+        <section class="card help-card" id="help-groceries" aria-labelledby="help-groceries-h">
+          <h2 id="help-groceries-h">🛒 Groceries</h2>
+          <p>What you have at home, in <b>carts</b>: one per trip to the shops. Back from the
+            shops? Under <b>New cart</b>, set the day and the store, add each food you bought (from
+            your Foods), and press <b>Add cart</b>. For each food you can give the amount (or the
+            number of packs, if the food has a package size), its expiry date and what it cost. Only
+            the amount is needed.</p>
+          <p>🧴 <b>Other items</b>: things that aren't food, like soap or bags, go under
+            <b>+ Add an item that isn't food</b> with a name, amount, unit and price. They only count
+            towards the cart's total, so it matches the receipt: they're not added to your Foods or
+            your stock. A cart can even be only other items.</p>
+          <p>🏷️ <b>Discount</b>: type an amount (<code>2.50</code>) or a percentage
+            (<code>10%</code>), taken off the cart's subtotal. The form shows the subtotal, the
+            discount and the total as you go. The discount can't be more than the subtotal.</p>
+          <p>🚚 <b>Delivery fee</b>: had it delivered? Enter the fee, if you like. It's added to the
+            total after the discount (the discount never applies to it).</p>
+          <p>🛒 <b>Carts</b> lists every cart, newest first, with what's left of each food and what
+            it cost. Press ✏️ to edit one: change its day or store, amounts, dates or prices, add
+            foods or remove them, then <b>Save cart</b>. An amount can't go below what was already
+            eaten or thrown out of it. ✕ (or <b>Delete cart</b> while editing) deletes a cart: what's
+            left of it leaves your stock, and logged days stay as they are.</p>
+          <p>🍽️ <b>Eating takes from it.</b> When you log a food in the Day tab, that amount comes
+            out of your groceries, starting with what expires first. A 🛒 next to the amount in the
+            log shows it. Change or delete the entry, or clear the day, and it goes back. Ate more
+            than you had? It takes what's there; the rest isn't counted. Days before you bought it
+            never take from it, but if you enter a cart a few days late, what you logged since
+            that day is taken from it.</p>
+          <p>📦 <b>In stock</b> lists every food you have, one table per food group like in Foods
+            (foods without a group last), with what's left from each cart under it (click the cart
+            to open it). <i>Ran out</i> and <i>Expired</i> are grouped the same way. Expiry dates
+            turn <span class="exp-demo soon">amber</span> three days before and
+            <span class="exp-demo past">red</span> once they've passed. Sort by what expires first, or
+            A–Z.</p>
+          <p>🗑️ <b>Something expired?</b> Press <b>Expired</b> on it, say how much went (all
+            that's left, unless you change it) and when. It leaves your stock and shows under
+            <i>Expired</i>, where <b>Undo</b> puts it back.</p>
+          <p>🔁 <b>Ran out</b> lists foods you've finished, with <b>+ Buy again</b> to put them in
+            the cart you're filling in.</p>
+          <p>🔎 In the Day tab, the food search and the line under the form show how much of a food
+            is left.</p>
+        </section>
+
         <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">
           <h2 id="help-meals-h">⭐ Saved meals</h2>
           <p>Combos you eat often, like your usual breakfast. Build one here, or press
@@ -662,7 +797,7 @@
             🥊 classes &amp; combat, 🏅 sports, 🏞️ outdoors &amp; water, 🏡 everyday, and 💪 for
             groups you make up).</p>
           <p>⚠️ <b>Danger Zone</b>, at the bottom: tick what to delete for good (food log,
-            activities, check-ins, day notes, saved meals, food catalog), or <i>Select all</i>, and
+            activities, check-ins, day notes, saved meals, groceries, food catalog), or <i>Select all</i>, and
             press <b>Delete</b>. To confirm, type <b>delete</b> (or <b>delete all</b> when everything is
             ticked). Deleting the food catalog keeps the values of days you logged, but empties saved
             meals made of those foods. Settings are never deleted.</p>
@@ -752,13 +887,30 @@
       <p>This deletes, with no way back:</p>
       <ul class="wipe-sum" id="wipe-sum"></ul>
       <p class="wipe-alert" id="wipe-alert" hidden>⚠️ <b>That's everything you've tracked.</b> Every day,
-        every food and every saved meal will be gone, as if you had just started using Pamela.
+        every food, every saved meal and your groceries will be gone, as if you had just started using Pamela.
         Your settings stay.</p>
       <label class="field"><span>Type <b id="wipe-phrase">delete</b> to confirm</span>
         <input type="text" id="wipe-input" autocomplete="off" spellcheck="false"></label>
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="wipe-cancel" autofocus>Cancel</button>
         <button type="submit" class="btn danger" id="wipe-confirm" disabled>Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="expire-dialog" class="exit-dialog lot-dialog" aria-labelledby="expire-h">
+    <form method="dialog" id="expire-form" novalidate>
+      <h2 id="expire-h">🗑️ Expired</h2>
+      <p id="expire-what"></p>
+      <div class="dialog-fields">
+        <label class="field"><span>How much</span>
+          <span class="with-unit"><input type="number" name="quantity" min="0" step="any" required><span class="unit" id="expire-unit"></span></span></label>
+        <label class="field"><span>When</span><input type="date" name="day" required></label>
+      </div>
+      <p class="hint">It's taken out of your stock. You can undo it under <i>Expired</i>.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="expire-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Take out of stock</button>
       </div>
     </form>
   </dialog>

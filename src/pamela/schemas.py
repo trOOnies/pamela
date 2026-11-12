@@ -225,6 +225,9 @@ class Food(Macros, DietTags):
     package_qty: float | None = None
     food_group: str = ""
     uses: int = 0
+    in_stock: float | None = Field(
+        None, description="What's left in Groceries, in `unit`; null if never bought there"
+    )
 
     @computed_field
     @property
@@ -325,6 +328,7 @@ class Entry(Macros):
     name: str
     quantity: float | None
     unit: str
+    from_stock: float = Field(0, description="How much of it was taken from Groceries")
 
 
 class EntryBatchIn(_In):
@@ -333,6 +337,148 @@ class EntryBatchIn(_In):
     day: dt.date
     meal: str = Field(min_length=1)
     items: list[SavedMealItemIn] = Field(min_length=1, max_length=100)
+
+
+# --- groceries ---------------------------------------------------------------
+
+STORE_MAX = 100
+
+
+def _expiry_after_purchase(bought_on: dt.date, expires_on: dt.date | None) -> None:
+    if expires_on is not None and expires_on < bought_on:
+        raise ValueError("the expiry date can't be before the day it was bought")
+
+
+class CartItemIn(_In):
+    id: int | None = Field(None, description="The item, when changing a cart; null = new")
+    food_id: int
+    quantity: float = Field(gt=0, description="In the food's unit")
+    expires_on: dt.date | None = None
+    price: float | None = Field(None, ge=0, description="What this item cost in total")
+
+
+class CartExtraIn(_In):
+    """Something in the cart that isn't food: it only counts towards the total."""
+
+    name: str = Field(min_length=1, max_length=200)
+    quantity: float = Field(1, gt=0)
+    unit: str = Field("u", min_length=1, max_length=20)
+    price: float | None = Field(None, ge=0, description="What it cost in total")
+
+
+class CartIn(_In):
+    """One trip to the shops: the foods bought that day, maybe at one store, plus any
+    other items, and a discount on the subtotal."""
+
+    bought_on: dt.date
+    store: str = Field("", max_length=STORE_MAX)
+    items: list[CartItemIn] = Field(default_factory=list, max_length=200)
+    extras: list[CartExtraIn] = Field(default_factory=list, max_length=200)
+    discount: float | None = Field(None, gt=0, description="An amount off the subtotal")
+    discount_pct: float | None = Field(
+        None, gt=0, le=100, description="A percentage off the subtotal"
+    )
+    delivery_fee: float | None = Field(
+        None, ge=0, description="Added to the total, after the discount; null = none"
+    )
+
+    @model_validator(mode="after")
+    def _check(self) -> CartIn:
+        if not self.items and not self.extras:
+            raise ValueError("a cart needs at least one item")
+        if self.discount is not None and self.discount_pct is not None:
+            raise ValueError("give the discount as an amount or as a percentage, not both")
+        for it in self.items:
+            _expiry_after_purchase(self.bought_on, it.expires_on)
+        return self
+
+
+class ExpiredIn(_In):
+    day: dt.date = Field(description="When it expired or was thrown out")
+    quantity: float | None = Field(None, gt=0, description="null = all that's left")
+
+
+class Lot(BaseModel):
+    """One item of a cart, with what's left of it."""
+
+    id: int
+    cart_id: int
+    food_id: int
+    quantity: float = Field(description="How much was bought")
+    remaining: float
+    eaten: float = Field(description="Taken by logged food entries")
+    expired: float = Field(description="Thrown out")
+    bought_on: dt.date
+    expires_on: dt.date | None = None
+    price: float | None = None
+    store: str = ""
+
+
+class StockItem(BaseModel):
+    """A food that was ever bought, with what's left of it."""
+
+    food_id: int
+    name: str
+    brand: str
+    unit: str
+    serving_qty: float | None = None
+    package_qty: float | None = None
+    food_group: str = ""
+    in_stock: float
+    next_expiry: dt.date | None = Field(description="Earliest expiry among what's left")
+    last_bought: dt.date
+    last_quantity: float = Field(description="How much was bought the last time")
+    lots: list[Lot] = Field(description="Purchases with something left, first to use first")
+
+
+class CartItem(Lot):
+    name: str
+    brand: str
+    unit: str
+    package_qty: float | None = None
+
+
+class CartExtra(BaseModel):
+    id: int
+    name: str
+    quantity: float
+    unit: str
+    price: float | None = None
+
+
+class Cart(BaseModel):
+    id: int
+    bought_on: dt.date
+    store: str
+    items: list[CartItem] = Field(description="Foods, which go into the stock")
+    extras: list[CartExtra] = Field(description="Other items: only part of the total")
+    subtotal: float | None = Field(description="Sum of the prices given; null if none")
+    discount: float | None = Field(description="The discount, if given as an amount")
+    discount_pct: float | None = Field(description="The discount, if given as a percentage")
+    discount_amount: float = Field(0, description="What the discount takes off")
+    delivery_fee: float | None = None
+    total_price: float | None = Field(
+        description="Subtotal minus the discount plus the delivery fee; null if no prices"
+    )
+
+
+class Expiry(BaseModel):
+    id: int
+    lot_id: int
+    cart_id: int
+    day: dt.date
+    food_id: int
+    name: str
+    brand: str
+    unit: str
+    food_group: str = ""
+    quantity: float
+
+
+class Groceries(BaseModel):
+    items: list[StockItem]
+    carts: list[Cart] = Field(description="Newest first")
+    expired: list[Expiry] = Field(description="What expired lately, newest first")
 
 
 # --- activities --------------------------------------------------------------
@@ -505,9 +651,14 @@ WIPE_TARGETS = {
     "checkins": ("Check-ins", "Steps, sleep, mood, feelings, weight and body fat of every day"),
     "notes": ("Day notes", "The note of every day"),
     "saved_meals": ("Saved meals", "All your saved meals"),
+    "groceries": (
+        "Groceries",
+        "Every cart and expiry in Groceries. Logged days stay as they are",
+    ),
     "foods": (
         "Food catalog",
-        "Every food in Foods. Logged days keep their values; saved meals lose those foods",
+        "Every food in Foods. Logged days keep their values; saved meals and groceries lose "
+        "those foods",
     ),
 }
 
