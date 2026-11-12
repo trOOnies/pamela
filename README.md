@@ -49,8 +49,8 @@ included. Ctrl+C in the terminal still works too.
   peanut-free, TACC-free). Type or scan a barcode (EAN) and press *Look up*: it's searched in
   the catalog, then on [Open Food Facts](https://world.openfoodfacts.org) (only the barcode is
   sent), and the form is filled in for you to review. Foods are saved with their barcode.
-  Foods you log often are listed first. Editing or deleting a food doesn't change past log
-  entries, because each entry stores a snapshot of its macros.
+  Foods you log often are listed first. Editing a food updates every log entry of it, on
+  any day; deleting a food leaves its entries with their last values.
 - **Groceries**: your stock at home, in carts (one per trip to the shops). A cart has a day,
   an optional store, and per food the amount or number of packs, an optional expiry date and
   price. A cart can also hold other items that aren't food (name, amount, unit, price):

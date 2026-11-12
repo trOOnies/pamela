@@ -5,6 +5,7 @@ import datetime as dt
 import pytest
 
 DAY = "2026-11-09"
+OTHER_DAY = "2026-11-02"
 
 
 def test_index_and_static_served(client):
@@ -109,13 +110,26 @@ def test_entry_from_food_scales_and_snapshots(client, oats):
     assert e["protein_g"] == pytest.approx(6.5)
     assert e["fiber_g"] == pytest.approx(5)
 
-    # changing the food later does not rewrite history...
+    # changing the food updates its logged entries, on any day...
+    other = client.post(
+        "/api/entries", json={"day": OTHER_DAY, "meal": "Lunch", "food_id": oats["id"], "quantity": 20}
+    ).json()
+    quick = client.post(
+        "/api/entries", json={"day": DAY, "meal": "Lunch", "name": "Snack", "kcal": 50}
+    ).json()
     upd = {k: oats[k] for k in ("name", "brand", "basis_qty", "unit", "protein_g", "carbs_g")}
     client.put(f"/api/foods/{oats['id']}", json=upd | {"kcal": 1000, "fat_g": 0, "fiber_g": 0})
-    day = client.get(f"/api/days/{DAY}").json()
-    assert day["entries"][0]["kcal"] == pytest.approx(190)
+    day = {x["id"]: x for x in client.get(f"/api/days/{DAY}").json()["entries"]}
+    assert day[e["id"]]["kcal"] == pytest.approx(500)
+    assert day[e["id"]]["fat_g"] == 0
+    assert day[e["id"]]["protein_g"] == pytest.approx(6.5)
+    assert day[quick["id"]]["kcal"] == pytest.approx(50)
+    other_day = client.get(f"/api/days/{OTHER_DAY}").json()["entries"]
+    assert other_day[0]["id"] == other["id"] and other_day[0]["kcal"] == pytest.approx(200)
+    client.delete(f"/api/entries/{other['id']}")
+    client.delete(f"/api/entries/{quick['id']}")
 
-    # ...but editing the entry recomputes it from the current food values
+    # ...and editing the entry recomputes it from the current food values
     r = client.put(
         f"/api/entries/{e['id']}",
         json={"day": DAY, "meal": "Breakfast", "food_id": oats["id"], "quantity": 10},

@@ -392,7 +392,25 @@ def update_food(food_id: int, food: FoodIn, conn: Conn) -> dict:
         f"UPDATE foods SET {sets}, updated_at = datetime('now') WHERE id = ?",
         (*data.values(), food_id),
     )
+    _refresh_entries(conn, food_id)
     return _food_row(conn, food_id)
+
+
+def _refresh_entries(conn: sqlite3.Connection, food_id: int) -> None:
+    """Recompute every logged entry of a food from its current values, on any day."""
+    food = conn.execute("SELECT * FROM foods WHERE id = ?", (food_id,)).fetchone()
+    sets = ", ".join(f"{k} = ?" for k in ("unit", *MACRO_FIELDS))
+    rows = conn.execute(
+        "SELECT id, quantity FROM food_entries WHERE food_id = ? AND quantity IS NOT NULL",
+        (food_id,),
+    ).fetchall()
+    conn.executemany(
+        f"UPDATE food_entries SET {sets} WHERE id = ?",
+        [
+            (food["unit"], *scale_macros(food, r["quantity"]).values(), r["id"])
+            for r in rows
+        ],
+    )
 
 
 @router.delete("/foods/{food_id}", status_code=status.HTTP_204_NO_CONTENT)

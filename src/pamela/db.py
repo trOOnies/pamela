@@ -30,7 +30,8 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX foods_name ON foods (name COLLATE NOCASE);
 
-    -- Macros are stored as a snapshot so editing a food never rewrites history.
+    -- Macros are stored per entry; editing a food recomputes its entries, deleting
+    -- it leaves them with their last values.
     CREATE TABLE food_entries (
         id           INTEGER PRIMARY KEY,
         day          TEXT    NOT NULL,          -- YYYY-MM-DD
