@@ -293,7 +293,7 @@
             </div>
             <div class="table-wrap">
               <table class="draft-table trip-items">
-                <thead><tr><th>Food</th><th class="n">Amount</th><th>Expires <small>(optional)</small></th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+                <thead><tr><th>Food</th><th class="n">Amount</th><th>Expires <small>(optional)</small></th><th class="n">Price ($)</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
                 <tbody id="trip-body"></tbody>
               </table>
             </div>
@@ -307,7 +307,7 @@
               <h3 id="extras-h">Other items <small>(not food: they only count towards the total)</small></h3>
               <div class="table-wrap" id="extras-wrap" hidden>
                 <table class="draft-table trip-items extra-items" aria-labelledby="extras-h">
-                  <thead><tr><th>Item</th><th class="n">Amount</th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+                  <thead><tr><th>Item</th><th class="n">Amount</th><th class="n">Price ($)</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
                   <tbody id="extra-body"></tbody>
                 </table>
               </div>
@@ -315,9 +315,9 @@
             </div>
             <div class="trip-money">
               <label class="field discount-field"><span>Discount <small>(amount or %)</small></span>
-                <input type="text" id="trip-discount" name="discount" inputmode="decimal" maxlength="12" placeholder="e.g. 2.50 or 10%"
-                       title="Taken off the subtotal: type an amount (2.50) or a percentage (10%)"></label>
-              <label class="field fee-field"><span>Delivery fee <small>(optional)</small></span>
+                <input type="text" id="trip-discount" name="discount" inputmode="decimal" maxlength="12" placeholder="e.g. $2.50 or 10%"
+                       title="Taken off the subtotal: type an amount ($2.50) or a percentage (10%)"></label>
+              <label class="field fee-field"><span>Delivery fee <small>($, optional)</small></span>
                 <input type="number" id="trip-fee" name="delivery_fee" min="0" step="any" inputmode="decimal" placeholder="–"
                        title="Added to the total, after the discount"></label>
               <dl class="trip-sum" id="trip-sum" aria-live="polite"></dl>
@@ -725,9 +725,11 @@
             <b>+ Add an item that isn't food</b> with a name, amount, unit and price. They only count
             towards the cart's total, so it matches the receipt: they're not added to your Foods or
             your stock. A cart can even be only other items.</p>
-          <p>🏷️ <b>Discount</b>: type an amount (<code>2.50</code>) or a percentage
+          <p>🏷️ <b>Discount</b>: type an amount (<code>$2.50</code>) or a percentage
             (<code>10%</code>), taken off the cart's subtotal. The form shows the subtotal, the
             discount and the total as you go. The discount can't be more than the subtotal.</p>
+          <p>💲 <b>Money</b> shows in dollars with cents, like <b>$1,234.50</b>: a comma between
+            thousands and a point before the cents. Type prices with a point (<code>2.50</code>).</p>
           <p>🚚 <b>Delivery fee</b>: had it delivered? Enter the fee, if you like. It's added to the
             total after the discount (the discount never applies to it).</p>
           <p>🛒 <b>Carts</b> lists every cart, newest first, with what's left of each food and what

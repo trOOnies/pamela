@@ -1644,9 +1644,11 @@ const SOON_DAYS = 3; // expiry dates turn amber this many days before
 function daysBetween(a, b) {
   return Math.round((parseISO(b) - parseISO(a)) / 86_400_000);
 }
+/** "$1,234.50": always dollars, comma for thousands, point and two decimals for cents. */
 function fmtMoney(n) {
   if (n == null) return "–";
-  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const s = Math.abs(Number(n)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n < 0 ? "−" : ""}$${s}`;
 }
 /** "500 g", plus "· 2 packs" when the food has a package size. */
 function fmtStock(qty, f) {
@@ -1938,7 +1940,7 @@ function extraInput(e) {
 
 /** "2.50" -> { discount: 2.5 }, "10%" -> { discount_pct: 10 }, "" -> {}; NaN fields if invalid. */
 function parseDiscount(raw) {
-  raw = raw.trim().replace(",", ".").replace(/\s+/g, "");
+  raw = raw.replace(/[\s$,]/g, ""); // "$1,000.50": commas only separate thousands
   if (!raw) return {};
   const pct = raw.endsWith("%");
   const n = Number(pct ? raw.slice(0, -1) : raw);
@@ -2021,7 +2023,7 @@ async function submitTrip(ev) {
   }
   const money = tripMoney();
   if (money.d.invalid) {
-    toast("Discount: type an amount (2.50) or a percentage (10%)", true);
+    toast("Discount: type an amount ($2.50) or a percentage (10%)", true);
     return $("#trip-discount").focus();
   }
   if (money.fee != null && money.fee < 0) {
