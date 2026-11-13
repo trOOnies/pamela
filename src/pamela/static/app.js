@@ -49,6 +49,9 @@ const state = {
   trip: [],             // food items of the cart being entered or edited in Groceries
   tripExtras: [],       // its other items (not food)
   editingCartId: null,
+  fridge: null,         // GET /fridge: { sectors, unsorted }
+  focusFood: null,      // food whose In stock row Groceries shows once loaded
+  editingSectorId: null,
   cartsShown: 8,        // carts listed before "Show more"
 };
 
@@ -301,7 +304,7 @@ function buildVocabControls() {
 
 // --- routing -----------------------------------------------------------------
 
-const VIEWS = ["day", "foods", "groceries", "meals", "history", "settings", "help"];
+const VIEWS = ["day", "foods", "groceries", "fridge", "meals", "history", "settings", "help"];
 
 function route() {
   flushNote(); // the textarea still holds the previous day's note
@@ -331,6 +334,7 @@ function render() {
   if (state.view === "day") return loadDay();
   if (state.view === "foods") return loadFoods();
   if (state.view === "groceries") return loadGroceries();
+  if (state.view === "fridge") return loadFridge();
   if (state.view === "meals") return loadMealsView();
   if (state.view === "history") return loadHistory();
   if (state.view === "settings") return loadSettings();
@@ -1692,7 +1696,8 @@ function fmtStock(qty, f) {
   let s = `${fmtQty(qty)} ${esc(f.unit)}`;
   if (f.package_qty && qty > 0) {
     const p = qty / f.package_qty;
-    s += ` <small>· ${fmt(p, 1)} pack${Math.abs(p - 1) < 0.05 ? "" : "s"}</small>`;
+    // a small part of a pack would round to "0 packs"
+    s += p < 0.05 ? ` <small>· &lt; 0.1 pack</small>` : ` <small>· ${fmt(p, 1)} pack${Math.abs(p - 1) < 0.05 ? "" : "s"}</small>`;
   }
   return s;
 }
@@ -1723,9 +1728,26 @@ async function loadGroceries() {
     // the cart being edited was deleted meanwhile (e.g. its foods were)
     if (state.editingCartId && !state.groceries.carts.some((c) => c.id === state.editingCartId)) resetCartForm();
     renderGroceries();
+    focusStockRow();
   } catch (err) {
     showError(err);
   }
+}
+
+/** Where a food is in Fridge: "📍 🚪 Door 300 ml · 🧀 Shelf 700 ml". */
+function stockWhere(it) {
+  const places = it.places || [];
+  const inSectors = places.reduce((a, pl) => a + pl.quantity, 0);
+  const rest = it.in_stock - inSectors;
+  const name = (pl) => `${pl.emoji ? `${pl.emoji} ` : ""}${esc(pl.name)}`;
+  let parts;
+  if (!places.length) parts = [`<span class="none">not in a Fridge sector</span>`];
+  else if (places.length === 1 && rest <= 1e-6) parts = [name(places[0])];
+  else {
+    parts = places.map((pl) => `${name(pl)} <small>${fmtQty(pl.quantity)} ${esc(it.unit)}</small>`);
+    if (rest > 1e-6) parts.push(`<span class="none">${fmtQty(rest)} ${esc(it.unit)} in no sector</span>`);
+  }
+  return `<a class="stock-where" href="#/fridge" title="Where it is, in the Fridge tab">📍 ${parts.join(" · ")}</a>`;
 }
 
 function renderGroceries() {
@@ -1749,6 +1771,10 @@ function renderGroceries() {
   const stores = new Set(g.carts.map((c) => c.store).filter(Boolean));
   $("#store-options").innerHTML = [...stores].map((s) => `<option value="${esc(s)}">`).join("");
 
+  renderExpiredAlert(
+    $("#groc-alert"),
+    inStock.filter((it) => expiryClass(it.next_expiry) === "past").map((it) => ({ food_id: it.food_id, name: it.name, brand: it.brand, expires_on: it.next_expiry }))
+  );
   renderStock(inStock);
   renderCarts();
 
@@ -1799,8 +1825,8 @@ function renderStock(items) {
     return;
   }
   const row = (it) => {
-      const head = `<tr class="stock-food">
-        <td>${foodLabel(it)}</td>
+      const head = `<tr class="stock-food" data-stock-food="${it.food_id}">
+        <td>${expiryClass(it.next_expiry) === "past" ? `<span class="exp-flag" title="Past its date">⚠️</span> ` : ""}${foodLabel(it)}${stockWhere(it)}</td>
         <td class="n">${fmtStock(it.in_stock, it)}</td>
         <td>${expiryBadge(it.next_expiry)}</td>
         <td></td>
@@ -2277,6 +2303,376 @@ async function undoExpired(id) {
   } catch (err) {
     showError(err);
   }
+}
+
+// --- fridge view -------------------------------------------------------------------
+
+// Foods ticked while checking the sectors against the real fridge, as "food:sector":
+// kept in this browser only, until "Start a new check".
+const fridgeChecks = new Set();
+try {
+  for (const key of JSON.parse(prefGet("pamela-fridge-checks") || "[]")) if (typeof key === "string") fridgeChecks.add(key);
+} catch {
+  // a broken value: start with no ticks
+}
+function saveFridgeChecks() {
+  prefSet("pamela-fridge-checks", JSON.stringify([...fridgeChecks]));
+}
+const checkKey = (f, sec) => `${f.food_id}:${sec.id}`;
+
+async function loadFridge() {
+  document.title = "Fridge · Pamela";
+  try {
+    state.fridge = await api("GET", "/fridge");
+    if (state.editingSectorId && !state.fridge.sectors.some((x) => x.id === state.editingSectorId)) resetSectorForm();
+    renderFridge();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function sectorName(sec) {
+  return `${sec.emoji ? `${sec.emoji} ` : ""}${sec.name}`;
+}
+const hasStock = (f) => f.quantity > 1e-6;
+
+/** Where a food is, by sector id ("" = not in a sector): { sec, f } */
+function fridgeSpots(foodId) {
+  const out = [];
+  for (const sec of state.fridge.sectors) for (const f of sec.foods) if (f.food_id === foodId) out.push({ sec, f });
+  for (const f of state.fridge.unsorted) if (f.food_id === foodId) out.push({ sec: null, f });
+  return out;
+}
+
+function fridgeRow(f, sector) {
+  const has = hasStock(f);
+  const ticked = sector && has && fridgeChecks.has(checkKey(f, sector));
+  const tick = sector && has
+    ? `<input type="checkbox" data-check="${checkKey(f, sector)}"${ticked ? " checked" : ""} title="Tick it once you've seen it there" aria-label="${esc(f.name)} is there">`
+    : "";
+  const from = sector ? sector.id : "";
+  const canMove = has && state.fridge.sectors.some((x) => !sector || x.id !== sector.id);
+  const moveBtn = canMove
+    ? `<button type="button" class="row-btn add-to" data-move="${f.food_id}" data-from="${from}" title="Move all or part of it to another sector">${sector ? "Move…" : "Put in…"}</button>`
+    : "";
+  const out = sector ? `<button type="button" class="row-btn del" data-unplace="${f.food_id}" data-from="${from}" title="${f.main ? "Take it out of this sector" : "Send it back to its main sector"}" aria-label="Take ${esc(f.name)} out of ${esc(sector.name)}">✕</button>` : "";
+  const split = f.places > 1 || (sector && f.quantity < f.in_stock - 1e-6);
+  const main = sector && f.main && f.places > 1 ? `<span class="ff-main" title="Its main sector: holds what isn't elsewhere, and new purchases of it land here">main</span>` : "";
+  const left = has
+    ? `${fmtStock(f.quantity, f)}${split ? ` <span class="ff-of">of ${fmtQty(f.in_stock)}</span>` : ""}`
+    : "none left";
+  const expired = has && expiryClass(f.next_expiry) === "past";
+  return `<li class="${has ? "" : "out"}${ticked ? " ticked" : ""}"${has ? "" : ` title="None left in Groceries: it comes back here when you buy it again"`}>
+    <span class="ff-tick">${tick}</span>
+    <span class="ff-name">${expired ? `<button type="button" class="link-btn exp-flag" data-goto-stock="${f.food_id}" title="Past its date: open it in Groceries">⚠️</button> ` : ""}${groupEmoji(f.food_group)}${foodLabel(f)}${main}</span>
+    <span class="ff-left">${left}</span>
+    <span class="ff-meta"><span>${has && f.next_expiry ? expiryBadge(f.next_expiry) : ""}</span><span class="ff-btns">${moveBtn}${out}</span></span></li>`;
+}
+
+function renderFridge() {
+  const fr = state.fridge;
+  if (!fr) return;
+  const { sectors, unsorted } = fr;
+  renderExpiredAlert($("#fridge-alert"), fridgeExpired());
+  $("#unsorted-count").textContent = `(${unsorted.length})`;
+  $("#unsorted-list").innerHTML = unsorted.length
+    ? (sectors.length ? "" : `<li class="empty">Add a sector (at the bottom of the page) to put these in.</li>`) + unsorted.map((f) => fridgeRow(f, null)).join("")
+    : `<li class="empty">${sectors.some((x) => x.foods.some(hasStock)) ? "Everything in stock has its sector." : "Nothing in stock. Add a cart in Groceries."}</li>`;
+
+  $("#sectors-count").textContent = sectors.length ? `(${sectors.length})` : "";
+  const placed = sectors.flatMap((x) => x.foods.filter(hasStock).map((f) => checkKey(f, x)));
+  const ticked = placed.filter((k) => fridgeChecks.has(k)).length;
+  const prog = $("#fridge-progress");
+  prog.textContent = placed.length ? (ticked === placed.length ? `✅ All ${placed.length} checked` : `✓ ${ticked} of ${placed.length} checked`) : "";
+  prog.classList.toggle("done", placed.length > 0 && ticked === placed.length);
+  $("#fridge-reset-checks").hidden = !ticked;
+
+  if (!sectors.length) {
+    $("#sector-list").innerHTML = `<p class="empty-note">No sectors yet. Add one for each shelf, drawer or cupboard where you keep food, with the form at the bottom of the page.</p>`;
+    return;
+  }
+  $("#sector-list").innerHTML = sectors
+    .map((sec, i) => {
+      const here = sec.foods.filter(hasStock);
+      const done = here.length && here.every((f) => fridgeChecks.has(checkKey(f, sec)));
+      const addable = [
+        ["Not in a sector", "", unsorted],
+        ...sectors.filter((x) => x.id !== sec.id).map((x) => [sectorName(x), x.id, x.foods.filter(hasStock)]),
+      ].filter(([, , list]) => list.length);
+      const add = addable.length
+        ? `<label class="sector-add"><span class="sr">Add a food to ${esc(sec.name)}</span><select data-add-to="${sec.id}">
+            <option value="">+ Add a food from your stock…</option>
+            ${addable.map(([label, from, list]) => `<optgroup label="${esc(label)}">${list.map((f) => `<option value="${f.food_id}:${from}">${esc(f.name)}${f.brand ? ` (${esc(f.brand)})` : ""} · ${fmtQty(f.quantity)} ${esc(f.unit)}</option>`).join("")}</optgroup>`).join("")}
+          </select></label>`
+        : "";
+      return `<section class="card sector-card${sec.id === state.editingSectorId ? " editing" : ""}${done ? " checked" : ""}" aria-label="${esc(sec.name)}">
+        <div class="sector-top">
+          <h3>${esc(sectorName(sec))} <span class="count">(${here.length})</span></h3>
+          <button type="button" class="row-btn" data-sector-move="${sec.id}" data-dir="-1" title="Move up" aria-label="Move ${esc(sec.name)} up"${i === 0 ? " disabled" : ""}>↑</button>
+          <button type="button" class="row-btn" data-sector-move="${sec.id}" data-dir="1" title="Move down" aria-label="Move ${esc(sec.name)} down"${i === sectors.length - 1 ? " disabled" : ""}>↓</button>
+          <button type="button" class="row-btn icon" data-edit-sector="${sec.id}" title="Rename" aria-label="Rename ${esc(sec.name)}">${PENCIL}</button>
+          <button type="button" class="row-btn del" data-del-sector="${sec.id}" title="Delete" aria-label="Delete ${esc(sec.name)}">✕</button>
+        </div>
+        <ul class="fridge-foods">${sec.foods.length ? sec.foods.map((f) => fridgeRow(f, sec)).join("") : `<li class="empty">Empty</li>`}</ul>
+        ${add}
+      </section>`;
+    })
+    .join("");
+}
+
+/** Foods in the Fridge whose earliest date is past, once each. */
+function fridgeExpired() {
+  const seen = new Map();
+  for (const f of [...state.fridge.sectors.flatMap((x) => x.foods), ...state.fridge.unsorted]) {
+    if (f.in_stock > 1e-6 && expiryClass(f.next_expiry) === "past" && !seen.has(f.food_id)) seen.set(f.food_id, f);
+  }
+  return [...seen.values()].map((f) => ({ food_id: f.food_id, name: f.name, brand: f.brand, expires_on: f.next_expiry }));
+}
+
+function resetSectorForm() {
+  $("#sector-form").reset();
+  state.editingSectorId = null;
+  $("#sector-form-h").textContent = "🧊 New sector";
+  $("#sector-submit").textContent = "Add sector";
+  $("#sector-cancel").hidden = true;
+  renderFridge();
+}
+
+function editSector(id) {
+  const sec = state.fridge.sectors.find((x) => x.id === id);
+  if (!sec) return;
+  state.editingSectorId = id;
+  const el = $("#sector-form").elements;
+  el.name.value = sec.name;
+  el.emoji.value = sec.emoji;
+  $("#sector-form-h").textContent = "🧊 Rename sector";
+  $("#sector-submit").textContent = "Update sector";
+  $("#sector-cancel").hidden = false;
+  renderFridge();
+  $(".sector-form-card").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  el.name.focus({ preventScroll: true });
+}
+
+async function submitSector(ev) {
+  ev.preventDefault();
+  const v = formValues(ev.currentTarget);
+  const body = { name: v.name.trim(), emoji: (v.emoji || "").trim() };
+  if (!body.name) return;
+  try {
+    if (state.editingSectorId) await api("PUT", `/fridge/sectors/${state.editingSectorId}`, body);
+    else await api("POST", "/fridge/sectors", body);
+    state.fridge = await api("GET", "/fridge");
+    resetSectorForm();
+    $("#sector-form").elements.name.focus();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function deleteSector(id) {
+  const sec = state.fridge.sectors.find((x) => x.id === id);
+  if (!sec) return;
+  const ok = await confirmDialog({
+    title: "🗑️ Delete this sector?",
+    body: `<p><b>${esc(sectorName(sec))}</b> leaves the Fridge tab. ${sec.foods.length ? "What's in it goes back to each food's main sector, or to <i>Not in a sector</i>; " : ""}nothing leaves Foods or Groceries.</p>`,
+    ok: "Delete sector",
+  });
+  if (!ok) return;
+  try {
+    await api("DELETE", `/fridge/sectors/${id}`);
+    if (state.editingSectorId === id) state.editingSectorId = null;
+    await loadFridge();
+    if (!state.editingSectorId) resetSectorForm();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function moveSector(id, dir) {
+  const ids = state.fridge.sectors.map((x) => x.id);
+  const i = ids.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  try {
+    state.fridge = await api("PUT", "/fridge/order", { ids });
+    renderFridge();
+    $(`[data-sector-move="${id}"][data-dir="${dir}"]`)?.focus();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function moveFood(foodId, from, to, quantity = null) {
+  try {
+    state.fridge = await api("POST", "/fridge/move", { food_id: foodId, from_sector_id: from, to_sector_id: to, quantity });
+    renderFridge();
+    return true;
+  } catch (err) {
+    showError(err);
+    return false;
+  }
+}
+
+// moving --------------------------------------------------------------------------------
+
+let moving = null; // { f, from } while the dialog is open
+
+/** Opens the move dialog for what's of a food in ``from`` (null = not in a sector). */
+function openMove(foodId, from, to = null) {
+  const spot = fridgeSpots(foodId).find((x) => (x.sec ? x.sec.id : null) === from);
+  if (!spot || !hasStock(spot.f)) return;
+  const f = spot.f;
+  moving = { f, from };
+  const el = $("#move-form").elements;
+  const targets = state.fridge.sectors.filter((x) => x.id !== from);
+  $("#move-to").innerHTML = targets.map((x) => `<option value="${x.id}">${esc(sectorName(x))}</option>`).join("");
+  if (to != null) $("#move-to").value = String(to);
+  $("#move-h").textContent = from == null ? "📥 Put in a sector" : "↔️ Move to another sector";
+  $("#move-what").innerHTML = `${foodLabel(f)}: ${fmtQty(f.quantity)} ${esc(f.unit)} ${spot.sec ? `in ${esc(sectorName(spot.sec))}` : "not in a sector"}.`;
+  $("#move-unit").textContent = f.unit;
+  el.quantity.value = Math.round(f.quantity * 100) / 100;
+  el.quantity.max = f.quantity;
+  // quick amounts: halves and packs
+  const chips = [["All", f.quantity], ["Half", f.quantity / 2]];
+  if (f.package_qty && f.package_qty < f.quantity - 1e-6) chips.push(["1 pack", f.package_qty]);
+  $("#move-chips").innerHTML = chips
+    .map(([label, q]) => `<button type="button" class="chip" data-move-q="${q}">${label} <small>${fmtQty(q)} ${esc(f.unit)}</small></button>`)
+    .join("");
+  updateMoveHint();
+  $("#move-dialog").showModal();
+  el.quantity.select();
+}
+
+function updateMoveHint() {
+  if (!moving) return;
+  const { f, from } = moving;
+  const q = num($("#move-form").elements.quantity.value);
+  const all = q != null && q >= f.quantity - 0.005;
+  let hint;
+  if (from == null) hint = all ? "It all goes there, and that sector becomes its main one." : "That amount goes there; the rest stays out of any sector.";
+  else if (f.main) hint = all ? "All of it moves, and the other sector becomes its main one: new purchases of it will land there." : "That amount moves; the rest stays here, its main sector, where new purchases land.";
+  else hint = "That amount moves there.";
+  $("#move-hint").textContent = hint;
+}
+
+async function submitMove(ev) {
+  ev.preventDefault();
+  if (!moving) return;
+  const { f, from } = moving;
+  const el = ev.currentTarget.elements;
+  const q = num(el.quantity.value);
+  const to = num(el.to.value);
+  if (!q || q <= 0) return toast("Enter how much to move", true);
+  if (q > f.quantity + 0.005) return toast(`There are only ${fmtQty(f.quantity)} ${f.unit} there`, true);
+  if (to == null) return toast("Pick a sector", true);
+  const all = q >= f.quantity - 0.005; // all of it: let the server take the exact amount
+  if (await moveFood(f.food_id, from, to, all ? null : q)) {
+    $("#move-dialog").close();
+    moving = null;
+  }
+}
+
+// expired -------------------------------------------------------------------------------
+
+/** The red warning on top of Groceries and Fridge: foods in stock past their date, each
+ * a link to its row in Groceries' In stock. */
+function renderExpiredAlert(el, foods) {
+  el.hidden = !foods.length;
+  if (!foods.length) return (el.innerHTML = "");
+  foods.sort((a, b) => a.expires_on.localeCompare(b.expires_on) || collator.compare(a.name, b.name));
+  const n = foods.length;
+  el.innerHTML = `⚠️ <b>${n === 1 ? "1 food is" : `${n} foods are`} past ${n === 1 ? "its" : "their"} date:</b> ` +
+    foods
+      .map((f) => {
+        const d = daysBetween(f.expires_on, todayISO());
+        return `<button type="button" class="link-btn" data-goto-stock="${f.food_id}" title="Open it in Groceries, In stock">${esc(f.name)}</button> <small>(${d === 0 ? "today" : `${d} d ago`})</small>`;
+      })
+      .join(", ") +
+    `. <small>Click one to see it in Groceries: take out what went off with <b>Expired</b>, or fix the date in its cart.</small>`;
+}
+
+/** Shows a food's row in Groceries' In stock, opening Groceries first when needed. */
+function gotoStock(foodId) {
+  state.focusFood = foodId;
+  if (state.view !== "groceries") location.hash = "#/groceries";
+  else focusStockRow();
+}
+function focusStockRow() {
+  const id = state.focusFood;
+  if (id == null) return;
+  let row = $(`tr[data-stock-food="${id}"]`);
+  if (!row && $("#stock-filter").value) {
+    $("#stock-filter").value = ""; // the filter hides it
+    renderGroceries();
+    row = $(`tr[data-stock-food="${id}"]`);
+  }
+  state.focusFood = null;
+  if (!row) return;
+  row.scrollIntoView({ block: "center", behavior: "smooth" });
+  const rows = [row, ...siblingLots(row)]; // the food and what's left of each cart
+  for (const tr of rows) tr.classList.remove("flash");
+  void row.offsetWidth; // restart the animation
+  for (const tr of rows) tr.classList.add("flash");
+}
+function siblingLots(row) {
+  const out = [];
+  for (let r = row.nextElementSibling; r && r.classList.contains("stock-lot"); r = r.nextElementSibling) out.push(r);
+  return out;
+}
+
+function wireFridge() {
+  $("#sector-form").addEventListener("submit", submitSector);
+  $("#sector-cancel").addEventListener("click", resetSectorForm);
+  $("#fridge-reset-checks").addEventListener("click", () => {
+    fridgeChecks.clear();
+    saveFridgeChecks();
+    renderFridge();
+  });
+  const fromOf = (t) => (t.dataset.from === "" ? null : Number(t.dataset.from));
+  $("#view-fridge").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-sector-move], [data-edit-sector], [data-del-sector], [data-unplace], [data-move]");
+    if (!t) return;
+    if (t.dataset.sectorMove) return moveSector(Number(t.dataset.sectorMove), Number(t.dataset.dir));
+    if (t.dataset.editSector) return editSector(Number(t.dataset.editSector));
+    if (t.dataset.delSector) return deleteSector(Number(t.dataset.delSector));
+    if (t.dataset.unplace) return moveFood(Number(t.dataset.unplace), fromOf(t), null);
+    if (t.dataset.move) return openMove(Number(t.dataset.move), fromOf(t));
+  });
+  $("#view-fridge").addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.dataset.check) {
+      if (t.checked) fridgeChecks.add(t.dataset.check);
+      else fridgeChecks.delete(t.dataset.check);
+      saveFridgeChecks();
+      renderFridge();
+      $(`[data-check="${t.dataset.check}"]`)?.focus();
+      return;
+    }
+    if (t.dataset.addTo && t.value) {
+      const [food, from] = t.value.split(":");
+      t.value = "";
+      openMove(Number(food), from === "" ? null : Number(from), Number(t.dataset.addTo));
+    }
+  });
+  // the red warnings, in both tabs
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-goto-stock]");
+    if (t) gotoStock(Number(t.dataset.gotoStock));
+  });
+
+  $("#move-form").addEventListener("submit", submitMove);
+  $("#move-form").addEventListener("input", updateMoveHint);
+  $("#move-cancel").addEventListener("click", () => $("#move-dialog").close());
+  $("#move-dialog").addEventListener("close", () => (moving = null));
+  $("#move-chips").addEventListener("click", (e) => {
+    const c = e.target.closest("[data-move-q]");
+    if (!c) return;
+    const input = $("#move-form").elements.quantity;
+    input.value = Math.round(Number(c.dataset.moveQ) * 100) / 100;
+    updateMoveHint();
+    input.focus();
+  });
 }
 
 // --- meals view (saved meals) ---------------------------------------------------
@@ -3849,6 +4245,8 @@ function wire() {
     const del = e.target.closest("[data-del-sm]");
     if (del) deleteSavedMeal(Number(del.dataset.delSm));
   });
+
+  wireFridge();
 
   // settings
   wireTargets();

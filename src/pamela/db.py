@@ -453,6 +453,24 @@ MIGRATIONS: list[str] = [
      WHERE name IN (SELECT name FROM _cadence);
     DROP TABLE _cadence;
     """,
+    # 15: a food can be split over several sectors. Each food has at most one main
+    # place (quantity NULL), which holds whatever isn't elsewhere, so new purchases
+    # land there; other places hold a set amount. The old one-sector-per-food rows
+    # become main places.
+    """
+    CREATE TABLE fridge_places (
+        id          INTEGER PRIMARY KEY,
+        food_id     INTEGER NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+        sector_id   INTEGER NOT NULL REFERENCES fridge_sectors (id) ON DELETE CASCADE,
+        quantity    REAL    CHECK (quantity > 0),   -- in the food's unit; NULL = the rest
+        UNIQUE (food_id, sector_id)
+    );
+    CREATE UNIQUE INDEX fridge_places_main ON fridge_places (food_id) WHERE quantity IS NULL;
+    CREATE INDEX fridge_places_sector ON fridge_places (sector_id);
+    INSERT INTO fridge_places (food_id, sector_id, quantity)
+    SELECT food_id, sector_id, NULL FROM fridge_foods;
+    DROP TABLE fridge_foods;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

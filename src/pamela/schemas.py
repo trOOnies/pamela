@@ -423,6 +423,14 @@ class Lot(BaseModel):
     store: str = ""
 
 
+class StockPlace(BaseModel):
+    sector_id: int
+    name: str
+    emoji: str
+    quantity: float
+    main: bool
+
+
 class StockItem(BaseModel):
     """A food that was ever bought, with what's left of it."""
 
@@ -437,6 +445,7 @@ class StockItem(BaseModel):
     next_expiry: dt.date | None = Field(description="Earliest expiry among what's left")
     last_bought: dt.date
     last_quantity: float = Field(description="How much was bought the last time")
+    places: list[StockPlace] = Field(default_factory=list, description="Where it is, in Fridge")
     lots: list[Lot] = Field(description="Purchases with something left, first to use first")
 
 
@@ -489,6 +498,55 @@ class Groceries(BaseModel):
     items: list[StockItem]
     carts: list[Cart] = Field(description="Newest first")
     expired: list[Expiry] = Field(description="What expired lately, newest first")
+
+
+# --- fridge ------------------------------------------------------------------
+
+
+class FridgeSectorIn(_In):
+    name: str = Field(min_length=1, max_length=60)
+    emoji: str = Field("", max_length=16)
+
+
+class FridgeOrderIn(_In):
+    ids: list[int] = Field(description="Every sector's id, in the new order")
+
+
+class FridgeMoveIn(_In):
+    food_id: int
+    from_sector_id: int | None = Field(description="Where it is now; None = not in a sector")
+    to_sector_id: int | None = Field(
+        description="Where it goes; None = out of the sector (back to its main place)"
+    )
+    quantity: float | None = Field(
+        None, gt=0, description="How much, in the food's unit; None = all that's there"
+    )
+
+
+class FridgeFood(BaseModel):
+    food_id: int
+    name: str
+    brand: str
+    unit: str
+    package_qty: float | None = None
+    food_group: str = ""
+    quantity: float = Field(description="How much of it is here")
+    main: bool = Field(False, description="Its main place: new purchases of it land here")
+    places: int = Field(1, description="How many sectors it's in")
+    in_stock: float = Field(description="All that's left of it in Groceries (0 = ran out)")
+    next_expiry: dt.date | None = None
+
+
+class FridgeSector(BaseModel):
+    id: int
+    name: str
+    emoji: str
+    foods: list[FridgeFood] = Field(description="By name; foods that ran out included")
+
+
+class Fridge(BaseModel):
+    sectors: list[FridgeSector] = Field(description="In the user's order")
+    unsorted: list[FridgeFood] = Field(description="Stock that isn't in a sector")
 
 
 # --- activities --------------------------------------------------------------
@@ -665,6 +723,7 @@ WIPE_TARGETS = {
     "checkins": ("Check-ins", "Steps, sleep, mood, feelings, weight and body fat of every day"),
     "notes": ("Day notes", "The note of every day"),
     "saved_meals": ("Meals", "All your meals in the Meals tab, recipes included"),
+    "fridge": ("Fridge sectors", "Every sector in Fridge. Foods and groceries stay"),
     "groceries": (
         "Groceries",
         "Every cart and expiry in Groceries. Logged days stay as they are",

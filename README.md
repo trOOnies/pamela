@@ -67,7 +67,16 @@ included. Ctrl+C in the terminal still works too.
   also covers what was logged since its day. Mark an item (or part of it) as *Expired* to
   take it out, with an undo. Expiry dates turn amber three days ahead and red once past;
   *Ran out* lists finished foods with *Buy again*, and tiles sum up what's expiring, what was
-  spent and what was thrown out in the last 30 days.
+  spent and what was thrown out in the last 30 days. *In stock* shows where each food is in
+  Fridge. Foods past their date get a red warning on top of Groceries and Fridge, linking to
+  their row in *In stock*.
+- **Fridge**: sectors that mirror where you keep food at home (shelves, door, freezer
+  drawers, pantry…), in your own order. Put each food from Groceries in a sector, all of it or
+  part: a food can be split over several sectors, each with its share. Its *main* sector holds
+  the rest, and new purchases land there; what's eaten or thrown out comes from the main sector
+  first. A food that runs out stays in its main sector (greyed out) and is back in place when
+  bought again. Tick foods as you check them against the real fridge (ticks are kept in the
+  browser until *Start a new check*). The form for new sectors is at the bottom.
 - **Meals** (saved meals): fixed mixes of catalog foods (or *☆ save* a meal from the Day tab),
   each with an optional recipe as free text. Each meal says whether Groceries hold enough of
   every food, and what's missing and how much; *+ Buy missing* puts that in the cart, and

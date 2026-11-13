@@ -997,8 +997,48 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .trip-sum .bad { color: var(--danger); }
 .cart-items li.extra { color: var(--text-2); font-style: italic; }
 
-/* --- day summary: what steps add ------------------------------------------- */
-.sum-steps { grid-column: 1 / -1; font-size: .8rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
+/* --- fridge ---------------------------------------------------------------- */
+/* left: the sector form and what isn't in a sector; right: the sectors */
+/* the sector form sits at the very bottom, under both */
+#view-fridge:not([hidden]) { display: flex; flex-direction: column; gap: var(--gap); }
+.fridge-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: minmax(340px, 420px) minmax(0, 1fr); }
+@media (max-width: 1099px) { .fridge-grid { grid-template-columns: minmax(0, 1fr); } }
+.fridge-main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.sector-form-card .sector-form { max-width: 720px; }
+.fridge-head { flex-wrap: wrap; gap: 8px 14px; }
+.fridge-head h2 { margin: 0; }
+.fridge-progress { font-size: .88rem; color: var(--text-2); margin-left: auto; font-variant-numeric: tabular-nums; }
+.fridge-progress.done { color: var(--accent); font-weight: 600; }
+.sector-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.sector-form .emoji-field { width: 64px; }
+.sector-form + .hint { margin-top: 10px; }
+.sector-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gap); }
+.sector-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sector-card.editing { border-color: var(--accent-2-line); background: var(--accent-2-soft); }
+.sector-card.checked { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.sector-top { display: flex; align-items: center; gap: 6px; }
+.sector-top h3 { margin: 0 auto 0 0; font-size: 1rem; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.sector-top .count { color: var(--text-3); font-weight: 400; font-size: .85rem; }
+.sector-top .row-btn:disabled { opacity: .3; cursor: default; background: transparent; }
+.fridge-foods { list-style: none; margin: 0; padding: 0; font-size: .9rem; }
+/* two lines: tick, name and what's left; then expiry and the buttons */
+.fridge-foods li {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 2px 8px;
+  padding: 6px 2px; border-bottom: 1px solid var(--border);
+}
+.fridge-foods li.empty { display: block; }
+.ff-meta { grid-column: 2 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.ff-btns { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.fridge-foods li:last-child { border-bottom: 0; }
+.fridge-foods li.empty { color: var(--text-3); font-style: italic; }
+.fridge-foods li.out { color: var(--text-3); }
+.fridge-foods li.ticked .ff-name { text-decoration: line-through; text-decoration-color: var(--text-3); color: var(--text-2); }
+.fridge-foods .ff-name { min-width: 0; overflow-wrap: anywhere; }
+.fridge-foods .ff-left { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: .85rem; }
+.fridge-foods .exp { font-size: .8rem; }
+.fridge-foods input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+.fridge-foods select { height: 28px; font-size: .82rem; width: 120px; }
+.sector-add select { width: 100%; height: 30px; }
 
 /* --- meals: recipe and what's in stock ---------------------------------------- */
 .recipe-field textarea {
@@ -1015,3 +1055,33 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .sm-recipe p { white-space: pre-wrap; margin: 6px 0 0; font-size: .88rem; overflow-wrap: anywhere; }
 .chip-check { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--text-2); cursor: pointer; }
 .chip-check input { accent-color: var(--accent); }
+
+/* --- day summary: what steps add ------------------------------------------- */
+.sum-steps { grid-column: 1 / -1; font-size: .8rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* --- expired: a red warning in Groceries and Fridge -------------------------------- */
+.expired-alert {
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border)); border-left-width: 4px;
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface)); color: var(--text);
+  border-radius: var(--radius); padding: 10px 14px; font-size: .92rem; line-height: 1.7;
+}
+.expired-alert b { color: var(--danger); }
+.expired-alert .link-btn { color: var(--danger); font-weight: 600; text-decoration: underline; }
+.expired-alert small { color: var(--text-2); }
+.stock-table tr.flash td { animation: row-flash 1.8s ease-out; }
+@media (prefers-reduced-motion: reduce) { .stock-table tr.flash td { animation-duration: .01s; } }
+
+/* --- groceries: where each food is (Fridge sectors) ---------------------------------- */
+.stock-where { display: block; font-weight: 400; font-size: .8rem; color: var(--text-2); margin-top: 2px; }
+a.stock-where { text-decoration: none; }
+a.stock-where:hover { text-decoration: underline; color: var(--text); }
+.stock-where small { color: var(--text-3); }
+.exp-flag { cursor: help; }
+.ff-name .exp-flag { text-decoration: none; padding: 0; }
+.stock-where .none { color: var(--text-3); font-style: italic; }
+
+/* --- fridge: split foods and the move dialog ---------------------------------------- */
+.ff-of { font-size: .78rem; color: var(--text-3); }
+.ff-main { font-size: .72rem; color: var(--text-2); background: var(--surface-2); padding: 0 6px; border-radius: 8px; margin-left: 4px; cursor: help; }
+#move-to { width: 100%; height: 34px; }
+#move-chips { margin-bottom: 8px; }

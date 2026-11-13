@@ -16,6 +16,7 @@
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
       <a href="#/groceries" data-nav="groceries">Groceries</a>
+      <a href="#/fridge" data-nav="fridge">Fridge</a>
       <a href="#/meals" data-nav="meals">Meals</a>
       <a href="#/history" data-nav="history">History</a>
       <a href="#/settings" data-nav="settings">Settings</a>
@@ -338,6 +339,7 @@
       </div>
 
       <div class="groceries-main">
+        <div class="expired-alert" id="groc-alert" role="alert" hidden></div>
         <div class="tiles" id="groc-tiles"></div>
         <section class="card stock-card" aria-labelledby="stock-h">
           <div class="card-head">
@@ -363,6 +365,40 @@
           </section>
         </div>
       </div>
+    </section>
+
+    <!-- Fridge ---------------------------------------------------------- -->
+    <section id="view-fridge" class="view" hidden>
+      <div class="expired-alert" id="fridge-alert" role="alert" hidden></div>
+      <div class="fridge-grid">
+        <section class="card fridge-side" aria-labelledby="unsorted-h">
+          <div class="card-head"><h2 id="unsorted-h">Not in a sector <span class="count" id="unsorted-count"></span></h2></div>
+          <ul class="fridge-foods" id="unsorted-list"></ul>
+        </section>
+        <section class="fridge-main" aria-labelledby="sectors-h">
+          <div class="card-head fridge-head">
+            <h2 id="sectors-h">Sectors <span class="count" id="sectors-count"></span></h2>
+            <span class="fridge-progress" id="fridge-progress" aria-live="polite"></span>
+            <button type="button" class="btn ghost" id="fridge-reset-checks" title="Clear every tick to start a new check">Start a new check</button>
+          </div>
+          <div class="sector-list" id="sector-list"></div>
+        </section>
+      </div>
+      <section class="card sector-form-card" aria-labelledby="sector-form-h">
+        <div class="card-head">
+          <h2 id="sector-form-h">🧊 New sector</h2>
+          <button type="button" class="btn ghost" id="sector-cancel" hidden>Cancel edit</button>
+        </div>
+        <form id="sector-form" class="sector-form" autocomplete="off">
+          <label class="field emoji-field"><span>Emoji</span>
+            <input type="text" name="emoji" maxlength="16" placeholder="🧊" title="Optional"></label>
+          <label class="field grow"><span>Name</span>
+            <input type="text" name="name" required maxlength="60" placeholder="e.g. Top shelf, Door, Freezer drawer"></label>
+          <button class="btn primary" type="submit" id="sector-submit">Add sector</button>
+        </form>
+        <p class="hint">Make one sector per place you keep food at home (fridge shelves, door,
+          freezer drawers, the pantry…), then put each food from your stock in its sector.</p>
+      </section>
     </section>
 
     <!-- Meals ----------------------------------------------------------- -->
@@ -562,6 +598,7 @@
             </ol></li>
           <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
           <li><a href="#/help" data-jump="help-groceries">🛒 Groceries</a></li>
+          <li><a href="#/help" data-jump="help-fridge">🧊 Fridge</a></li>
           <li><a href="#/help" data-jump="help-meals">⭐ Meals</a></li>
           <li><a href="#/help" data-jump="help-history">📈 History</a></li>
           <li><a href="#/help" data-jump="help-settings-tab">⚙️ Settings</a></li>
@@ -595,6 +632,7 @@
             <li><b>Day</b>: your diary for one day. This is where you'll spend most of your time.</li>
             <li><b>Foods</b>: your own list of foods and their nutrition.</li>
             <li><b>Groceries</b>: what you have at home, what you bought and what expired.</li>
+            <li><b>Fridge</b>: your groceries sorted by where you keep them at home.</li>
             <li><b>Meals</b>: combos you eat often, ready to log in one go, with their recipes.</li>
             <li><b>History</b>: charts and totals over 7, 30 or 90 days.</li>
             <li><b>Settings</b>: your targets, profile and exercise types.</li>
@@ -775,6 +813,43 @@
             the cart you're filling in.</p>
           <p>🔎 In the Day tab, the food search and the line under the form show how much of a food
             is left.</p>
+          <p>📍 Under each food in <i>In stock</i>, where it is in the Fridge tab: its sector, or each
+            sector with its share, or <i>not in a Fridge sector</i>. Click it to open Fridge.</p>
+          <p>⚠️ <b>Past their date.</b> When something in stock has passed its expiry date, a red warning
+            on top of Groceries and Fridge names it. Click a name to jump to its row here, then
+            press <b>Expired</b> if it went off, or fix the date in its cart if it's still fine.</p>
+          <p>📦 A food with a package size also shows how many packs are left. Less than a tenth of a
+            pack shows as <i>&lt; 0.1 pack</i>: if that looks wrong, check the amount in its cart, which
+            is in the food's unit (ml, g…), not in packs.</p>
+        </section>
+
+        <section class="card help-card" id="help-fridge" aria-labelledby="help-fridge-h">
+          <h2 id="help-fridge-h">🧊 Fridge</h2>
+          <p>Your groceries sorted by where you keep them at home, so you can stand in front of
+            the fridge and check that Pamela matches what's really there.</p>
+          <p>🗂️ <b>Sectors.</b> Add one for each place you keep food: fridge shelves, the door, freezer
+            drawers, the pantry… Give each a name and, if you like, an emoji. Use ↑ and ↓ to put them
+            in the order you walk past them, ✏️ to rename one, ✕ to delete one (its foods just go back to
+            <i>Not in a sector</i>).</p>
+          <p>🗂️ The <b>New sector</b> form is at the very bottom of the page.</p>
+          <p>📥 <b>Putting food in.</b> <i>Not in a sector</i> lists everything in stock that has no
+            place yet: press <b>Put in…</b> next to it. Or use <b>+ Add a food from your stock</b> at
+            the bottom of a sector. <b>Move…</b> moves a food to another sector, and ✕ takes it out of
+            one.</p>
+          <p>✂️ <b>One food, many sectors.</b> When you move or put in a food, say how much (all of it,
+            half, one pack or any amount). Move part of it and it's in both sectors, each showing its
+            share (<i>300 ml of 1,000</i>). The sector that holds the rest is its <i>main</i> one: new
+            purchases of it land there. Moving all of the main sector's share makes the other sector the
+            main one. ✕ on a share sends it back to the main sector.</p>
+          <p>🍽️ When you eat some or throw some out, Pamela can't know which share it came from: it takes
+            it from the main sector first, then from the other shares, newest first. If that's not what
+            happened, move it to match.</p>
+          <p>🔁 A food that runs out stays in its main sector, greyed out as <i>none left</i>, so it's
+            back in its place as soon as you buy it again.</p>
+          <p>✅ <b>Checking.</b> Tick each food once you've seen it where Pamela says it is. The count at
+            the top shows how far you are, and a sector gets a green border when all of it is ticked. Ticks are
+            remembered in this browser until you press <b>Start a new check</b>. Something missing or
+            gone off? Fix it in Groceries (<b>Expired</b>) or by logging what you ate.</p>
         </section>
 
         <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">
@@ -836,9 +911,9 @@
             groups you make up). Types done on foot (walking, running, hiking…) have the steps they
             take per minute, so your day's steps don't count them twice; leave it empty for the rest.</p>
           <p>⚠️ <b>Danger Zone</b>, at the bottom: tick what to delete for good (food log,
-            activities, check-ins, day notes, saved meals, groceries, food catalog), or <i>Select all</i>, and
+            activities, check-ins, day notes, meals, fridge sectors, groceries, food catalog), or <i>Select all</i>, and
             press <b>Delete</b>. To confirm, type <b>delete</b> (or <b>delete all</b> when everything is
-            ticked). Deleting the food catalog keeps the values of days you logged, but empties saved
+            ticked). Deleting the food catalog keeps the values of days you logged, but empties
             meals made of those foods. Settings are never deleted.</p>
         </section>
 
@@ -926,7 +1001,7 @@
       <p>This deletes, with no way back:</p>
       <ul class="wipe-sum" id="wipe-sum"></ul>
       <p class="wipe-alert" id="wipe-alert" hidden>⚠️ <b>That's everything you've tracked.</b> Every day,
-        every food, every saved meal and your groceries will be gone, as if you had just started using Pamela.
+        every food, every meal, your fridge sectors and your groceries will be gone, as if you had just started using Pamela.
         Your settings stay.</p>
       <label class="field"><span>Type <b id="wipe-phrase">delete</b> to confirm</span>
         <input type="text" id="wipe-input" autocomplete="off" spellcheck="false"></label>
@@ -950,6 +1025,24 @@
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="expire-cancel">Cancel</button>
         <button type="submit" class="btn primary">Take out of stock</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="move-dialog" class="exit-dialog lot-dialog" aria-labelledby="move-h">
+    <form method="dialog" id="move-form" novalidate>
+      <h2 id="move-h">↔️ Move</h2>
+      <p id="move-what"></p>
+      <div class="dialog-fields">
+        <label class="field"><span>How much</span>
+          <span class="with-unit"><input type="number" name="quantity" min="0" step="any" required><span class="unit" id="move-unit"></span></span></label>
+        <label class="field"><span>To</span><select name="to" id="move-to"></select></label>
+      </div>
+      <div class="chips" id="move-chips" role="group" aria-label="Amount"></div>
+      <p class="hint" id="move-hint"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="move-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Move</button>
       </div>
     </form>
   </dialog>
