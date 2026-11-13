@@ -492,6 +492,9 @@ class ActivityTypeIn(_In):
     distance: bool = False
     # Emoji may be several code points (skin tones, ZWJ sequences); '' = group default.
     emoji: str = Field("", max_length=16)
+    steps_per_min: float | None = Field(
+        None, gt=0, le=300, description="Steps a minute when done on foot; None = not on foot"
+    )
 
 
 class ActivityType(BaseModel):
@@ -501,6 +504,7 @@ class ActivityType(BaseModel):
     met: float
     distance: bool
     emoji: str = Field("", description="The type's own emoji; '' when it uses its group's")
+    steps_per_min: float | None = None
     icon: str = Field("", description="The emoji to show: its own, or its group's default")
     category_icon: str = Field("", description="The group's default emoji")
     uses: int = Field(0, description="Times logged in the last 90 days")
@@ -679,13 +683,23 @@ class Deleted(BaseModel):
 # --- aggregates --------------------------------------------------------------
 
 
+class StepsBurn(BaseModel):
+    """What a day's steps add to burned kcal and active time: only the steps that its
+    logged on-foot activities don't already account for, counted as easy walking."""
+
+    steps: float = Field(0, description="Steps not covered by logged activities")
+    min: float = 0
+    kcal: float = 0
+
+
 class Day(BaseModel):
     day: dt.date
     entries: list[Entry]
     activities: list[Activity]
     totals: Macros
-    burned_kcal: float
-    active_min: float
+    burned_kcal: float = Field(description="Activities plus the steps they don't cover")
+    active_min: float = Field(description="Activities plus the steps they don't cover")
+    steps_burn: StepsBurn
     metrics: DayMetrics
     note: str = ""
     previous_weight: LastWeight | None = Field(
@@ -697,8 +711,8 @@ class Day(BaseModel):
 
 class HistoryDay(Macros):
     day: dt.date
-    burned_kcal: float = 0
-    active_min: float = 0
+    burned_kcal: float = Field(0, description="Activities plus the steps they don't cover")
+    active_min: float = Field(0, description="Activities plus the steps they don't cover")
     entry_count: int = 0
     steps: int | None = None
     sleep_min: float | None = None

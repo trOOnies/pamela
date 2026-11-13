@@ -13,6 +13,8 @@ const MACROS = [
 ];
 const MOOD_EMOJI = { 1: "😣", 2: "🙁", 3: "😐", 4: "🙂", 5: "😄" };
 const FEELING_GROUP_EMOJI = { Content: "😊", Driven: "⚡", Tense: "😬", Down: "🌧️", Drained: "🪫" };
+// Meals named like the usual ones get an emoji (names come from info/config.toml).
+const MEAL_EMOJI = { breakfast: "🌅", lunch: "☀️", dinner: "🌙", supper: "🌙", snack: "🍪", snacks: "🍪", brunch: "🥐" };
 const TARGET_EMOJI = { kcal: "🔥", protein_g: "💪", carbs_g: "🍞", fat_g: "🥑", fiber_g: "🌾", steps: "👟", sleep_h: "😴" };
 const COPY = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13 4.5V4a1.5 1.5 0 0 0-1.5-1.5h-7A1.5 1.5 0 0 0 3 4v7a1.5 1.5 0 0 0 1.5 1.5H5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
 const PENCIL = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M13.3 3.3a1.9 1.9 0 0 1 2.7 0l.7.7a1.9 1.9 0 0 1 0 2.7L7.4 16 3.5 16.9l.9-3.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.8 4.8l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
@@ -105,6 +107,11 @@ function parseSleep(s) {
   }
   const h = Number(s.replace(",", "."));
   return Number.isFinite(h) && h >= 0 && h <= 24 ? Math.round(h * 60) : NaN;
+}
+/** A meal's name with its emoji, when it has one ("🌅 Breakfast"). */
+function mealLabel(name) {
+  const e = MEAL_EMOJI[String(name).trim().toLowerCase()];
+  return e ? `${e} ${name}` : name;
 }
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -254,13 +261,13 @@ function fillConfigControls() {
   const cfg = state.config;
   const mealSel = $("#entry-meal");
   const prevMeal = mealSel.value;
-  mealSel.innerHTML = cfg.meals.names.map((m) => `<option>${esc(m)}</option>`).join("");
+  mealSel.innerHTML = cfg.meals.names.map((m) => `<option value="${esc(m)}">${esc(mealLabel(m))}</option>`).join("");
   if (cfg.meals.names.includes(prevMeal)) mealSel.value = prevMeal;
   else mealSel.value = defaultMeal();
 
   const smSel = $("#sm-default-meal");
   const prevSm = smSel.value;
-  smSel.innerHTML = `<option value="">Any meal</option>` + cfg.meals.names.map((m) => `<option>${esc(m)}</option>`).join("");
+  smSel.innerHTML = `<option value="">Any meal</option>` + cfg.meals.names.map((m) => `<option value="${esc(m)}">${esc(mealLabel(m))}</option>`).join("");
   smSel.value = cfg.meals.names.includes(prevSm) ? prevSm : "";
   updateActivityForm();
   updateDraftCommit();
@@ -603,7 +610,7 @@ function meterPct(value, target) {
 }
 
 function renderSummary() {
-  const { totals, burned_kcal, active_min } = state.dayData;
+  const { totals, burned_kcal, active_min, steps_burn: sb } = state.dayData;
   const t = state.dayData.targets;
   const left = t.kcal - totals.kcal;
   const sub = t.kcal
@@ -635,7 +642,18 @@ function renderSummary() {
       <div class="stat"><div class="k">Burned</div><div class="v">${fmt(burned_kcal)}</div></div>
       <div class="stat"><div class="k">Net kcal</div><div class="v">${fmt(totals.kcal - burned_kcal)}</div></div>
       <div class="stat"><div class="k">Active</div><div class="v">${fmt(active_min)}<small> min</small></div></div>
+      ${stepsLine(sb)}
     </div>`;
+}
+
+/** Under Burned / Active: what the day's steps add to them. */
+function stepsLine(sb) {
+  const steps = state.dayData.metrics.steps;
+  if (!steps) return "";
+  const title = "Steps your logged walks and runs don't already cover, counted as easy walking (about 100 steps a minute)";
+  if (sb.steps < 0.5) return `<div class="sum-steps" title="${title}">👟 Your steps are all part of the activities you logged</div>`;
+  const part = sb.steps < steps - 0.5 ? ` of ${fmt(steps)}` : "";
+  return `<div class="sum-steps" title="${title}">👟 Includes ${fmt(sb.steps)}${part} steps: ${fmt(sb.kcal)} kcal · ${fmt(sb.min)} min</div>`;
 }
 
 function macroCells(o, kcalCell = `<td class="n">${fmt(o.kcal)}</td>`) {
@@ -662,7 +680,7 @@ function renderLog() {
     const btns =
       (canAdd ? `<button type="button" class="row-btn add-to" data-add-meal="${esc(meal)}">+ add</button>` : "") +
       (canSave ? `<button type="button" class="row-btn add-to" data-save-meal="${esc(meal)}" title="Keep these foods as a saved meal">☆ save</button>` : "");
-    html += `<tr class="meal-head"><td>${esc(meal)}</td><td class="n head-btns">${btns}</td>${
+    html += `<tr class="meal-head"><td>${esc(mealLabel(meal))}</td><td class="n head-btns">${btns}</td>${
       rows.length ? macroCells(sub) : '<td colspan="5"></td>'
     }<td></td></tr>`;
     if (!rows.length) {
@@ -907,11 +925,14 @@ async function saveCheckin(patch) {
     const saved = await api("PUT", `/days/${day}/metrics`, body);
     if (day !== state.day) return;
     state.dayData.metrics = saved;
-    if ("weight_kg" in patch) {
-      // the weight used for calorie estimates may have changed
-      const day = await api("GET", `/days/${state.day}`);
-      state.dayData.estimate_weight_kg = day.estimate_weight_kg;
+    if ("weight_kg" in patch || "steps" in patch) {
+      // steps count towards burned kcal and active time, at the weight used for
+      // calorie estimates, which may have changed too
+      const fresh = await api("GET", `/days/${day}`);
+      if (day !== state.day) return;
+      for (const k of ["estimate_weight_kg", "burned_kcal", "active_min", "steps_burn"]) state.dayData[k] = fresh[k];
       updateActivityForm();
+      renderSummary();
     }
     renderCheckin();
     status.textContent = "Saved";
@@ -2517,15 +2538,15 @@ function renderTypes() {
   for (const t of rows) {
     if (t.category !== cat) {
       cat = t.category;
-      html += `<tr class="group-head"><td colspan="6"><span class="at-emoji" aria-hidden="true">${t.category_icon}</span>${esc(cat)}</td></tr>`;
+      html += `<tr class="group-head"><td colspan="7"><span class="at-emoji" aria-hidden="true">${t.category_icon}</span>${esc(cat)}</td></tr>`;
     }
     html += `<tr class="${t.id === state.editingTypeId ? "editing" : ""}">
       <td><span class="at-emoji${t.emoji ? "" : " inherited"}" aria-hidden="true" title="${t.emoji ? "" : "Group default"}">${t.icon}</span>${esc(t.name)}</td><td class="n">${fmtQty(t.met)}</td><td class="n">${fmt(t.met * w)}</td>
-      <td>${t.distance ? "yes" : ""}</td><td class="n">${t.uses || ""}</td>
+      <td>${t.distance ? "yes" : ""}</td><td class="n">${t.steps_per_min ? fmtQty(t.steps_per_min) : ""}</td><td class="n">${t.uses || ""}</td>
       <td class="act"><button type="button" class="row-btn icon" data-edit-type="${t.id}" title="Edit" aria-label="Edit ${esc(t.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-type="${t.id}" aria-label="Delete ${esc(t.name)}">✕</button></td>
     </tr>`;
   }
-  $("#at-body").innerHTML = html || `<tr class="empty"><td colspan="6">No matches</td></tr>`;
+  $("#at-body").innerHTML = html || `<tr class="empty"><td colspan="7">No matches</td></tr>`;
 }
 
 function updateTypeHint() {
@@ -2563,6 +2584,7 @@ function editType(id) {
   el.met.value = t.met;
   el.distance.checked = t.distance;
   el.emoji.value = t.emoji;
+  el.steps_per_min.value = t.steps_per_min ?? "";
   updateTypeEmojiPlaceholder();
   $("#at-form-h").textContent = "Edit exercise type";
   $("#at-submit").textContent = "Update type";
@@ -2582,6 +2604,7 @@ async function submitType(ev) {
     met: num(v.met),
     distance: form.elements.distance.checked,
     emoji: (v.emoji || "").trim(),
+    steps_per_min: num(v.steps_per_min),
   };
   try {
     if (state.editingTypeId) {

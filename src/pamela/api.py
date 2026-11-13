@@ -64,7 +64,7 @@ from .schemas import (
     WipeIn,
     gender_group,
 )
-from .tracking import estimate_kcal, scale_macros, target_on
+from .tracking import estimate_kcal, scale_macros, steps_burn, target_on
 
 router = APIRouter(prefix="/api")
 
@@ -1033,8 +1033,9 @@ def list_activity_types(conn: Conn) -> list[dict]:
 def create_activity_type(t: ActivityTypeIn, conn: Conn) -> dict:
     _type_conflict(conn, t)
     cur = conn.execute(
-        "INSERT INTO activity_types (name, category, met, distance, emoji) VALUES (?, ?, ?, ?, ?)",
-        (t.name, t.category, t.met, int(t.distance), t.emoji),
+        "INSERT INTO activity_types (name, category, met, distance, emoji, steps_per_min) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (t.name, t.category, t.met, int(t.distance), t.emoji, t.steps_per_min),
     )
     return _type_row(conn, cur.lastrowid)
 
@@ -1045,9 +1046,9 @@ def update_activity_type(type_id: int, t: ActivityTypeIn, conn: Conn) -> dict:
     _type_row(conn, type_id)
     _type_conflict(conn, t, type_id)
     conn.execute(
-        "UPDATE activity_types SET name = ?, category = ?, met = ?, distance = ?, emoji = ?"
-        " WHERE id = ?",
-        (t.name, t.category, t.met, int(t.distance), t.emoji, type_id),
+        "UPDATE activity_types SET name = ?, category = ?, met = ?, distance = ?, emoji = ?,"
+        " steps_per_min = ? WHERE id = ?",
+        (t.name, t.category, t.met, int(t.distance), t.emoji, t.steps_per_min, type_id),
     )
     return _type_row(conn, type_id)
 
@@ -1262,18 +1263,38 @@ def read_day(day: dt.date, conn: Conn, config: Config) -> dict:
     ).fetchall()
     totals = Macros(**{k: sum(e[k] for e in entries) for k in MACRO_FIELDS})
     last = _last_weight(conn, iso)
+    weight = _estimate_weight(last, config)
+    metrics = _metrics(conn, iso)
+    covered = _steps_covered(conn, iso, iso).get(iso, 0)
+    steps = steps_burn(metrics["steps"], covered, weight)
     return {
         "day": day,
         "entries": entries,
         "activities": activities,
         "totals": totals,
-        "burned_kcal": sum(a["kcal"] for a in activities),
-        "active_min": sum(a["duration_min"] for a in activities),
-        "metrics": _metrics(conn, iso),
+        "burned_kcal": sum(a["kcal"] for a in activities) + steps["kcal"],
+        "active_min": sum(a["duration_min"] for a in activities) + steps["min"],
+        "steps_burn": steps,
+        "metrics": metrics,
         "note": _note(conn, iso),
         "previous_weight": _last_weight(conn, iso, before=True),
-        "estimate_weight_kg": _estimate_weight(last, config),
+        "estimate_weight_kg": weight,
         "targets": _targets_on(_target_periods(conn), iso),
+    }
+
+
+def _steps_covered(conn: sqlite3.Connection, start: str, end: str) -> dict[str, float]:
+    """Per day, the steps that its logged on-foot activities account for: minutes x
+    their type's steps per minute (types matched by name, as when estimating kcal)."""
+    return {
+        r["day"]: r["covered"]
+        for r in conn.execute(
+            """SELECT a.day, SUM(a.duration_min * t.steps_per_min) AS covered
+               FROM activities a JOIN activity_types t ON t.name = a.type
+               WHERE a.day BETWEEN ? AND ? AND t.steps_per_min IS NOT NULL
+               GROUP BY a.day""",
+            (start, end),
+        )
     }
 
 
@@ -1294,6 +1315,7 @@ def read_history_baseline(conn: Conn, before: dt.date) -> dict:
 @router.get("/history", response_model=list[HistoryDay])
 def read_history(
     conn: Conn,
+    config: Config,
     start: dt.date | None = None,
     end: dt.date | None = None,
 ) -> list[HistoryDay]:
@@ -1335,17 +1357,24 @@ def read_history(
         for r in conn.execute("SELECT day FROM day_notes WHERE day BETWEEN ? AND ?", span)
     }
     periods = _target_periods(conn)
+    covered = _steps_covered(conn, *span)
+    last = _last_weight(conn, span[0], before=True)  # updated as days go by
     out = []
     for i in range((end - start).days + 1):
         d = start + dt.timedelta(days=i)
         iso = d.isoformat()
         f, a, m = food.get(iso), act.get(iso), metrics.get(iso)
+        if m and m["weight_kg"] is not None:
+            last = m
+        steps = steps_burn(
+            m["steps"] if m else None, covered.get(iso, 0), _estimate_weight(last, config)
+        )
         out.append(
             HistoryDay(
                 day=d,
                 entry_count=f["n"] if f else 0,
-                burned_kcal=a["kcal"] if a else 0,
-                active_min=a["mins"] if a else 0,
+                burned_kcal=(a["kcal"] if a else 0) + steps["kcal"],
+                active_min=(a["mins"] if a else 0) + steps["min"],
                 **({k: f[k] for k in MACRO_FIELDS} if f else {}),
                 **({k: m[k] for k in METRIC_FIELDS} if m else {}),
                 has_note=iso in noted,

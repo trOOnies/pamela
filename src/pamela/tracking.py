@@ -29,3 +29,25 @@ def target_on(periods: list[tuple[str | None, int]], day: str) -> int | None:
 def estimate_kcal(met: float, weight_kg: float, duration_min: float) -> float:
     """Calories burned: MET x body weight (kg) x hours."""
     return met * weight_kg * duration_min / 60
+
+
+# Steps outside logged activities count as easy walking: about 100 steps a minute
+# (the usual threshold for "moderate" walking) at 3.5 MET (walking ~4.5-5 km/h, as
+# in the Compendium of Physical Activities).
+STEP_CADENCE = 100
+STEP_MET = 3.5
+
+
+def steps_burn(
+    steps: int | None, covered: float, weight_kg: float
+) -> dict[str, float]:
+    """What a day's steps add to its activities. ``covered`` is how many of them the
+    day's logged on-foot activities already account for (minutes x steps per minute):
+    only the rest counts, so a logged walk isn't counted twice."""
+    extra = max((steps or 0) - covered, 0)
+    minutes = extra / STEP_CADENCE
+    return {
+        "steps": extra,
+        "min": minutes,
+        "kcal": estimate_kcal(STEP_MET, weight_kg, minutes),
+    }

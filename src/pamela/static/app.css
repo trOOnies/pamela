@@ -996,3 +996,6 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .trip-sum .tot { font-weight: 700; color: var(--text); border-top: 1px solid var(--border); padding-top: 2px; }
 .trip-sum .bad { color: var(--danger); }
 .cart-items li.extra { color: var(--text-2); font-style: italic; }
+
+/* --- day summary: what steps add ------------------------------------------- */
+.sum-steps { grid-column: 1 / -1; font-size: .8rem; color: var(--text-3); font-variant-numeric: tabular-nums; }

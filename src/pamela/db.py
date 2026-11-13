@@ -419,6 +419,40 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE carts ADD COLUMN delivery_fee REAL CHECK (delivery_fee >= 0);
     """,
+    # 14: the Fridge: sectors (shelves, drawers, the pantry...) that mirror where food
+    # is kept at home; each catalog food is in at most one sector, and stays there
+    # when it runs out, so it goes back to its place when bought again. Saved meals get
+    # an optional recipe. Exercise types done on foot get the steps they take per
+    # minute, so a day's steps aren't counted twice (once as steps, once as activity).
+    """
+    CREATE TABLE fridge_sectors (
+        id          INTEGER PRIMARY KEY,
+        name        TEXT    NOT NULL,
+        emoji       TEXT    NOT NULL DEFAULT '',
+        position    INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE fridge_foods (
+        food_id     INTEGER PRIMARY KEY REFERENCES foods (id) ON DELETE CASCADE,
+        sector_id   INTEGER NOT NULL REFERENCES fridge_sectors (id) ON DELETE CASCADE
+    );
+    CREATE INDEX fridge_foods_sector ON fridge_foods (sector_id);
+
+    ALTER TABLE saved_meals ADD COLUMN recipe TEXT NOT NULL DEFAULT '';
+
+    ALTER TABLE activity_types ADD COLUMN steps_per_min REAL
+        CHECK (steps_per_min > 0 AND steps_per_min <= 300);   -- NULL = not on foot
+    CREATE TEMP TABLE _cadence (name TEXT PRIMARY KEY, spm REAL NOT NULL);
+    INSERT INTO _cadence (name, spm) VALUES
+        ('Walking', 100), ('Brisk walking', 115), ('Nordic walking', 110),
+        ('Running', 160), ('Jogging', 150), ('Trail running', 150),
+        ('Treadmill running', 160), ('Treadmill walking (incline)', 100),
+        ('Hiking', 100), ('Walking the dog', 90), ('Golf (walking)', 70);
+    UPDATE activity_types
+       SET steps_per_min = (SELECT c.spm FROM _cadence c WHERE c.name = activity_types.name)
+     WHERE name IN (SELECT name FROM _cadence);
+    DROP TABLE _cadence;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

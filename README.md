@@ -35,6 +35,10 @@ included. Ctrl+C in the terminal still works too.
   or use *Quick add* to enter the macros directly. Click an amount to edit it. Log activities;
   if you leave kcal empty, it's estimated from the activity's MET value and your body weight.
   The summary shows kcal and macros against your targets, plus burned and net kcal.
+  Burned kcal and active time include the day's steps (as easy walking, ~100 steps a minute
+  at 3.5 MET), minus the steps that logged on-foot activities already account for (their
+  type's steps per minute x minutes), so a logged walk isn't counted twice. History does the same.
+  Meals named Breakfast, Lunch, Dinner and Snack show 🌅 ☀️ 🌙 🍪.
   Foods with a serving or package size offer quick portions (*1 serving*, *½ pack*…).
   *Saved meal* mode loads a saved meal as an editable draft that is only logged when you
   press *Log*. The *Check-in* card holds daily steps, sleep, body weight (kg), body fat (%)
@@ -73,7 +77,7 @@ included. Ctrl+C in the terminal still works too.
   history or custom periods ("from this date on"), so past days keep the target they had.
   Going back to a single value resets the periods after a confirmation. Targets are positive
   whole numbers; sleep is at most 24 h. Also the exercise types (about 75 built in, with MET
-  values), editable.
+  values and, for those done on foot, steps per minute), editable.
 - **Help**: how each tab works, keyboard shortcuts, and your current settings from
   `info/config.toml` (targets and meals), and a note that Pamela gives no health advice.
   Press `?` to open it.
