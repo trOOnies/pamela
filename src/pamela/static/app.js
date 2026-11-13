@@ -2279,12 +2279,12 @@ async function undoExpired(id) {
   }
 }
 
-// --- saved meals view ------------------------------------------------------------
+// --- meals view (saved meals) ---------------------------------------------------
 
 let smTable;
 
 async function loadMealsView() {
-  document.title = "Saved meals · Pamela";
+  document.title = "Meals · Pamela";
   try {
     await loadSavedMeals();
     renderSavedMeals();
@@ -2294,26 +2294,54 @@ async function loadMealsView() {
   }
 }
 
+/** "120 g rice" for what a meal still needs. */
+function missingText(it) {
+  return `${fmtQty(it.missing)} ${it.unit} ${it.name}`;
+}
+
+/** Whether Groceries hold enough for a meal, and what's short. */
+function availability(sm) {
+  const short = sm.items.filter((it) => it.missing > 0);
+  if (!short.length) return `<p class="sm-avail ok">✅ You have everything to make it</p>`;
+  const what = short.map((it) => esc(missingText(it))).join(", ");
+  return `<p class="sm-avail short">🛒 Missing: ${what}</p>`;
+}
+
 function renderSavedMeals() {
-  const list = state.savedMeals;
-  $("#sm-count").textContent = `(${list.length})`;
+  const all = state.savedMeals;
+  const onlyReady = $("#sm-only-ready").checked;
+  const list = onlyReady ? all.filter((sm) => sm.can_make) : all;
+  const ready = all.filter((sm) => sm.can_make).length;
+  $("#sm-count").textContent = onlyReady ? `(${list.length} of ${all.length})` : `(${all.length})`;
+  $("#sm-only-ready").nextElementSibling.textContent = `Only what I can make now${all.length ? ` (${ready})` : ""}`;
   if (!list.length) {
-    $("#sm-list").innerHTML = `<p class="empty-note">No saved meals yet. Add foods with the form, or press <b>☆ save</b> on a meal in the Day tab.</p>`;
+    $("#sm-list").innerHTML = all.length
+      ? `<p class="empty-note">Your groceries aren't enough for any of your meals right now.</p>`
+      : `<p class="empty-note">No meals yet. Add foods with the form, or press <b>☆ save</b> on a meal in the Day tab.</p>`;
     return;
   }
   $("#sm-list").innerHTML = list
     .map((sm) => {
       const t = sm.totals;
+      const food = (it) => {
+        const title = it.missing > 0
+          ? `${fmtQty(it.in_stock)} ${it.unit} in stock: ${fmtQty(it.missing)} ${it.unit} short`
+          : `${fmtQty(it.in_stock)} ${it.unit} in stock`;
+        return `<li class="${it.missing > 0 ? "short" : ""}" title="${esc(title)}"><span>${groupEmoji(it.food_group)}${esc(it.name)}${it.kcal_missing ? ` <span class="warn-kcal" title="No kcal entered yet for this food: counted as 0">⚠</span>` : ""}</span><span class="n">${it.missing > 0 ? "⚠ " : "✓ "}${fmtQty(it.quantity)} ${esc(it.unit)}</span></li>`;
+      };
       return `<article class="sm-card${sm.id === state.editingSavedMealId ? " editing" : ""}">
         <div class="sm-top">
           <h3>${esc(sm.name)}</h3>
-          ${sm.default_meal ? `<span class="sm-for">${esc(sm.default_meal)}</span>` : ""}
+          ${sm.default_meal ? `<span class="sm-for">${esc(mealLabel(sm.default_meal))}</span>` : ""}
         </div>
         ${tagPills(sm.tags)}
-        <ul class="sm-foods">${sm.items.map((it) => `<li><span>${esc(it.name)}${it.kcal_missing ? ` <span class="warn-kcal" title="No kcal entered yet for this food: counted as 0">⚠</span>` : ""}</span><span class="n">${fmtQty(it.quantity)} ${esc(it.unit)}</span></li>`).join("")}</ul>
+        <ul class="sm-foods">${sm.items.map(food).join("")}</ul>
         <div class="sm-tot"><b>${fmt(t.kcal)}</b> kcal · ${MACROS.map((m) => `${m.short} ${fmt(t[m.key])}`).join(" · ")}</div>
+        ${availability(sm)}
+        ${sm.recipe ? `<details class="sm-recipe"><summary>📝 Recipe</summary><p>${esc(sm.recipe)}</p></details>` : ""}
         <div class="sm-actions">
           <button type="button" class="btn" data-use-sm="${sm.id}" title="Open today with this meal as a draft">Use today</button>
+          ${sm.can_make ? "" : `<button type="button" class="row-btn add-to" data-buy-sm="${sm.id}" title="Put what's missing in the cart in Groceries">+ Buy missing</button>`}
           <button type="button" class="row-btn icon" data-edit-sm="${sm.id}" title="Edit" aria-label="Edit ${esc(sm.name)}">${PENCIL}</button>
           <button type="button" class="row-btn del" data-del-sm="${sm.id}" aria-label="Delete ${esc(sm.name)}">✕</button>
         </div>
@@ -2322,11 +2350,25 @@ function renderSavedMeals() {
     .join("");
 }
 
+/** Adds what a meal is short of to the cart being filled in, in whole packs when the
+ * food has a package size, and opens Groceries. */
+function buyMissing(id) {
+  const sm = state.savedMeals.find((x) => x.id === id);
+  if (!sm) return;
+  const short = sm.items.filter((it) => it.missing > 0);
+  for (const it of short) {
+    const q = it.package_qty ? Math.ceil(it.missing / it.package_qty - 1e-6) * it.package_qty : it.missing;
+    addTripItem({ id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, package_qty: it.package_qty, basis_qty: it.basis_qty }, q);
+  }
+  toast(`${short.length} food${short.length === 1 ? "" : "s"} added to the cart`);
+  location.hash = "#/groceries";
+}
+
 function resetSmForm() {
   $("#sm-form").reset();
   state.smItems = [];
   state.editingSavedMealId = null;
-  $("#sm-form-h").textContent = "New saved meal";
+  $("#sm-form-h").textContent = "New meal";
   $("#sm-submit").textContent = "Save meal";
   $("#sm-cancel").hidden = true;
   smTable.render();
@@ -2341,7 +2383,8 @@ function editSavedMeal(id) {
   const el = $("#sm-form").elements;
   el.name.value = sm.name;
   el.default_meal.value = state.config.meals.names.includes(sm.default_meal) ? sm.default_meal : "";
-  $("#sm-form-h").textContent = "Edit saved meal";
+  el.recipe.value = sm.recipe || "";
+  $("#sm-form-h").textContent = "Edit meal";
   $("#sm-submit").textContent = "Update meal";
   $("#sm-cancel").hidden = false;
   smTable.render();
@@ -2366,14 +2409,15 @@ async function submitSavedMeal(ev) {
     name: v.name.trim(),
     default_meal: v.default_meal,
     items: state.smItems.map((it) => ({ food_id: it.food_id, quantity: it.quantity })),
+    recipe: (v.recipe || "").trim(),
   };
   try {
     if (state.editingSavedMealId) {
       await api("PUT", `/saved-meals/${state.editingSavedMealId}`, body);
-      toast("Saved meal updated");
+      toast("Meal updated");
     } else {
       await api("POST", "/saved-meals", body);
-      toast("Saved meal added");
+      toast("Meal added");
     }
     await loadSavedMeals();
     resetSmForm();
@@ -2386,10 +2430,10 @@ async function deleteSavedMeal(id) {
   const sm = state.savedMeals.find((x) => x.id === id);
   if (!sm) return;
   const ok = await confirmDialog({
-    title: "🗑️ Delete this saved meal?",
-    body: `<p><b>${esc(sm.name)}</b> leaves your saved meals. Days you already logged with it don't change.</p>
+    title: "🗑️ Delete this meal?",
+    body: `<p><b>${esc(sm.name)}</b> leaves your meals, recipe included. Days you already logged with it don't change.</p>
       <p>This can't be undone.</p>`,
-    ok: "Delete saved meal",
+    ok: "Delete meal",
   });
   if (!ok) return;
   try {
@@ -3790,9 +3834,16 @@ function wire() {
   });
   $("#sm-form").addEventListener("submit", submitSavedMeal);
   $("#sm-cancel").addEventListener("click", resetSmForm);
+  $("#sm-only-ready").addEventListener("change", () => {
+    prefSet("pamela-meals-ready", $("#sm-only-ready").checked ? "1" : "0");
+    renderSavedMeals();
+  });
+  $("#sm-only-ready").checked = prefGet("pamela-meals-ready") === "1";
   $("#sm-list").addEventListener("click", (e) => {
     const use = e.target.closest("[data-use-sm]");
     if (use) return useSavedMealToday(Number(use.dataset.useSm));
+    const buy = e.target.closest("[data-buy-sm]");
+    if (buy) return buyMissing(Number(buy.dataset.buySm));
     const edit = e.target.closest("[data-edit-sm]");
     if (edit) return editSavedMeal(Number(edit.dataset.editSm));
     const del = e.target.closest("[data-del-sm]");

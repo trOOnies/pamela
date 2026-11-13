@@ -16,7 +16,7 @@
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
       <a href="#/groceries" data-nav="groceries">Groceries</a>
-      <a href="#/meals" data-nav="meals">Saved meals</a>
+      <a href="#/meals" data-nav="meals">Meals</a>
       <a href="#/history" data-nav="history">History</a>
       <a href="#/settings" data-nav="settings">Settings</a>
       <a href="#/help" data-nav="help" title="Help ( ? )">Help</a>
@@ -365,11 +365,11 @@
       </div>
     </section>
 
-    <!-- Saved meals ----------------------------------------------------- -->
+    <!-- Meals ----------------------------------------------------------- -->
     <section id="view-meals" class="view meals-grid" hidden>
       <section class="card" aria-labelledby="sm-form-h">
         <div class="card-head">
-          <h2 id="sm-form-h">New saved meal</h2>
+          <h2 id="sm-form-h">New meal</h2>
           <button type="button" class="btn ghost" id="sm-cancel" hidden>Cancel edit</button>
         </div>
         <form id="sm-form" class="sm-form" autocomplete="off">
@@ -385,15 +385,21 @@
           <div class="combo">
             <input type="search" id="sm-search" placeholder="+ Add a food from the catalog…"
                    role="combobox" aria-expanded="false" aria-controls="sm-suggest"
-                   aria-autocomplete="list" aria-label="Add a food to the saved meal">
+                   aria-autocomplete="list" aria-label="Add a food to the meal">
             <ul id="sm-suggest" class="suggest" role="listbox" hidden></ul>
           </div>
+          <label class="field recipe-field"><span>Recipe <small>(optional)</small></span>
+            <textarea name="recipe" id="sm-recipe" maxlength="10000" rows="6"
+                      placeholder="How to make it: steps, times, tips…"></textarea></label>
           <button class="btn primary" type="submit" id="sm-submit">Save meal</button>
         </form>
       </section>
 
       <section class="card" aria-labelledby="sm-list-h">
-        <div class="card-head"><h2 id="sm-list-h">Saved meals <span class="count" id="sm-count"></span></h2></div>
+        <div class="card-head">
+          <h2 id="sm-list-h">Meals <span class="count" id="sm-count"></span></h2>
+          <label class="chip-check"><input type="checkbox" id="sm-only-ready"><span>Only what I can make now</span></label>
+        </div>
         <div class="sm-list" id="sm-list"></div>
       </section>
     </section>
@@ -556,7 +562,7 @@
             </ol></li>
           <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
           <li><a href="#/help" data-jump="help-groceries">🛒 Groceries</a></li>
-          <li><a href="#/help" data-jump="help-meals">⭐ Saved meals</a></li>
+          <li><a href="#/help" data-jump="help-meals">⭐ Meals</a></li>
           <li><a href="#/help" data-jump="help-history">📈 History</a></li>
           <li><a href="#/help" data-jump="help-settings-tab">⚙️ Settings</a></li>
           <li><a href="#/help" data-jump="help-exit">🚪 Closing Pamela</a></li>
@@ -589,7 +595,7 @@
             <li><b>Day</b>: your diary for one day. This is where you'll spend most of your time.</li>
             <li><b>Foods</b>: your own list of foods and their nutrition.</li>
             <li><b>Groceries</b>: what you have at home, what you bought and what expired.</li>
-            <li><b>Saved meals</b>: combos you eat often, ready to log in one go.</li>
+            <li><b>Meals</b>: combos you eat often, ready to log in one go, with their recipes.</li>
             <li><b>History</b>: charts and totals over 7, 30 or 90 days.</li>
             <li><b>Settings</b>: your targets, profile and exercise types.</li>
             <li><b>Help</b>: this page. Press <kbd>?</kbd> to come back any time.</li>
@@ -772,10 +778,19 @@
         </section>
 
         <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">
-          <h2 id="help-meals-h">⭐ Saved meals</h2>
+          <h2 id="help-meals-h">⭐ Meals</h2>
           <p>Combos you eat often, like your usual breakfast. Build one here, or press
             <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> picks the meal for you, and the
-            tags show what all its foods have in common.</p>
+            tags show what all its foods have in common. In the Day tab they're under
+            <b>Saved meal</b>.</p>
+          <p>📝 <b>Recipe.</b> Each meal can hold a recipe as free text: steps, times, tips. Open
+            <i>📝 Recipe</i> on its card to read it.</p>
+          <p>🛒 <b>Can I make it?</b> Each card compares the meal with your groceries: ✓ next to the
+            foods you have enough of, ⚠ next to the ones you're short of, and a line saying either
+            <i>You have everything to make it</i> or what's <i>Missing</i> and how much. <b>+ Buy
+            missing</b> puts what's missing in the cart in Groceries (in whole packs when the food has
+            a package size). Tick <i>Only what I can make now</i> to see just the meals you can cook
+            with what's at home.</p>
         </section>
 
         <section class="card help-card" id="help-history" aria-labelledby="help-history-h">

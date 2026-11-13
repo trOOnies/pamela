@@ -1,4 +1,5 @@
-"""Steps counting towards burned kcal and active time."""
+"""What a meal needs from Groceries, and steps counting towards burned kcal and
+active time."""
 
 from __future__ import annotations
 
@@ -10,6 +11,69 @@ from pamela.tracking import STEP_CADENCE, STEP_MET
 
 TODAY = dt.date.today()
 D = [(TODAY - dt.timedelta(days=n)).isoformat() for n in range(10)]  # D[0] = today
+
+
+def buy(client, food_id, quantity, day=D[5]) -> None:
+    r = client.post(
+        "/api/groceries/carts",
+        json={"bought_on": day, "items": [{"food_id": food_id, "quantity": quantity}]},
+    )
+    assert r.status_code == 201, r.text
+
+
+def food(client, name, unit="g", **kw) -> dict:
+    r = client.post("/api/foods", json={"name": name, "unit": unit, "kcal": 100} | kw)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+# --- meals ---------------------------------------------------------------------
+
+
+def test_meal_recipe_and_what_is_in_stock(client, oats):
+    milk = food(client, "Milk", "ml", package_qty=1000)
+    body = {
+        "name": "Porridge",
+        "items": [
+            {"food_id": oats["id"], "quantity": 60},
+            {"food_id": milk["id"], "quantity": 250},
+        ],
+        "recipe": "Simmer 5 min.\nStir.",
+    }
+    sm = client.post("/api/saved-meals", json=body).json()
+    assert sm["recipe"] == "Simmer 5 min.\nStir."
+    assert sm["can_make"] is False
+    assert [(it["in_stock"], it["missing"]) for it in sm["items"]] == [(0, 60), (0, 250)]
+
+    buy(client, oats["id"], 500)
+    buy(client, milk["id"], 100)
+    sm = client.get(f"/api/saved-meals/{sm['id']}").json()
+    assert sm["can_make"] is False
+    assert [(it["in_stock"], it["missing"]) for it in sm["items"]] == [(500, 0), (100, 150)]
+
+    buy(client, milk["id"], 1000)
+    sm = client.get(f"/api/saved-meals/{sm['id']}").json()
+    assert sm["can_make"] is True
+    assert all(it["missing"] == 0 for it in sm["items"])
+
+    r = client.put(f"/api/saved-meals/{sm['id']}", json=body | {"recipe": ""})
+    assert r.json()["recipe"] == ""
+
+
+def test_meal_with_a_food_twice_shares_the_stock(client, oats):
+    buy(client, oats["id"], 100)
+    sm = client.post(
+        "/api/saved-meals",
+        json={
+            "name": "Double oats",
+            "items": [
+                {"food_id": oats["id"], "quantity": 80},
+                {"food_id": oats["id"], "quantity": 50},
+            ],
+        },
+    ).json()
+    assert [it["missing"] for it in sm["items"]] == [0, 30]
+    assert sm["can_make"] is False
 
 
 # --- steps -----------------------------------------------------------------------

@@ -68,7 +68,10 @@ included. Ctrl+C in the terminal still works too.
   take it out, with an undo. Expiry dates turn amber three days ahead and red once past;
   *Ran out* lists finished foods with *Buy again*, and tiles sum up what's expiring, what was
   spent and what was thrown out in the last 30 days.
-- **Saved meals**: fixed mixes of catalog foods (or *☆ save* a meal from the Day tab).
+- **Meals** (saved meals): fixed mixes of catalog foods (or *☆ save* a meal from the Day tab),
+  each with an optional recipe as free text. Each meal says whether Groceries hold enough of
+  every food, and what's missing and how much; *+ Buy missing* puts that in the cart, and
+  *Only what I can make now* filters the list.
 - **History**: daily kcal, protein, steps and sleep charts against your targets, body weight
   and body fat line charts, averages, and a per-day table with mood and notes (click a day
   to open it). Each chart has its own color.

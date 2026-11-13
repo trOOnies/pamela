@@ -287,6 +287,18 @@ _FOOD_SELECT = f"""
 """
 
 
+def _stock_left(conn: sqlite3.Connection) -> dict[int, float]:
+    """What's left in Groceries of every food that has anything left."""
+    return {
+        r["food_id"]: r["left"]
+        for r in conn.execute(
+            f"""SELECT food_id, SUM(MAX(remaining, 0)) AS left
+                FROM ({_LOT_LEFT} GROUP BY l.id) GROUP BY food_id"""
+        )
+        if r["left"] > EPS
+    }
+
+
 def _food_row(conn: sqlite3.Connection, food_id: int) -> dict:
     row = conn.execute(_FOOD_SELECT + " WHERE f.id = ?", (food_id,)).fetchone()
     if row is None:
@@ -435,6 +447,7 @@ _ITEM_COLS = ", ".join(
         "basis_qty",
         "serving_qty",
         "package_qty",
+        "food_group",
         *MACRO_FIELDS,
         *DIET_FIELDS,
     )
@@ -456,13 +469,27 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
     by_meal: dict[int, list[dict]] = {m["id"]: [] for m in meals}
     for it in items:
         by_meal[it["saved_meal_id"]].append(it)
+    stock = _stock_left(conn)
     out = []
     for m in meals:
         rows = by_meal[m["id"]]
-        scaled = [
-            it | scale_macros(it, it["quantity"]) | {"kcal_missing": it["kcal"] is None}
-            for it in rows
-        ]
+        # A food listed twice in a meal shares what's left between its rows.
+        left = {it["food_id"]: stock.get(it["food_id"], 0) for it in rows}
+        scaled = []
+        for it in rows:
+            have = left[it["food_id"]]
+            used = min(have, it["quantity"])
+            left[it["food_id"]] = have - used
+            missing = it["quantity"] - used
+            scaled.append(
+                it
+                | scale_macros(it, it["quantity"])
+                | {
+                    "kcal_missing": it["kcal"] is None,
+                    "in_stock": stock.get(it["food_id"], 0),
+                    "missing": missing if missing > EPS else 0,
+                }
+            )
         tags = [t for t in DIET_FIELDS if rows and all(it[t] for it in rows)]
         if rows and all(it["kcal"] == 0 for it in rows):
             tags.append("calorie_free")
@@ -472,6 +499,7 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
                 "items": scaled,
                 "totals": {k: sum(it[k] for it in scaled) for k in MACRO_FIELDS},
                 "tags": tags,
+                "can_make": all(it["missing"] == 0 for it in scaled),
             }
         )
     return out
@@ -506,8 +534,8 @@ def list_saved_meals(conn: Conn) -> list[dict]:
 @router.post("/saved-meals", response_model=SavedMeal, status_code=status.HTTP_201_CREATED)
 def create_saved_meal(meal: SavedMealIn, conn: Conn) -> dict:
     cur = conn.execute(
-        "INSERT INTO saved_meals (name, default_meal) VALUES (?, ?)",
-        (meal.name, meal.default_meal),
+        "INSERT INTO saved_meals (name, default_meal, recipe) VALUES (?, ?, ?)",
+        (meal.name, meal.default_meal, meal.recipe),
     )
     _store_items(conn, cur.lastrowid, meal)
     return _saved_meal(conn, cur.lastrowid)
@@ -521,9 +549,9 @@ def read_saved_meal(saved_meal_id: int, conn: Conn) -> dict:
 @router.put("/saved-meals/{saved_meal_id}", response_model=SavedMeal)
 def update_saved_meal(saved_meal_id: int, meal: SavedMealIn, conn: Conn) -> dict:
     cur = conn.execute(
-        "UPDATE saved_meals SET name = ?, default_meal = ?, updated_at = datetime('now') "
-        "WHERE id = ?",
-        (meal.name, meal.default_meal, saved_meal_id),
+        "UPDATE saved_meals SET name = ?, default_meal = ?, recipe = ?, "
+        "updated_at = datetime('now') WHERE id = ?",
+        (meal.name, meal.default_meal, meal.recipe, saved_meal_id),
     )
     if cur.rowcount == 0:
         raise _not_found("saved meal")

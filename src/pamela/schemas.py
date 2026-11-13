@@ -265,10 +265,14 @@ class SavedMealItemIn(_In):
     quantity: float = Field(gt=0)
 
 
+RECIPE_MAX = 10_000
+
+
 class SavedMealIn(_In):
     name: str = Field(min_length=1, max_length=200)
     default_meal: str = Field("", max_length=100)
     items: list[SavedMealItemIn] = Field(min_length=1, max_length=100)
+    recipe: str = Field("", max_length=RECIPE_MAX, description="How to make it, as free text")
 
 
 class SavedMealItem(Macros):
@@ -280,7 +284,10 @@ class SavedMealItem(Macros):
     basis_qty: float
     serving_qty: float | None = None
     package_qty: float | None = None
+    food_group: str = ""
     kcal_missing: bool = Field(False, description="The food has no kcal yet (counted as 0)")
+    in_stock: float = Field(0, description="What's left of the food in Groceries")
+    missing: float = Field(0, description="How much more of it the meal needs than is left")
 
 
 class SavedMeal(BaseModel):
@@ -290,6 +297,8 @@ class SavedMeal(BaseModel):
     items: list[SavedMealItem]
     totals: Macros
     tags: list[str] = Field(description="Diet tags shared by every item")
+    recipe: str = ""
+    can_make: bool = Field(description="Groceries hold enough of every item")
 
 
 # --- food entries ------------------------------------------------------------
@@ -655,7 +664,7 @@ WIPE_TARGETS = {
     "activities": ("Activities", "Every activity logged on any day"),
     "checkins": ("Check-ins", "Steps, sleep, mood, feelings, weight and body fat of every day"),
     "notes": ("Day notes", "The note of every day"),
-    "saved_meals": ("Saved meals", "All your saved meals"),
+    "saved_meals": ("Meals", "All your meals in the Meals tab, recipes included"),
     "groceries": (
         "Groceries",
         "Every cart and expiry in Groceries. Logged days stay as they are",
