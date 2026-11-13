@@ -325,6 +325,8 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transpa
 .log-table .qty-input { width: 80px; height: 28px; text-align: right; }
 .log-table td.n.qty { white-space: nowrap; cursor: text; }
 .log-table td .quick-tag { font-size: .72rem; color: var(--text-3); margin-left: 6px; }
+.log-table td .entry-link { text-decoration: none; font-size: .8rem; opacity: .6; }
+.log-table td .entry-link:hover, .log-table td .entry-link:focus-visible { opacity: 1; }
 .log-table tfoot td { font-weight: 600; border-bottom: 0; padding-top: 10px; }
 
 /* --- chips & tags ------------------------------------------------------ */
@@ -966,6 +968,7 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .cart { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .cart.editing { border-color: var(--accent-2-line); background: var(--accent-2-soft); }
 .cart.flash { animation: row-flash 1.6s ease-out; }
+.sm-card.flash { animation: row-flash 1.8s ease-out; }
 .cart-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cart-title { font-variant-numeric: tabular-nums; }
 .cart-store { color: var(--text-2); margin-left: 6px; }

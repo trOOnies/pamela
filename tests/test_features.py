@@ -316,6 +316,27 @@ def test_batch_entries_log_a_modified_saved_meal(client, oats):
     assert len(client.get(f"/api/days/{DAY}").json()["entries"]) == 1
 
 
+def test_entries_remember_their_saved_meal(client):
+    oats = client.post("/api/foods", json={"name": "Oats", "unit": "g", "kcal": 380}).json()
+    items = [{"food_id": oats["id"], "quantity": 60}]
+    sm = client.post("/api/saved-meals", json={"name": "Porridge", "items": items}).json()
+    batch = {"day": DAY, "meal": "Breakfast", "items": [{"food_id": oats["id"], "quantity": 60}]}
+    r = client.post("/api/entries/batch", json=batch | {"saved_meal_id": sm["id"]})
+    assert r.status_code == 201, r.text
+    assert (r.json()[0]["saved_meal_id"], r.json()[0]["saved_meal_name"]) == (sm["id"], "Porridge")
+    plain = client.post("/api/entries/batch", json=batch).json()[0]
+    assert plain["saved_meal_id"] is None
+    assert client.post("/api/entries/batch", json=batch | {"saved_meal_id": 999}).status_code == 422
+
+    # changing the amount keeps the link; deleting the meal drops it
+    e = r.json()[0]
+    put = {"day": DAY, "meal": "Breakfast", "food_id": oats["id"], "quantity": 30}
+    assert client.put(f"/api/entries/{e['id']}", json=put).json()["saved_meal_id"] == sm["id"]
+    client.delete(f"/api/saved-meals/{sm['id']}")
+    entries = client.get(f"/api/days/{DAY}").json()["entries"]
+    assert [x["saved_meal_id"] for x in entries] == [None, None]
+
+
 # --- activity types ----------------------------------------------------------
 
 

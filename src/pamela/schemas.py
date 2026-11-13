@@ -338,6 +338,8 @@ class Entry(Macros):
     quantity: float | None
     unit: str
     from_stock: float = Field(0, description="How much of it was taken from Groceries")
+    saved_meal_id: int | None = Field(None, description="The meal it was logged from, if any")
+    saved_meal_name: str | None = None
 
 
 class EntryBatchIn(_In):
@@ -346,6 +348,7 @@ class EntryBatchIn(_In):
     day: dt.date
     meal: str = Field(min_length=1)
     items: list[SavedMealItemIn] = Field(min_length=1, max_length=100)
+    saved_meal_id: int | None = Field(None, description="The meal they come from, if any")
 
 
 # --- groceries ---------------------------------------------------------------

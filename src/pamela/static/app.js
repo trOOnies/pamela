@@ -40,7 +40,7 @@ const state = {
   editingFoodId: null,
   editingActivityId: null,
   selectedFood: null,   // food chosen in the entry form
-  draft: null,          // saved meal being prepared for logging: { name, items }
+  draft: null,          // saved meal being prepared for logging: { id, name, items }
   smItems: [],          // items of the saved meal in the editor
   editingSavedMealId: null,
   editingTypeId: null,
@@ -51,6 +51,7 @@ const state = {
   editingCartId: null,
   fridge: null,         // GET /fridge: { sectors, unsorted }
   focusFood: null,      // food whose In stock row Groceries shows once loaded
+  focusRow: null,       // food (Foods) or meal (Meals) to scroll to once that tab is loaded
   editingSectorId: null,
   cartsShown: 8,        // carts listed before "Show more"
 };
@@ -312,6 +313,12 @@ function route() {
   let view = parts[0] || "day";
   if (!VIEWS.includes(view)) view = "day";
   state.view = view;
+  // #/foods/<id> and #/meals/<id> open the tab at that row (the Day tab's 🔗 links)
+  const rowId = Number(parts[1]);
+  if ((view === "foods" || view === "meals") && Number.isInteger(rowId) && rowId > 0) {
+    state.focusRow = rowId;
+    history.replaceState(null, "", `#/${view}`); // once: later redraws stay where they are
+  }
   if (view === "day") {
     const d = parts[1];
     if (d && isISODate(d) && d > todayISO()) {
@@ -664,6 +671,17 @@ function macroCells(o, kcalCell = `<td class="n">${fmt(o.kcal)}</td>`) {
   return kcalCell + MACROS.map((m) => `<td class="n">${fmt(o[m.key], 1)}</td>`).join("");
 }
 
+/** 🔗 to where an entry comes from: its meal in Meals, else its food in Foods. Quick adds have none. */
+function entryLink(e) {
+  if (e.saved_meal_id != null) {
+    const t = `Logged from “${e.saved_meal_name}”: open it in Meals`;
+    return ` <a class="entry-link" href="#/meals/${e.saved_meal_id}" title="${esc(t)}" aria-label="${esc(t)}">🔗</a>`;
+  }
+  if (e.food_id == null) return "";
+  const t = `Open “${e.name}” in Foods`;
+  return ` <a class="entry-link" href="#/foods/${e.food_id}" title="${esc(t)}" aria-label="${esc(t)}">🔗</a>`;
+}
+
 function renderLog() {
   const { entries, totals } = state.dayData;
   const meals = [...state.config.meals.names];
@@ -700,7 +718,7 @@ function renderLog() {
       }
       const qtyAttrs = e.food_id != null ? ` class="n qty" data-edit-qty="${e.id}" title="Click to change amount"` : ' class="n"';
       html += `<tr data-entry="${e.id}">
-        <td>${esc(e.name)}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
+        <td>${esc(e.name)}${entryLink(e)}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
         <td${qtyAttrs}>${amount}</td>
         ${macroCells(e)}
         <td class="act"><button type="button" class="row-btn del" data-del-entry="${e.id}" title="Delete" aria-label="Delete ${esc(e.name)}">✕</button></td>
@@ -1229,7 +1247,7 @@ function fillSavedPick() {
 }
 
 function startDraft(sm) {
-  state.draft = { name: sm.name, items: sm.items.map(itemFromSaved) };
+  state.draft = { id: sm.id, name: sm.name, items: sm.items.map(itemFromSaved) };
   if (sm.default_meal && state.config.meals.names.includes(sm.default_meal)) $("#entry-meal").value = sm.default_meal;
   renderDraft();
   $("#draft-commit").focus();
@@ -1277,6 +1295,7 @@ async function commitDraft() {
       day: state.day,
       meal,
       items: d.items.map((it) => ({ food_id: it.food_id, quantity: it.quantity })),
+      saved_meal_id: state.savedMeals.some((sm) => sm.id === d.id) ? d.id : null,
     });
     toast(`Logged “${d.name}” to ${meal}`);
     discardDraft();
@@ -1372,6 +1391,8 @@ async function loadFoods() {
     state.foods = foods;
     $("#brand-options").innerHTML = brands.map((b) => `<option value="${esc(b)}">`).join("");
     renderFoods();
+    if (state.focusRow != null) goToFood(state.focusRow);
+    state.focusRow = null;
   } catch (err) {
     showError(err);
   }
@@ -2685,6 +2706,8 @@ async function loadMealsView() {
     await loadSavedMeals();
     renderSavedMeals();
     smTable.render();
+    if (state.focusRow != null) goToMeal(state.focusRow);
+    state.focusRow = null;
   } catch (err) {
     showError(err);
   }
@@ -2725,7 +2748,7 @@ function renderSavedMeals() {
           : `${fmtQty(it.in_stock)} ${it.unit} in stock`;
         return `<li class="${it.missing > 0 ? "short" : ""}" title="${esc(title)}"><span>${groupEmoji(it.food_group)}${esc(it.name)}${it.kcal_missing ? ` <span class="warn-kcal" title="No kcal entered yet for this food: counted as 0">⚠</span>` : ""}</span><span class="n">${it.missing > 0 ? "⚠ " : "✓ "}${fmtQty(it.quantity)} ${esc(it.unit)}</span></li>`;
       };
-      return `<article class="sm-card${sm.id === state.editingSavedMealId ? " editing" : ""}">
+      return `<article class="sm-card${sm.id === state.editingSavedMealId ? " editing" : ""}" id="sm-card-${sm.id}">
         <div class="sm-top">
           <h3>${esc(sm.name)}</h3>
           ${sm.default_meal ? `<span class="sm-for">${esc(mealLabel(sm.default_meal))}</span>` : ""}
@@ -2744,6 +2767,21 @@ function renderSavedMeals() {
       </article>`;
     })
     .join("");
+}
+
+/** Scrolls to a meal's card and flashes it, showing all meals if the filter hides it. */
+function goToMeal(id) {
+  if (!document.getElementById(`sm-card-${id}`) && $("#sm-only-ready").checked) {
+    $("#sm-only-ready").checked = false; // just for now: the saved preference stays
+    renderSavedMeals();
+  }
+  const card = document.getElementById(`sm-card-${id}`);
+  if (!card) return toast("That meal isn't in Meals anymore", true);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  card.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  card.classList.remove("flash");
+  void card.offsetWidth; // restart the animation
+  card.classList.add("flash");
 }
 
 /** Adds what a meal is short of to the cart being filled in, in whole packs when the

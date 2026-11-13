@@ -471,6 +471,12 @@ MIGRATIONS: list[str] = [
     SELECT food_id, sector_id, NULL FROM fridge_foods;
     DROP TABLE fridge_foods;
     """,
+    # 16: entries logged from a meal in the Meals tab remember it, so the Day tab can
+    # link back to it. Deleting the meal leaves them pointing at their food only.
+    """
+    ALTER TABLE food_entries ADD COLUMN saved_meal_id INTEGER
+        REFERENCES saved_meals (id) ON DELETE SET NULL;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

@@ -608,8 +608,8 @@ def _entry_values(entry: EntryIn, conn: sqlite3.Connection, config: AppConfig) -
 
 _ENTRY_SELECT = """
     SELECT e.*, COALESCE((SELECT SUM(quantity) FROM stock_uses WHERE entry_id = e.id), 0)
-           AS from_stock
-    FROM food_entries e
+           AS from_stock, sm.name AS saved_meal_name
+    FROM food_entries e LEFT JOIN saved_meals sm ON sm.id = e.saved_meal_id
 """
 
 
@@ -639,6 +639,11 @@ def create_entry(entry: EntryIn, conn: Conn, config: Config) -> dict:
 @router.post("/entries/batch", response_model=list[Entry], status_code=status.HTTP_201_CREATED)
 def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict]:
     """Log several foods into one meal, all or nothing."""
+    sm_id = batch.saved_meal_id
+    if sm_id is not None and not conn.execute(
+        "SELECT 1 FROM saved_meals WHERE id = ?", (sm_id,)
+    ).fetchone():
+        raise HTTPException(UNPROCESSABLE, "saved meal not found")
     ids = [
         _insert_entry(
             conn,
@@ -647,6 +652,10 @@ def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict
         )
         for it in batch.items
     ]
+    if sm_id is not None:
+        conn.executemany(
+            "UPDATE food_entries SET saved_meal_id = ? WHERE id = ?", [(sm_id, i) for i in ids]
+        )
     return [_entry_row(conn, i) for i in ids]
 
 
