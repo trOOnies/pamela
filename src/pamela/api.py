@@ -270,7 +270,7 @@ def update_target(key: str, target: TargetIn, conn: Conn) -> dict:
 
 # What's left of each lot: its quantity minus everything eaten or thrown out.
 _LOT_LEFT = """
-    SELECT l.*, c.bought_on, c.store,
+    SELECT l.*, c.bought_on, c.store, c.gift,
            COALESCE(SUM(CASE WHEN u.kind = 'eaten' THEN u.quantity END), 0) AS eaten,
            COALESCE(SUM(CASE WHEN u.kind = 'expired' THEN u.quantity END), 0) AS expired,
            l.quantity - COALESCE(SUM(u.quantity), 0) AS remaining
@@ -774,7 +774,9 @@ def _carts(conn: sqlite3.Connection, cart_id: int | None = None) -> list[dict]:
         off = _discount_amount(subtotal or 0, c["discount"], c["discount_pct"])
         fee = c["delivery_fee"]
         total = None
-        if subtotal is not None or fee is not None:
+        if c["gift"]:
+            total = 0.0
+        elif subtotal is not None or fee is not None:
             total = (subtotal or 0) - off + (fee or 0)
         out.append(
             c
@@ -900,8 +902,8 @@ def _store_cart_items(conn: sqlite3.Connection, cart_id: int, cart: CartIn) -> s
             f"the discount ({cart.discount:g}) is more than the cart's subtotal ({subtotal:g})",
         )
     conn.execute(
-        "UPDATE carts SET discount = ?, discount_pct = ?, delivery_fee = ? WHERE id = ?",
-        (cart.discount, cart.discount_pct, cart.delivery_fee, cart_id),
+        "UPDATE carts SET discount = ?, discount_pct = ?, delivery_fee = ?, gift = ? WHERE id = ?",
+        (cart.discount, cart.discount_pct, cart.delivery_fee, int(cart.gift), cart_id),
     )
     conn.execute("DELETE FROM cart_extras WHERE cart_id = ?", (cart_id,))
     conn.executemany(

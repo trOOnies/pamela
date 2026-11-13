@@ -477,6 +477,11 @@ MIGRATIONS: list[str] = [
     ALTER TABLE food_entries ADD COLUMN saved_meal_id INTEGER
         REFERENCES saved_meals (id) ON DELETE SET NULL;
     """,
+    # 17: a cart can be a gift: nothing in it was paid for, so it has no prices,
+    # discount or delivery fee, and costs nothing.
+    """
+    ALTER TABLE carts ADD COLUMN gift INTEGER NOT NULL DEFAULT 0 CHECK (gift IN (0, 1));
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

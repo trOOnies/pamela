@@ -291,6 +291,7 @@
               <label class="field grow"><span>Store <small>(optional)</small></span>
                 <input type="text" name="store" maxlength="100" list="store-options" placeholder="e.g. Corner shop"></label>
               <datalist id="store-options"></datalist>
+              <label class="field check gift-check" title="Nothing in it was paid for: no prices are needed"><input type="checkbox" name="gift" id="trip-gift"><span>🎁 It was a gift</span></label>
             </div>
             <div class="table-wrap">
               <table class="draft-table trip-items">
@@ -323,6 +324,7 @@
                        title="Added to the total, after the discount"></label>
               <dl class="trip-sum" id="trip-sum" aria-live="polite"></dl>
             </div>
+            <p class="gift-note" id="trip-gift-note" hidden>🎁 A gift: it costs nothing, so there are no prices, discount or delivery fee.</p>
             <p class="hint">One cart per trip to the shops. Amounts are in each food's unit; foods with a
               package size also take a number of packs. Price is what that item cost in total.</p>
             <div class="trip-actions">
@@ -782,6 +784,9 @@
             <b>+ Add an item that isn't food</b> with a name, amount, unit and price. They only count
             towards the cart's total, so it matches the receipt: they're not added to your Foods or
             your stock. A cart can even be only other items.</p>
+          <p>🎁 <b>A gift</b>: someone gave you the food? Tick <b>It was a gift</b> and the prices,
+            discount and delivery fee go away: the cart costs nothing, and its foods show 🎁 in
+            the stock instead of a price. Untick it to bring back what you'd typed.</p>
           <p>🏷️ <b>Discount</b>: type an amount (<code>$2.50</code>) or a percentage
             (<code>10%</code>), taken off the cart's subtotal. The form shows the subtotal, the
             discount and the total as you go. The discount can't be more than the subtotal.</p>

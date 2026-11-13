@@ -393,11 +393,21 @@ class CartIn(_In):
     delivery_fee: float | None = Field(
         None, ge=0, description="Added to the total, after the discount; null = none"
     )
+    gift: bool = Field(
+        False, description="Nothing in it was paid for: no prices, discount or delivery fee"
+    )
 
     @model_validator(mode="after")
     def _check(self) -> CartIn:
         if not self.items and not self.extras:
             raise ValueError("a cart needs at least one item")
+        if self.gift and (
+            any(it.price is not None for it in [*self.items, *self.extras])
+            or self.discount is not None
+            or self.discount_pct is not None
+            or self.delivery_fee is not None
+        ):
+            raise ValueError("a gift has no prices, discount or delivery fee")
         if self.discount is not None and self.discount_pct is not None:
             raise ValueError("give the discount as an amount or as a percentage, not both")
         for it in self.items:
@@ -424,6 +434,7 @@ class Lot(BaseModel):
     expires_on: dt.date | None = None
     price: float | None = None
     store: str = ""
+    gift: bool = Field(False, description="From a cart that was a gift")
 
 
 class StockPlace(BaseModel):
@@ -479,8 +490,10 @@ class Cart(BaseModel):
     discount_pct: float | None = Field(description="The discount, if given as a percentage")
     discount_amount: float = Field(0, description="What the discount takes off")
     delivery_fee: float | None = None
+    gift: bool = Field(False, description="Nothing in it was paid for")
     total_price: float | None = Field(
         description="Subtotal minus the discount plus the delivery fee; null if no prices"
+        " (0 for a gift)"
     )
 
 

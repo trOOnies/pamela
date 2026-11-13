@@ -60,7 +60,8 @@ included. Ctrl+C in the terminal still works too.
   price. A cart can also hold other items that aren't food (name, amount, unit, price):
   they only count towards its total, never in Foods or the stock. A discount (an amount
   or a %) comes off the subtotal, and an optional delivery fee is added after it, so the
-  total matches the receipt. Carts can be edited (day, store, discount, delivery fee, items
+  total matches the receipt. A cart can be marked as a gift: then it has no prices, discount
+  or delivery fee, and costs nothing. Carts can be edited (day, store, discount, delivery fee, items
   added, changed or removed) or deleted.
   Logging a catalog food in the Day tab takes it out of the stock, soonest expiry first;
   editing or deleting the entry (or clearing the day) puts it back. A cart entered late

@@ -1780,7 +1780,7 @@ function renderGroceries() {
   const soon = lots.filter((l) => expiryClass(l.expires_on) === "soon").length;
   const past = lots.filter((l) => expiryClass(l.expires_on) === "past").length;
   const since = addDays(todayISO(), -29);
-  const recent = g.carts.filter((c) => c.bought_on >= since && c.total_price != null);
+  const recent = g.carts.filter((c) => c.bought_on >= since && c.total_price != null && !c.gift);
   const tile = (k, v, cls = "", title = "") => `<div class="tile ${cls}"${title ? ` title="${title}"` : ""}><div class="k">${k}</div><div class="v">${v}</div></div>`;
   $("#groc-tiles").innerHTML =
     tile("Foods in stock", fmt(inStock.length)) +
@@ -1859,7 +1859,7 @@ function renderStock(items) {
         <td><button type="button" class="link-btn lot-cart" data-edit-cart="${l.cart_id}" title="Open this cart">🛒 ${esc(cartName(l))}</button></td>
         <td class="n">${l.remaining < l.quantity ? `${fmtQty(l.remaining)} <small>of ${fmtQty(l.quantity)}</small>` : fmtQty(l.quantity)} <small>${esc(it.unit)}</small></td>
         <td>${expiryBadge(l.expires_on)}</td>
-        <td class="n">${fmtMoney(l.price)}</td>
+        <td class="n">${l.gift ? `<span class="gift-tag" title="A gift">🎁</span>` : fmtMoney(l.price)}</td>
         <td class="act"><button type="button" class="row-btn expire-btn" data-expire-lot="${l.id}" title="It expired or went off">🗑️ Expired</button></td>
       </tr>`
         )
@@ -1929,6 +1929,7 @@ function cartCounts(foods, extras) {
 }
 /** " · 17.63 (−1.96 discount, +2.00 delivery)" for a saved cart. */
 function cartMoney(c) {
+  if (c.gift) return ` · <span class="gift-tag">🎁 Gift</span>`;
   if (c.total_price == null) return "";
   const bits = [];
   if (c.discount_amount) bits.push(`−${fmtMoney(c.discount_amount)}${c.discount_pct != null ? `, ${fmt(c.discount_pct, 2)}%` : ""} discount`);
@@ -2054,6 +2055,7 @@ function tripInput(e) {
 }
 /** Subtotal, discount and total of the cart in the form. */
 function tripMoney() {
+  if (tripGift()) return { gift: true, priced: false, subtotal: 0, d: {}, off: 0, fee: null, total: 0 };
   const prices = [...state.trip, ...state.tripExtras].map((it) => num(it.price)).filter((p) => p != null);
   const subtotal = prices.reduce((a, p) => a + p, 0);
   const d = parseDiscount($("#trip-discount").value);
@@ -2062,7 +2064,15 @@ function tripMoney() {
   return { priced: prices.length > 0, subtotal, d, off, fee, total: subtotal - off + (fee ?? 0) };
 }
 
+/** Is the cart in the form a gift? Its prices stay in the form, hidden, in case it's unticked. */
+function tripGift() {
+  return $("#trip-gift").checked;
+}
+
 function renderTripTotal() {
+  const gift = tripGift();
+  $("#trip-form").classList.toggle("gift", gift);
+  $("#trip-gift-note").hidden = !gift;
   $("#trip-total").textContent = cartCounts(state.trip.length, state.tripExtras.length);
   const m = tripMoney();
   const input = $("#trip-discount");
@@ -2137,11 +2147,12 @@ async function submitTrip(ev) {
   const body = {
     bought_on: v.bought_on,
     store: v.store.trim(),
-    items: state.trip.map((it) => ({ id: it.id, food_id: it.food.id, quantity: it.quantity, expires_on: it.expires_on || null, price: num(it.price) })),
-    extras: state.tripExtras.map((x) => ({ name: x.name.trim(), quantity: x.quantity, unit: x.unit.trim(), price: num(x.price) })),
+    items: state.trip.map((it) => ({ id: it.id, food_id: it.food.id, quantity: it.quantity, expires_on: it.expires_on || null, price: money.gift ? null : num(it.price) })),
+    extras: state.tripExtras.map((x) => ({ name: x.name.trim(), quantity: x.quantity, unit: x.unit.trim(), price: money.gift ? null : num(x.price) })),
     discount: money.d.discount ?? null,
     discount_pct: money.d.discount_pct ?? null,
     delivery_fee: money.fee,
+    gift: !!money.gift,
   };
   const editing = state.editingCartId;
   try {
@@ -2165,6 +2176,7 @@ function resetCartForm() {
   form.elements.store.value = "";
   $("#trip-discount").value = "";
   $("#trip-fee").value = "";
+  $("#trip-gift").checked = false;
   $("#trip-day").value = todayISO();
   $("#trip-h").textContent = "🛒 New cart";
   $("#cart-cancel").hidden = true;
@@ -2201,6 +2213,7 @@ async function editCart(id) {
   form.elements.store.value = c.store;
   $("#trip-discount").value = c.discount_pct != null ? `${c.discount_pct}%` : c.discount ?? "";
   $("#trip-fee").value = c.delivery_fee ?? "";
+  $("#trip-gift").checked = !!c.gift;
   $("#trip-day").value = c.bought_on;
   $("#trip-h").textContent = `✏️ Edit cart · ${fmtDayWd(c.bought_on)}`;
   $("#cart-cancel").hidden = false;
@@ -2224,6 +2237,7 @@ async function copyCart(id) {
     discount: c.discount ?? null,
     discount_pct: c.discount_pct ?? null,
     delivery_fee: c.delivery_fee ?? null,
+    gift: !!c.gift,
   };
   try {
     const cart = await api("POST", "/groceries/carts", body);
@@ -4225,6 +4239,7 @@ function wire() {
   });
   $("#trip-discount").addEventListener("input", renderTripTotal);
   $("#trip-fee").addEventListener("input", renderTripTotal);
+  $("#trip-gift").addEventListener("change", renderTripTotal);
   $("#trip-fee").addEventListener("keydown", (e) => e.key === "Enter" && e.preventDefault());
   $("#trip-discount").addEventListener("keydown", (e) => e.key === "Enter" && e.preventDefault());
   $("#cart-delete").addEventListener("click", () => deleteCart(state.editingCartId));

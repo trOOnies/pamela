@@ -904,6 +904,12 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .trip-items input[type="date"] { height: 30px; width: 150px; }
 .trip-items .price-input { width: 76px; height: 30px; text-align: right; }
 .trip-form > .btn { align-self: flex-start; }
+/* a gift cart has no money: hide the price column, discount and delivery fee */
+.trip-form.gift .trip-items th:nth-last-child(2),
+.trip-form.gift .trip-items td:nth-last-child(2):not([colspan]),
+.trip-form.gift .trip-money { display: none; }
+.gift-note { margin: 0; color: var(--text-2); }
+.gift-tag { white-space: nowrap; }
 
 .tile.warn { border-color: color-mix(in srgb, var(--warn) 50%, var(--border)); }
 .tile.warn .v { color: var(--warn); }

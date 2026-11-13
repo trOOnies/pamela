@@ -406,3 +406,38 @@ def test_cart_items_carry_the_food_group(client, oats):
     buy(client, oats["id"], 500)
     cart = client.get("/api/groceries").json()["carts"][0]
     assert cart["items"][0]["food_group"] == "carbs"
+
+
+def test_gift_cart(client, oats):
+    body = {
+        "bought_on": D[2],
+        "gift": True,
+        "items": [{"food_id": oats["id"], "quantity": 500}],
+        "extras": [{"name": "Bag"}],
+    }
+    r = client.post("/api/groceries/carts", json=body)
+    assert r.status_code == 201, r.text
+    cart = r.json()
+    assert cart["gift"] is True
+    assert cart["total_price"] == 0 and cart["subtotal"] is None
+    assert [lot["gift"] for lot in stock(client)[oats["id"]]["lots"]] == [True]
+    # a gift has nothing to pay
+    for extra in (
+        {"items": [{"food_id": oats["id"], "quantity": 500, "price": 1}]},
+        {"discount": 1},
+        {"discount_pct": 10},
+        {"delivery_fee": 0},
+    ):
+        r = client.post("/api/groceries/carts", json=body | extra)
+        assert r.status_code == 422, extra
+    # unmarked, it takes prices again
+    item = {"id": cart["items"][0]["id"], "food_id": oats["id"], "quantity": 500, "price": 3}
+    r = client.put(
+        f"/api/groceries/carts/{cart['id']}",
+        json=body | {"gift": False, "items": [item]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["gift"] is False and r.json()["total_price"] == 3
+    # a normal cart isn't a gift
+    lot = buy(client, oats["id"], 100)
+    assert lot["gift"] is False
