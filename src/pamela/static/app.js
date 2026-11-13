@@ -1573,7 +1573,15 @@ async function lookupBarcode() {
       );
       input.select(); // the next barcode replaces this one
     } else if (r.source === "openfoodfacts") {
-      if (state.editingFoodId && !confirm("Replace the values in the form with the ones from Open Food Facts?")) {
+      if (
+        state.editingFoodId &&
+        !(await confirmDialog({
+          title: "🔎 Replace the form's values?",
+          body: `<p>Open Food Facts has values for this barcode. Replace the ones in the form with them? You can still check them before saving.</p>`,
+          ok: "Replace",
+          danger: false,
+        }))
+      ) {
         return setEanStatus("Kept your values.");
       }
       const keepName = $("#food-form").elements.name.value.trim();
@@ -1626,7 +1634,15 @@ async function submitFood(ev) {
 
 async function deleteFood(id) {
   const f = state.foods.find((x) => x.id === id);
-  if (!f || !confirm(`Delete “${f.name}”? Past log entries keep their values. It's also removed from saved meals and groceries.`)) return;
+  if (!f) return;
+  const ok = await confirmDialog({
+    title: "🗑️ Delete this food?",
+    body: `<p><b>${esc(f.name)}</b>${f.brand ? ` <span class="brand-tag">${esc(f.brand)}</span>` : ""} leaves your Foods.
+      Days you already logged it on keep their values. It's also removed from saved meals and groceries.</p>
+      <p>This can't be undone.</p>`,
+    ok: "Delete food",
+  });
+  if (!ok) return;
   try {
     await api("DELETE", `/foods/${id}`);
     if (state.editingFoodId === id) resetFoodForm();
@@ -2089,11 +2105,20 @@ function resetCartForm() {
   if (state.groceries) renderCarts();
 }
 
-function editCart(id) {
+async function editCart(id) {
   const c = state.groceries?.carts.find((x) => x.id === id);
   if (!c) return;
   const filling = state.trip.length || state.tripExtras.length;
-  if (filling && !state.editingCartId && !confirm("Drop the new cart you were filling in, to edit this one?")) return;
+  if (
+    filling &&
+    !state.editingCartId &&
+    !(await confirmDialog({
+      title: "🛒 Drop the new cart?",
+      body: `<p>You were filling in a new cart (${esc(cartCounts(state.trip.length, state.tripExtras.length))}). Drop it to edit the cart of <b>${esc(cartName(c))}</b>?</p>`,
+      ok: "Drop it and edit",
+    }))
+  )
+    return;
   state.editingCartId = id;
   state.trip = c.items.map((it) => ({
     id: it.id,
@@ -2145,8 +2170,14 @@ async function copyCart(id) {
 async function deleteCart(id) {
   const c = state.groceries?.carts.find((x) => x.id === id);
   if (!c) return;
-  const msg = `Delete the cart of ${cartName(c)} (${cartCounts(c.items.length, c.extras.length)})?\n\nWhat's left of it leaves your stock. Logged days stay as they are. It can't be undone.`;
-  if (!confirm(msg)) return;
+  const ok = await confirmDialog({
+    title: "🗑️ Delete this cart?",
+    body: `<p>The cart of <b>${esc(cartName(c))}</b> (${esc(cartCounts(c.items.length, c.extras.length))}).
+      What's left of it leaves your stock. Logged days stay as they are.</p>
+      <p>This can't be undone.</p>`,
+    ok: "Delete cart",
+  });
+  if (!ok) return;
   try {
     await api("DELETE", `/groceries/carts/${id}`);
     if (state.editingCartId === id) resetCartForm();
@@ -2332,7 +2363,14 @@ async function submitSavedMeal(ev) {
 
 async function deleteSavedMeal(id) {
   const sm = state.savedMeals.find((x) => x.id === id);
-  if (!sm || !confirm(`Delete the saved meal “${sm.name}”? Days you already logged with it don't change.`)) return;
+  if (!sm) return;
+  const ok = await confirmDialog({
+    title: "🗑️ Delete this saved meal?",
+    body: `<p><b>${esc(sm.name)}</b> leaves your saved meals. Days you already logged with it don't change.</p>
+      <p>This can't be undone.</p>`,
+    ok: "Delete saved meal",
+  });
+  if (!ok) return;
   try {
     await api("DELETE", `/saved-meals/${id}`);
     if (state.editingSavedMealId === id) resetSmForm();
@@ -2562,7 +2600,14 @@ async function submitType(ev) {
 
 async function deleteType(id) {
   const t = state.activityTypes.find((x) => x.id === id);
-  if (!t || !confirm(`Delete “${t.name}”? Activities already logged with it keep their name and kcal.`)) return;
+  if (!t) return;
+  const ok = await confirmDialog({
+    title: "🗑️ Delete this exercise type?",
+    body: `<p><b>${esc(t.name)}</b> leaves your exercise types. Activities already logged with it keep their name and kcal.</p>
+      <p>This can't be undone.</p>`,
+    ok: "Delete type",
+  });
+  if (!ok) return;
   try {
     await api("DELETE", `/activity-types/${id}`);
     if (state.editingTypeId === id) resetTypeForm();
@@ -2705,10 +2750,12 @@ async function saveTarget() {
   const reset = ed.mode === "single" && t.periods.length > 1;
   if (
     reset &&
-    !confirm(
-      `Reset the ${t.label} target?\n\nIts ${t.periods.length} custom periods will be deleted, and ` +
-        `${fmtTarget(t, periods[0].value)} will be the target for every day, past and future.`
-    )
+    !(await confirmDialog({
+      title: `🎯 Reset the ${t.label} target?`,
+      body: `<p>Its ${t.periods.length} custom periods will be deleted, and <b>${esc(fmtTarget(t, periods[0].value))}</b>
+        will be the target for every day, past and future.</p>`,
+      ok: "Reset target",
+    }))
   ) {
     return;
   }
@@ -3194,7 +3241,12 @@ async function clearDay() {
   if (d.note || $("#notes-input").value.trim()) parts.push("the note");
   if (!parts.length) return toast("Nothing is logged on this day");
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
-  if (!confirm(`Clear ${fmtDayWd(d.day)}?\n\nThis deletes ${list}, as if the day had never been filled in. It can't be undone.`)) return;
+  const ok = await confirmDialog({
+    title: `🗑️ Clear ${fmtDayWd(d.day)}?`,
+    body: `<p>This deletes ${esc(list)}, as if the day had never been filled in.</p><p>This can't be undone.</p>`,
+    ok: "Clear day",
+  });
+  if (!ok) return;
   const day = d.day;
   try {
     await settleSaves(true);
@@ -3275,6 +3327,28 @@ async function runWipe() {
   }
 }
 
+// --- confirm ------------------------------------------------------------------
+
+/** Pamela's own "Are you sure?" pop-up. ``body`` is HTML (escape what goes in it).
+ * Resolves true if confirmed, false if cancelled (Cancel, Esc or the backdrop). */
+function confirmDialog({ title, body, ok = "Delete", danger = true }) {
+  const dlg = $("#confirm-dialog");
+  $("#confirm-h").textContent = title;
+  $("#confirm-body").innerHTML = body;
+  $("#confirm-ok").textContent = ok;
+  $("#confirm-ok").className = `btn ${danger ? "danger" : "primary"}`;
+  return new Promise((resolve) => {
+    const onClose = () => {
+      dlg.removeEventListener("close", onClose);
+      resolve(dlg.returnValue === "ok");
+    };
+    dlg.returnValue = "";
+    dlg.addEventListener("close", onClose);
+    dlg.showModal();
+    $("#confirm-cancel").focus();
+  });
+}
+
 // --- exit ("Save & close") ------------------------------------------------------
 
 function openExitDialog() {
@@ -3327,6 +3401,8 @@ function wire() {
   labelThemeButton();
   $("#exit-cancel").addEventListener("click", () => $("#exit-dialog").close());
   $("#exit-confirm").addEventListener("click", saveAndClose);
+  $("#confirm-cancel").addEventListener("click", () => $("#confirm-dialog").close());
+  $("#confirm-ok").addEventListener("click", () => $("#confirm-dialog").close("ok"));
   wireHelpIndex();
 
   // top bar
@@ -3615,12 +3691,23 @@ function wire() {
       $("#trip-search").focus();
     }
   });
-  $("#trip-body").addEventListener("click", (e) => {
+  $("#trip-body").addEventListener("click", async (e) => {
     const del = e.target.closest("[data-trip-del]");
     if (!del) return;
     const it = state.trip[Number(del.dataset.tripDel)];
-    if (it.used > 1e-6 && !confirm(`Remove ${it.food.name} from this cart? ${fmtQty(it.used)} ${it.food.unit} of it was already eaten or thrown out; those meals will take it from other carts, if there's any.`)) return;
-    state.trip.splice(Number(del.dataset.tripDel), 1);
+    if (
+      it.used > 1e-6 &&
+      !(await confirmDialog({
+        title: "Remove from this cart?",
+        body: `<p><b>${esc(fmtQty(it.used))} ${esc(it.food.unit)}</b> of <b>${esc(it.food.name)}</b> was already eaten or thrown out.
+          Those meals will take it from other carts, if there's any.</p>`,
+        ok: "Remove",
+      }))
+    )
+      return;
+    const i = state.trip.indexOf(it);
+    if (i < 0) return;
+    state.trip.splice(i, 1);
     renderTrip();
   });
   $("#cart-cancel").addEventListener("click", resetCartForm);
