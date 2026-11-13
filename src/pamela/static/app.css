@@ -227,13 +227,23 @@ main { padding: 20px 24px 24px; }
   display: grid; gap: var(--gap); align-items: start;
   grid-template-columns: minmax(360px, 400px) minmax(0, 1fr) minmax(360px, 440px);
 }
-/* left: summary + check-in; middle: food; right: activity + notes */
+/* left: summary; middle: food; right: activity + notes; the check-in spans the bottom */
 .day-main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
 /* keep the left column in view while scrolling a long food log, if it fits */
 @media (min-width: 1400px) and (min-height: 1000px) { .day-main { position: sticky; top: 76px; } }
 /* ... single column with a horizontal summary at half width */
+.day-grid > .checkin { grid-column: 1 / -1; }
+@media (min-width: 1400px) {
+  /* steps, sleep & body | mood | feelings */
+  .checkin-body { display: grid; gap: 0 40px; align-items: start; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr); }
+  .checkin-body .mini-label { margin-top: 0; }
+}
 @media (max-width: 1399px) {
   .day-grid { grid-template-columns: minmax(0, 1fr); }
+  /* one column: the check-in stays right under the summary */
+  .day-grid > .checkin { order: 1; }
+  .day-grid > .food-log { order: 2; }
+  .day-grid > .day-side { order: 3; }
   .summary { position: static; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 1.6fr); gap: 8px 32px; }
   .summary .sum-macros { grid-row: span 2; }
 }
@@ -683,7 +693,7 @@ kbd {
 .ico { display: block; }
 
 /* --- targets ------------------------------------------------------------ */
-.targets-card { grid-column: 1 / -1; }
+/* beside the profile at full width (one column at half screen) */
 .targets-card .card-head { flex-wrap: wrap; justify-content: flex-start; }
 .targets-table td.periods { color: var(--text-2); font-size: .88rem; }
 .targets-table .period { display: inline-block; margin-right: 14px; white-space: nowrap; }
@@ -862,13 +872,25 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .closed-card img { display: block; margin: 0 auto 8px; }
 
 /* --- groceries -------------------------------------------------------------- */
-/* the purchase form on the left, the stock on the right; one column at half screen */
+/* left: the cart form, then the carts; right: tiles, stock, ran out, expired */
 .groceries-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: minmax(600px, 720px) minmax(0, 1fr); }
-@media (max-width: 1299px) { .groceries-grid { grid-template-columns: minmax(0, 1fr); } }
-.groceries-main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
-.groc-lower { display: grid; gap: var(--gap); align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 1599px) and (min-width: 1300px), (max-width: 799px) { .groc-lower { grid-template-columns: minmax(0, 1fr); } }
-@media (min-width: 1400px) and (min-height: 1000px) { .trip-card { position: sticky; top: 76px; } }
+.groc-left, .groceries-main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+/* half screen: form, tiles and stock full width, then carts beside ran out & expired */
+@media (max-width: 1299px) {
+  .groceries-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "trip trip" "tiles tiles" "stock stock" "carts side";
+  }
+  .groc-left, .groceries-main { display: contents; }
+  .trip-card { grid-area: trip; }
+  #groc-tiles { grid-area: tiles; }
+  .stock-card { grid-area: stock; }
+  .carts-card { grid-area: carts; }
+  .groc-side { grid-area: side; }
+}
+@media (max-width: 799px) {
+  .groceries-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "trip" "tiles" "stock" "carts" "side"; }
+}
 
 .trip-form { display: flex; flex-direction: column; gap: 12px; }
 .trip-fields { display: flex; flex-wrap: wrap; gap: 10px; }

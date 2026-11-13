@@ -42,41 +42,6 @@
     <section id="view-day" class="view day-grid" hidden>
       <div class="day-main">
         <aside class="card summary" id="summary" aria-label="Daily summary"></aside>
-
-        <section class="card checkin" aria-labelledby="checkin-h">
-          <div class="card-head">
-            <h2 id="checkin-h">Check-in</h2>
-            <span class="status-note" id="checkin-status" aria-live="polite"></span>
-          </div>
-          <div class="metric">
-            <div class="field num"><label for="steps-input">Steps</label>
-              <span class="add-wrap"><input type="number" id="steps-input" min="0" max="200000" step="1" inputmode="numeric" placeholder="–"
-                title="Enter or clicking away sets the day's total; + adds to it"><button type="button" class="add-btn" data-add="steps"
-                title="Add to the day's total" aria-label="Add these steps to the day's total">+</button></span></div>
-            <div class="metric-meter"><div class="meter" style="--c:var(--c-steps)"><span id="steps-bar"></span></div><span class="metric-sub" id="steps-sub"></span></div>
-          </div>
-          <p class="steps-reminder" id="steps-reminder" role="status" hidden></p>
-          <div class="metric">
-            <div class="field num"><label for="sleep-input">Sleep</label>
-              <span class="add-wrap"><input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal"
-                title="Hours, as 7:30, 7.5 or 7h30. Enter or clicking away sets the day's total; + adds to it (e.g. a nap)"><button type="button" class="add-btn" data-add="sleep"
-                title="Add to the day's total (e.g. a nap)" aria-label="Add this sleep to the day's total">+</button></span></div>
-            <div class="metric-meter"><div class="meter" style="--c:var(--c-sleep)"><span id="sleep-bar"></span></div><span class="metric-sub" id="sleep-sub"></span></div>
-          </div>
-          <div class="body-row">
-            <label class="field num"><span>⚖️ Weight (kg)</span>
-              <input type="text" id="weight-input" inputmode="decimal" maxlength="6" placeholder="–" title="Kilograms, like 72.5"></label>
-            <label class="field num"><span>Body fat (%)</span>
-              <input type="text" id="bodyfat-input" inputmode="decimal" maxlength="5" placeholder="–" title="Percent, like 18.5"></label>
-            <span class="body-sub" id="body-sub"></span>
-          </div>
-          <div class="mood-block">
-            <span class="mini-label" id="mood-label">Mood</span>
-            <div class="mood-scale" id="mood-scale" role="radiogroup" aria-labelledby="mood-label"></div>
-            <span class="mini-label" id="feelings-label">Feelings <small>(any that apply)</small></span>
-            <div class="feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
-          </div>
-        </section>
       </div>
 
       <section class="card food-log" aria-labelledby="food-h">
@@ -205,6 +170,47 @@
           <button type="button" class="btn danger-outline" id="clear-day">🗑️ Clear this day</button>
         </div>
       </div>
+
+      <section class="card checkin" aria-labelledby="checkin-h">
+        <div class="card-head">
+          <h2 id="checkin-h">Check-in</h2>
+          <span class="status-note" id="checkin-status" aria-live="polite"></span>
+        </div>
+        <div class="checkin-body">
+          <div class="checkin-metrics">
+            <div class="metric">
+              <div class="field num"><label for="steps-input">Steps</label>
+                <span class="add-wrap"><input type="number" id="steps-input" min="0" max="200000" step="1" inputmode="numeric" placeholder="–"
+                  title="Enter or clicking away sets the day's total; + adds to it"><button type="button" class="add-btn" data-add="steps"
+                  title="Add to the day's total" aria-label="Add these steps to the day's total">+</button></span></div>
+              <div class="metric-meter"><div class="meter" style="--c:var(--c-steps)"><span id="steps-bar"></span></div><span class="metric-sub" id="steps-sub"></span></div>
+            </div>
+            <p class="steps-reminder" id="steps-reminder" role="status" hidden></p>
+            <div class="metric">
+              <div class="field num"><label for="sleep-input">Sleep</label>
+                <span class="add-wrap"><input type="text" id="sleep-input" placeholder="h:mm" inputmode="decimal"
+                  title="Hours, as 7:30, 7.5 or 7h30. Enter or clicking away sets the day's total; + adds to it (e.g. a nap)"><button type="button" class="add-btn" data-add="sleep"
+                  title="Add to the day's total (e.g. a nap)" aria-label="Add this sleep to the day's total">+</button></span></div>
+              <div class="metric-meter"><div class="meter" style="--c:var(--c-sleep)"><span id="sleep-bar"></span></div><span class="metric-sub" id="sleep-sub"></span></div>
+            </div>
+            <div class="body-row">
+              <label class="field num"><span>⚖️ Weight (kg)</span>
+                <input type="text" id="weight-input" inputmode="decimal" maxlength="6" placeholder="–" title="Kilograms, like 72.5"></label>
+              <label class="field num"><span>Body fat (%)</span>
+                <input type="text" id="bodyfat-input" inputmode="decimal" maxlength="5" placeholder="–" title="Percent, like 18.5"></label>
+              <span class="body-sub" id="body-sub"></span>
+            </div>
+          </div>
+          <div class="mood-block">
+            <span class="mini-label" id="mood-label">Mood</span>
+            <div class="mood-scale" id="mood-scale" role="radiogroup" aria-labelledby="mood-label"></div>
+          </div>
+          <div class="feelings-block">
+            <span class="mini-label" id="feelings-label">Feelings <small>(any that apply)</small></span>
+            <div class="feelings" id="feelings" role="group" aria-labelledby="feelings-label"></div>
+          </div>
+        </div>
+      </section>
     </section>
 
     <!-- Foods ----------------------------------------------------------- -->
@@ -272,62 +278,68 @@
 
     <!-- Groceries ------------------------------------------------------- -->
     <section id="view-groceries" class="view groceries-grid" hidden>
-      <section class="card trip-card" aria-labelledby="trip-h">
-        <div class="card-head">
-          <h2 id="trip-h">🛒 New cart</h2>
-          <button type="button" class="btn ghost" id="cart-cancel" hidden>Cancel edit</button>
-        </div>
-        <form id="trip-form" class="trip-form" autocomplete="off" novalidate>
-          <div class="trip-fields">
-            <label class="field"><span>Bought on</span><input type="date" name="bought_on" id="trip-day" required></label>
-            <label class="field grow"><span>Store <small>(optional)</small></span>
-              <input type="text" name="store" maxlength="100" list="store-options" placeholder="e.g. Corner shop"></label>
-            <datalist id="store-options"></datalist>
+      <div class="groc-left">
+        <section class="card trip-card" aria-labelledby="trip-h">
+          <div class="card-head">
+            <h2 id="trip-h">🛒 New cart</h2>
+            <button type="button" class="btn ghost" id="cart-cancel" hidden>Cancel edit</button>
           </div>
-          <div class="table-wrap">
-            <table class="draft-table trip-items">
-              <thead><tr><th>Food</th><th class="n">Amount</th><th>Expires <small>(optional)</small></th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
-              <tbody id="trip-body"></tbody>
-            </table>
-          </div>
-          <div class="combo">
-            <input type="search" id="trip-search" placeholder="+ Add a food you bought…"
-                   role="combobox" aria-expanded="false" aria-controls="trip-suggest"
-                   aria-autocomplete="list" aria-label="Add a food you bought">
-            <ul id="trip-suggest" class="suggest" role="listbox" hidden></ul>
-          </div>
-          <div class="extras-block">
-            <h3 id="extras-h">Other items <small>(not food: they only count towards the total)</small></h3>
-            <div class="table-wrap" id="extras-wrap" hidden>
-              <table class="draft-table trip-items extra-items" aria-labelledby="extras-h">
-                <thead><tr><th>Item</th><th class="n">Amount</th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
-                <tbody id="extra-body"></tbody>
+          <form id="trip-form" class="trip-form" autocomplete="off" novalidate>
+            <div class="trip-fields">
+              <label class="field"><span>Bought on</span><input type="date" name="bought_on" id="trip-day" required></label>
+              <label class="field grow"><span>Store <small>(optional)</small></span>
+                <input type="text" name="store" maxlength="100" list="store-options" placeholder="e.g. Corner shop"></label>
+              <datalist id="store-options"></datalist>
+            </div>
+            <div class="table-wrap">
+              <table class="draft-table trip-items">
+                <thead><tr><th>Food</th><th class="n">Amount</th><th>Expires <small>(optional)</small></th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+                <tbody id="trip-body"></tbody>
               </table>
             </div>
-            <button type="button" class="btn ghost extra-add" id="extra-add">+ Add an item that isn't food</button>
-          </div>
-          <div class="trip-money">
-            <label class="field discount-field"><span>Discount <small>(amount or %)</small></span>
-              <input type="text" id="trip-discount" name="discount" inputmode="decimal" maxlength="12" placeholder="e.g. 2.50 or 10%"
-                     title="Taken off the subtotal: type an amount (2.50) or a percentage (10%)"></label>
-            <label class="field fee-field"><span>Delivery fee <small>(optional)</small></span>
-              <input type="number" id="trip-fee" name="delivery_fee" min="0" step="any" inputmode="decimal" placeholder="–"
-                     title="Added to the total, after the discount"></label>
-            <dl class="trip-sum" id="trip-sum" aria-live="polite"></dl>
-          </div>
-          <p class="hint">One cart per trip to the shops. Amounts are in each food's unit; foods with a
-            package size also take a number of packs. Price is what that item cost in total.</p>
-          <div class="trip-actions">
-            <button class="btn primary" type="submit" id="trip-submit">Add cart</button>
-            <span class="trip-total" id="trip-total" aria-live="polite"></span>
-            <button type="button" class="btn danger-outline" id="cart-delete" hidden>Delete cart</button>
-          </div>
-        </form>
-      </section>
+            <div class="combo">
+              <input type="search" id="trip-search" placeholder="+ Add a food you bought…"
+                     role="combobox" aria-expanded="false" aria-controls="trip-suggest"
+                     aria-autocomplete="list" aria-label="Add a food you bought">
+              <ul id="trip-suggest" class="suggest" role="listbox" hidden></ul>
+            </div>
+            <div class="extras-block">
+              <h3 id="extras-h">Other items <small>(not food: they only count towards the total)</small></h3>
+              <div class="table-wrap" id="extras-wrap" hidden>
+                <table class="draft-table trip-items extra-items" aria-labelledby="extras-h">
+                  <thead><tr><th>Item</th><th class="n">Amount</th><th class="n">Price</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+                  <tbody id="extra-body"></tbody>
+                </table>
+              </div>
+              <button type="button" class="btn ghost extra-add" id="extra-add">+ Add an item that isn't food</button>
+            </div>
+            <div class="trip-money">
+              <label class="field discount-field"><span>Discount <small>(amount or %)</small></span>
+                <input type="text" id="trip-discount" name="discount" inputmode="decimal" maxlength="12" placeholder="e.g. 2.50 or 10%"
+                       title="Taken off the subtotal: type an amount (2.50) or a percentage (10%)"></label>
+              <label class="field fee-field"><span>Delivery fee <small>(optional)</small></span>
+                <input type="number" id="trip-fee" name="delivery_fee" min="0" step="any" inputmode="decimal" placeholder="–"
+                       title="Added to the total, after the discount"></label>
+              <dl class="trip-sum" id="trip-sum" aria-live="polite"></dl>
+            </div>
+            <p class="hint">One cart per trip to the shops. Amounts are in each food's unit; foods with a
+              package size also take a number of packs. Price is what that item cost in total.</p>
+            <div class="trip-actions">
+              <button class="btn primary" type="submit" id="trip-submit">Add cart</button>
+              <span class="trip-total" id="trip-total" aria-live="polite"></span>
+              <button type="button" class="btn danger-outline" id="cart-delete" hidden>Delete cart</button>
+            </div>
+          </form>
+        </section>
+        <section class="card carts-card" aria-labelledby="carts-h">
+          <div class="card-head"><h2 id="carts-h">Carts <span class="count" id="carts-count"></span></h2></div>
+          <div class="cart-list" id="cart-list"></div>
+        </section>
+      </div>
 
       <div class="groceries-main">
         <div class="tiles" id="groc-tiles"></div>
-        <section class="card" aria-labelledby="stock-h">
+        <section class="card stock-card" aria-labelledby="stock-h">
           <div class="card-head">
             <h2 id="stock-h">In stock <span class="count" id="stock-count"></span></h2>
             <div class="filters">
@@ -340,21 +352,15 @@
           </div>
           <div id="stock-groups" class="stock-groups"></div>
         </section>
-        <div class="groc-lower">
-          <section class="card" aria-labelledby="carts-h">
-            <div class="card-head"><h2 id="carts-h">Carts <span class="count" id="carts-count"></span></h2></div>
-            <div class="cart-list" id="cart-list"></div>
+        <div class="groc-side">
+          <section class="card" aria-labelledby="ranout-h">
+            <div class="card-head"><h2 id="ranout-h">Ran out <span class="count" id="ranout-count"></span></h2></div>
+            <ul class="ranout-list" id="ranout-list"></ul>
           </section>
-          <div class="groc-side">
-            <section class="card" aria-labelledby="ranout-h">
-              <div class="card-head"><h2 id="ranout-h">Ran out <span class="count" id="ranout-count"></span></h2></div>
-              <ul class="ranout-list" id="ranout-list"></ul>
-            </section>
-            <section class="card" aria-labelledby="groc-exp-h">
-              <div class="card-head"><h2 id="groc-exp-h">Expired <small>(last 30 days)</small></h2></div>
-              <ul class="groc-history" id="groc-expired"></ul>
-            </section>
-          </div>
+          <section class="card" aria-labelledby="groc-exp-h">
+            <div class="card-head"><h2 id="groc-exp-h">Expired <small>(last 30 days)</small></h2></div>
+            <ul class="groc-history" id="groc-expired"></ul>
+          </section>
         </div>
       </div>
     </section>
