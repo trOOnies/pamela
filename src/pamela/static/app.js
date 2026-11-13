@@ -1351,6 +1351,16 @@ async function loadFoods() {
   }
 }
 
+/** A food as the catalog shows it: values per 100 g / 100 ml whatever basis it was
+ * saved with. Foods in any other unit (u, whole, ...) keep their own basis. */
+function per100(f) {
+  if (!["g", "ml"].includes(f.unit.toLowerCase()) || !(f.basis_qty > 0) || f.basis_qty === 100) return f;
+  const k = 100 / f.basis_qty;
+  const out = { ...f, basis_qty: 100, kcal: f.kcal == null ? null : f.kcal * k };
+  for (const m of MACROS) out[m.key] = f[m.key] == null ? null : f[m.key] * k;
+  return out;
+}
+
 function renderFoods() {
   const words = $("#foods-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
   const tags = [...state.foodTagFilter];
@@ -1358,7 +1368,7 @@ function renderFoods() {
   const rows = state.foods.filter((f) => {
     const hay = `${f.name} ${f.brand} ${f.ean ?? ""}`.toLowerCase();
     return words.every((w) => hay.includes(w)) && tags.every((t) => f[t]) && (!group || f.food_group === group);
-  });
+  }).map(per100);
   const missing = state.foods.filter((f) => f.kcal == null).length;
   $("#foods-count").textContent =
     (rows.length === state.foods.length ? `(${rows.length})` : `(${rows.length} of ${state.foods.length})`) +
