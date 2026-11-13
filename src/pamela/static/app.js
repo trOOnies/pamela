@@ -14,6 +14,7 @@ const MACROS = [
 const MOOD_EMOJI = { 1: "😣", 2: "🙁", 3: "😐", 4: "🙂", 5: "😄" };
 const FEELING_GROUP_EMOJI = { Content: "😊", Driven: "⚡", Tense: "😬", Down: "🌧️", Drained: "🪫" };
 const TARGET_EMOJI = { kcal: "🔥", protein_g: "💪", carbs_g: "🍞", fat_g: "🥑", fiber_g: "🌾", steps: "👟", sleep_h: "😴" };
+const COPY = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13 4.5V4a1.5 1.5 0 0 0-1.5-1.5h-7A1.5 1.5 0 0 0 3 4v7a1.5 1.5 0 0 0 1.5 1.5H5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
 const PENCIL = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M13.3 3.3a1.9 1.9 0 0 1 2.7 0l.7.7a1.9 1.9 0 0 1 0 2.7L7.4 16 3.5 16.9l.9-3.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.8 4.8l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
 
 const state = {
@@ -1429,6 +1430,11 @@ function byFoodGroup(rows) {
     .map((g) => [g, rows.filter((r) => (r.food_group || "") === g.key)])
     .filter(([, list]) => list.length);
 }
+/** A food group's emoji, as a decoration before a food's name ("" without a group). */
+function groupEmoji(key) {
+  const g = key && state.vocab.food_groups.find((x) => x.key === key);
+  return g ? `<span class="group-emoji" aria-hidden="true" title="${esc(g.label)}">${g.emoji}</span> ` : "";
+}
 /** A group's heading, as in the Foods tab. */
 function groupHeading(g, n, id) {
   return `<h3${id ? ` id="${id}"` : ""}><span aria-hidden="true">${g.emoji}</span> ${esc(g.label)} <span class="count">(${n})</span></h3>`;
@@ -1809,7 +1815,7 @@ function renderCarts() {
           c.items
             .map((it) => {
               const left = it.remaining <= 1e-6 ? `<small class="muted">used up</small>` : it.remaining < it.quantity - 1e-6 ? `<small>${fmtQty(it.remaining)} left</small>` : "";
-              return `<li><span>${foodLabel(it)}</span><span class="n">${fmtQty(it.quantity)} ${esc(it.unit)} ${left}</span></li>`;
+              return `<li><span>${groupEmoji(it.food_group)}${foodLabel(it)}</span><span class="n">${fmtQty(it.quantity)} ${esc(it.unit)} ${left}</span></li>`;
             })
             .join("") +
           c.extras
@@ -1818,7 +1824,7 @@ function renderCarts() {
         return `<article class="cart${c.id === state.editingCartId ? " editing" : ""}" id="cart-${c.id}">
           <div class="cart-top">
             <div class="cart-title"><b>${esc(fmtDayWd(c.bought_on))}</b>${c.store ? ` <span class="cart-store">${esc(c.store)}</span>` : ""}</div>
-            <span class="cart-btns"><button type="button" class="row-btn icon" data-edit-cart="${c.id}" title="Edit cart" aria-label="Edit the cart of ${esc(cartName(c))}">${PENCIL}</button><button type="button" class="row-btn del" data-del-cart="${c.id}" title="Delete cart" aria-label="Delete the cart of ${esc(cartName(c))}">✕</button></span>
+            <span class="cart-btns"><button type="button" class="row-btn icon" data-copy-cart="${c.id}" title="Copy cart" aria-label="Copy the cart of ${esc(cartName(c))} into a new cart">${COPY}</button><button type="button" class="row-btn icon" data-edit-cart="${c.id}" title="Edit cart" aria-label="Edit the cart of ${esc(cartName(c))}">${PENCIL}</button><button type="button" class="row-btn del" data-del-cart="${c.id}" title="Delete cart" aria-label="Delete the cart of ${esc(cartName(c))}">✕</button></span>
           </div>
           <ul class="cart-items">${items}</ul>
           <div class="cart-sum">${cartCounts(c.items.length, c.extras.length)}${cartMoney(c)}</div>
@@ -2108,6 +2114,30 @@ function editCart(id) {
   renderCarts();
   $(".trip-card").scrollIntoView({ block: "nearest" });
   $("#trip-day").focus();
+}
+
+/** A new cart with the same date, store, items, prices, discount and fee as cart ``id``;
+ * edit it afterwards like any other. */
+async function copyCart(id) {
+  const c = state.groceries?.carts.find((x) => x.id === id);
+  if (!c) return;
+  const body = {
+    bought_on: c.bought_on,
+    store: c.store,
+    items: c.items.map((it) => ({ food_id: it.food_id, quantity: it.quantity, expires_on: it.expires_on ?? null, price: it.price ?? null })),
+    extras: c.extras.map((x) => ({ name: x.name, quantity: x.quantity, unit: x.unit, price: x.price ?? null })),
+    discount: c.discount ?? null,
+    discount_pct: c.discount_pct ?? null,
+    delivery_fee: c.delivery_fee ?? null,
+  };
+  try {
+    const cart = await api("POST", "/groceries/carts", body);
+    toast(`Copied the cart of ${cartName(c)}: edit the copy with ✏️`);
+    await loadGroceries();
+    flashCart(cart.id);
+  } catch (err) {
+    showError(err);
+  }
 }
 
 async function deleteCart(id) {
@@ -3611,11 +3641,12 @@ function wire() {
   $("#stock-filter").addEventListener("input", () => renderGroceries());
   for (const r of $$('input[name="stock-sort"]')) r.addEventListener("change", () => renderGroceries());
   $("#view-groceries").addEventListener("click", (e) => {
-    const t = e.target.closest("[data-buy-again], [data-expire-lot], [data-edit-cart], [data-del-cart], [data-undo-expired], [data-more-carts]");
+    const t = e.target.closest("[data-buy-again], [data-expire-lot], [data-copy-cart], [data-edit-cart], [data-del-cart], [data-undo-expired], [data-more-carts]");
     if (!t) return;
     const d = t.dataset;
     if (d.buyAgain) buyAgain(Number(d.buyAgain));
     else if (d.expireLot) openExpire(Number(d.expireLot));
+    else if (d.copyCart) copyCart(Number(d.copyCart));
     else if (d.editCart) editCart(Number(d.editCart));
     else if (d.delCart) deleteCart(Number(d.delCart));
     else if (d.undoExpired) undoExpired(Number(d.undoExpired));

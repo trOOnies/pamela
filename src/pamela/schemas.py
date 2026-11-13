@@ -436,6 +436,7 @@ class CartItem(Lot):
     brand: str
     unit: str
     package_qty: float | None = None
+    food_group: str = ""
 
 
 class CartExtra(BaseModel):

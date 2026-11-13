@@ -715,7 +715,7 @@ def _carts(conn: sqlite3.Connection, cart_id: int | None = None) -> list[dict]:
     for lot in lots:
         f = foods[lot["food_id"]]
         by_cart[lot["cart_id"]].append(
-            lot | {k: f[k] for k in ("name", "brand", "unit", "package_qty")}
+            lot | {k: f[k] for k in ("name", "brand", "unit", "package_qty", "food_group")}
         )
     extras: dict[int, list[dict]] = {c["id"]: [] for c in carts}
     extra_where = "WHERE cart_id = ?" if cart_id is not None else ""

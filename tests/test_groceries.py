@@ -397,3 +397,12 @@ def test_delivery_fee(client, oats):
     assert (r.json()["subtotal"], r.json()["total_price"]) == (None, 3)
     bad = {"bought_on": D[1], "items": [item], "delivery_fee": -1}
     assert client.post("/api/groceries/carts", json=bad).status_code == 422
+
+
+def test_cart_items_carry_the_food_group(client, oats):
+    body = {k: v for k, v in oats.items() if k not in ("id", "uses", "in_stock", "calorie_free")}
+    r = client.put(f"/api/foods/{oats['id']}", json=body | {"food_group": "carbs"})
+    assert r.status_code == 200, r.text
+    buy(client, oats["id"], 500)
+    cart = client.get("/api/groceries").json()["carts"][0]
+    assert cart["items"][0]["food_group"] == "carbs"

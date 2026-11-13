@@ -112,7 +112,8 @@ def test_entry_from_food_scales_and_snapshots(client, oats):
 
     # changing the food updates its logged entries, on any day...
     other = client.post(
-        "/api/entries", json={"day": OTHER_DAY, "meal": "Lunch", "food_id": oats["id"], "quantity": 20}
+        "/api/entries",
+        json={"day": OTHER_DAY, "meal": "Lunch", "food_id": oats["id"], "quantity": 20},
     ).json()
     quick = client.post(
         "/api/entries", json={"day": DAY, "meal": "Lunch", "name": "Snack", "kcal": 50}
