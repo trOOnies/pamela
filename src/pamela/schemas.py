@@ -64,6 +64,25 @@ FOOD_GROUPS = {
 }
 FoodGroup = Literal[tuple(FOOD_GROUPS)]  # type: ignore[valid-type]
 
+# Alcoholic drinks are entered by their alcohol content alone: values per 100 ml,
+# with kcal from the ethanol (0.789 g/ml, 7 kcal/g) and no other macros.
+ALCOHOLIC = "alcoholic"
+ETHANOL_G_PER_ML = 0.789
+KCAL_PER_G_ETHANOL = 7
+# Usual glasses (label, emoji, ml), offered as portions of an alcoholic drink.
+GLASSES = (
+    ("Shot", "🥃", 40),
+    ("Flute", "🥂", 125),
+    ("Wine glass", "🍷", 150),
+    ("Half pint", "🍺", 284),
+    ("Pint", "🍺", 568),
+)
+
+
+def alcohol_kcal(abv_pct: float, ml: float = 100) -> float:
+    """kcal from the ethanol in ``ml`` of a drink with ``abv_pct`` % alcohol by volume."""
+    return round(ml * abv_pct / 100 * ETHANOL_G_PER_ML * KCAL_PER_G_ETHANOL, 1)
+
 # Suggested units; any other is fine too. "u" is one piece of a pack (an egg from
 # a carton, a cookie), "whole" one whole item (an apple).
 UNITS = ("g", "ml", "u", "whole", "slice", "serving", "cup", "tbsp")
@@ -198,6 +217,9 @@ class FoodIn(DietTags, _In):
     serving_qty: float | None = Field(None, gt=0, description="One serving, in `unit`")
     package_qty: float | None = Field(None, gt=0, description="Whole package, in `unit`")
     food_group: FoodGroup | Literal[""] = Field("", description="'' = no group")
+    abv_pct: float | None = Field(
+        None, ge=0, le=100, description="% alcohol by volume; alcoholic drinks only"
+    )
 
     @field_validator("ean")
     @classmethod
@@ -205,6 +227,21 @@ class FoodIn(DietTags, _In):
         if v is None or not v.strip():
             return None
         return normalize_ean(v)
+
+    @model_validator(mode="after")
+    def _alcoholic(self) -> FoodIn:
+        """An alcoholic drink is its alcohol content and package size, in ml."""
+        if self.food_group != ALCOHOLIC:
+            self.abv_pct = None
+            return self
+        if self.abv_pct is None:
+            raise ValueError("an alcoholic drink needs its alcohol content (% ABV)")
+        if self.package_qty is None:
+            raise ValueError("an alcoholic drink needs its package size (ml)")
+        self.unit, self.basis_qty, self.serving_qty = "ml", 100, None
+        self.kcal = alcohol_kcal(self.abv_pct)
+        self.protein_g = self.carbs_g = self.fat_g = self.fiber_g = 0
+        return self
 
     @model_validator(mode="after")
     def _implied_tags(self) -> FoodIn:
@@ -224,6 +261,7 @@ class Food(Macros, DietTags):
     serving_qty: float | None = None
     package_qty: float | None = None
     food_group: str = ""
+    abv_pct: float | None = None
     uses: int = 0
     in_stock: float | None = Field(
         None, description="What's left in Groceries, in `unit`; null if never bought there"
@@ -246,6 +284,8 @@ class FoodDraft(Macros, DietTags):
     unit: str
     serving_qty: float | None = None
     package_qty: float | None = None
+    food_group: str = ""
+    abv_pct: float | None = None
 
 
 class BarcodeLookup(BaseModel):
@@ -874,6 +914,12 @@ class FoodGroupChoice(BaseModel):
     emoji: str
 
 
+class Glass(BaseModel):
+    label: str
+    emoji: str
+    ml: float
+
+
 class Vocabulary(BaseModel):
     """Fixed choices the frontend shows (labels live here, in one place)."""
 
@@ -883,6 +929,7 @@ class Vocabulary(BaseModel):
     food_groups: list[FoodGroupChoice]
     wipe_targets: list[WipeChoice] = Field(description="What the Danger Zone can wipe")
     units: list[str] = Field(description="Suggested food units")
+    glasses: list[Glass] = Field(description="Usual glasses, as portions of alcoholic drinks")
     moods: list[Choice]
     feelings: list[Choice]
     genders: list[Choice]

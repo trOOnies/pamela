@@ -219,7 +219,7 @@
       <section class="card" aria-labelledby="food-form-h">
         <div class="card-head">
           <div class="food-form-title">
-            <h2 id="food-form-h">New food</h2>
+            <h2 id="food-form-h">New food item</h2>
             <span class="food-saved" id="food-saved" aria-live="polite"></span>
           </div>
           <button type="button" class="btn ghost" id="food-cancel" hidden>Cancel edit</button>
@@ -237,26 +237,29 @@
           <label class="field span2"><span>Name</span><input type="text" name="name" required maxlength="200"></label>
           <label class="field span2"><span>Brand <small>(optional)</small></span><input type="text" name="brand" maxlength="200" list="brand-options" autocomplete="on"></label>
           <datalist id="brand-options"></datalist>
-          <label class="field"><span>Values per</span><input type="number" name="basis_qty" min="0" step="any" value="100" required></label>
-          <label class="field"><span>Unit</span>
+          <label class="field span2"><span>Group <small>(optional)</small></span>
+            <select name="food_group" id="food-group"><option value="">No group</option></select></label>
+          <label class="field not-alc"><span>Values per</span><input type="number" name="basis_qty" min="0" step="any" value="100" required></label>
+          <label class="field not-alc"><span>Unit</span>
             <input type="text" name="unit" value="g" required maxlength="20" list="unit-options">
             <datalist id="unit-options"></datalist>
           </label>
-          <label class="field"><span>kcal</span><input type="number" name="kcal" min="0" step="any" placeholder="unknown"></label>
-          <label class="field"><span>Protein (g)</span><input type="number" name="protein_g" min="0" step="any" value="0"></label>
-          <label class="field"><span>Carbs (g)</span><input type="number" name="carbs_g" min="0" step="any" value="0"></label>
-          <label class="field"><span>Fat (g)</span><input type="number" name="fat_g" min="0" step="any" value="0"></label>
-          <label class="field"><span>Fiber (g)</span><input type="number" name="fiber_g" min="0" step="any" value="0"></label>
-          <p class="hint span2" id="food-kcal-hint"></p>
-          <label class="field"><span>Serving size <small>(optional)</small></span>
+          <label class="field not-alc"><span>kcal</span><input type="number" name="kcal" min="0" step="any" placeholder="unknown"></label>
+          <label class="field not-alc"><span>Carbs (g)</span><input type="number" name="carbs_g" min="0" step="any" value="0"></label>
+          <label class="field not-alc"><span>Protein (g)</span><input type="number" name="protein_g" min="0" step="any" value="0"></label>
+          <label class="field not-alc"><span>Fat (g)</span><input type="number" name="fat_g" min="0" step="any" value="0"></label>
+          <label class="field not-alc"><span>Fiber (g)</span><input type="number" name="fiber_g" min="0" step="any" value="0"></label>
+          <p class="hint span2 not-alc" id="food-kcal-hint"></p>
+          <label class="field only-alc" hidden><span>Alcohol content</span>
+            <span class="with-unit"><input type="number" name="abv_pct" min="0" max="100" step="any" placeholder="e.g. 5"><span class="unit">% V/V</span></span></label>
+          <label class="field not-alc"><span>Serving size <small>(optional)</small></span>
             <span class="with-unit"><input type="number" name="serving_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
-          <label class="field"><span>Package size <small>(optional)</small></span>
+          <label class="field"><span>Package size <small class="not-alc">(optional)</small></span>
             <span class="with-unit"><input type="number" name="package_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
-          <label class="field span2"><span>Group <small>(optional)</small></span>
-            <select name="food_group" id="food-group"><option value="">No group</option></select></label>
-          <p class="hint span2 unit-hint">Units: <b>u</b> is one piece of a pack (an egg from a carton),
+          <p class="hint span2 only-alc" id="food-abv-hint" hidden></p>
+          <p class="hint span2 unit-hint not-alc">Units: <b>u</b> is one piece of a pack (an egg from a carton),
             <b>whole</b> one whole item (an apple). Any other unit works too.</p>
-          <fieldset class="span2 tag-picks" id="tag-picks">
+          <fieldset class="span2 tag-picks not-alc" id="tag-picks">
             <legend>Diet</legend>
           </fieldset>
           <button class="btn primary span2" type="submit" id="food-submit">Save food</button>

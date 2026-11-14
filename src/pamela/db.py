@@ -482,6 +482,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE carts ADD COLUMN gift INTEGER NOT NULL DEFAULT 0 CHECK (gift IN (0, 1));
     """,
+    # 18: alcoholic drinks are entered by their alcohol content (% by volume).
+    """
+    ALTER TABLE foods ADD COLUMN abv_pct REAL CHECK (abv_pct BETWEEN 0 AND 100);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

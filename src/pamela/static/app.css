@@ -19,6 +19,7 @@
   --accent-2-soft: #fbf3c8;
   --danger: #c0392b;
   --warn: #b26a00;
+  --done: #e3b100;      /* a fridge sector with every item ticked */
   --track: #d8e5ca;
   /* macro identity colors (categorical slots 1-4, always shown with a text label) */
   --c-kcal: #2a78d6;
@@ -68,6 +69,7 @@
     --accent-2-soft: #332d12;
     --danger: #e66767;
     --warn: #e0a030;
+    --done: #f2c94c;
     --track: #263321;
     --c-kcal: #3987e5;
     --c-protein: #d95926;
@@ -109,6 +111,7 @@
   --accent-2-soft: #332d12;
   --danger: #e66767;
   --warn: #e0a030;
+  --done: #f2c94c;
   --track: #263321;
   --c-kcal: #3987e5;
   --c-protein: #d95926;
@@ -293,6 +296,7 @@ main { padding: 20px 24px 24px; }
 .suggest li[aria-selected="true"], .suggest li:hover { background: var(--accent-soft); }
 .suggest .meta { color: var(--text-2); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .suggest .brand-tag { color: var(--text-3); font-size: .85rem; }
+.foods-table .abv { color: var(--text-2); white-space: nowrap; }
 .suggest .create { color: var(--accent); }
 .suggest .none { color: var(--text-3); cursor: default; }
 .suggest .none:hover { background: transparent; }
@@ -1024,7 +1028,7 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .sector-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gap); }
 .sector-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .sector-card.editing { border-color: var(--accent-2-line); background: var(--accent-2-soft); }
-.sector-card.checked { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.sector-card.checked { border-color: color-mix(in srgb, var(--done) 70%, var(--border)); background: color-mix(in srgb, var(--done) 16%, var(--surface)); }
 .sector-top { display: flex; align-items: center; gap: 6px; }
 .sector-top h3 { margin: 0 auto 0 0; font-size: 1rem; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
 .sector-top .count { color: var(--text-3); font-weight: 400; font-size: .85rem; }

@@ -337,7 +337,7 @@ function route() {
 }
 
 function render() {
-  if (!state.config) return;
+  if (!state.config || !state.vocab) return; // init() routes once both are in
   if (state.view === "day") return loadDay();
   if (state.view === "foods") return loadFoods();
   if (state.view === "groceries") return loadGroceries();
@@ -1084,6 +1084,14 @@ function setEntryMode(mode) {
 }
 
 function portionOptions(f) {
+  if (f.food_group === ALCOHOLIC) {
+    // usual glasses that fit in the package, then the whole of it
+    const o = state.vocab.glasses
+      .filter((g) => !f.package_qty || g.ml < f.package_qty - 1e-6)
+      .map((g) => [`${g.emoji} ${esc(g.label)}`, g.ml]);
+    if (f.package_qty) o.push(["Whole pack", f.package_qty]);
+    return o;
+  }
   const o = [];
   if (f.serving_qty) o.push(["1 serving", f.serving_qty], ["2 servings", f.serving_qty * 2]);
   if (f.package_qty) {
@@ -1379,7 +1387,12 @@ async function submitActivity(ev) {
 
 // --- foods view --------------------------------------------------------------
 
-const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty", "food_group"];
+const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty", "food_group", "abv_pct"];
+
+// Alcoholic drinks are entered by their alcohol content and package size alone: the
+// backend keeps them per 100 ml, with kcal from the ethanol (0.789 g/ml, 7 kcal/g).
+const ALCOHOLIC = "alcoholic";
+const alcoholKcal = (abv, ml = 100) => (ml * abv * 0.789 * 7) / 100;
 
 // Shown in place of the kcal of a food that has none entered yet.
 const NO_KCAL_CELL = `<td class="n"><span class="warn-kcal" title="No kcal entered yet: counted as 0 until you add it. Enter 0 if it really has none.">⚠ ?<span class="sr"> No kcal entered yet, counted as 0</span></span></td>`;
@@ -1421,7 +1434,7 @@ function renderFoods() {
     (rows.length === state.foods.length ? `(${rows.length})` : `(${rows.length} of ${state.foods.length})`) +
     (missing ? ` · ⚠ ${missing} without kcal` : "");
   const row = (f) => `<tr id="food-row-${f.id}" class="${f.id === state.editingFoodId ? "editing" : ""}">
-      <td>${esc(f.name)}${tagPills(f)}</td>
+      <td>${esc(f.name)}${f.abv_pct != null ? ` <small class="abv">${fmt(f.abv_pct, 1)}% V/V</small>` : ""}${tagPills(f)}</td>
       <td>${esc(f.brand)}${f.ean ? `<span class="ean" title="Barcode">${esc(f.ean)}</span>` : ""}</td>
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
       ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
@@ -1543,20 +1556,45 @@ function setEanStatus(html, kind = "") {
 }
 
 function updateFormUnit() {
-  const unit = $("#food-form").elements.unit.value.trim() || "g";
-  for (const el of $$(".form-unit")) el.textContent = unit;
+  const el = $("#food-form").elements;
+  const unit = el.food_group.value === ALCOHOLIC ? "ml" : el.unit.value.trim() || "g";
+  for (const u of $$(".form-unit")) u.textContent = unit;
+}
+
+/** Alcoholic drinks only ask for the alcohol content and the package size. */
+function updateFoodFormKind() {
+  const el = $("#food-form").elements;
+  const alc = el.food_group.value === ALCOHOLIC;
+  for (const x of $$("#food-form .not-alc")) x.hidden = alc;
+  for (const x of $$("#food-form .only-alc")) x.hidden = !alc;
+  el.basis_qty.required = el.unit.required = !alc;
+  el.abv_pct.required = el.package_qty.required = alc;
+  updateFormUnit();
+  updateAbvHint();
+}
+
+function updateAbvHint() {
+  const el = $("#food-form").elements;
+  const abv = num(el.abv_pct.value), pack = num(el.package_qty.value);
+  let txt = "";
+  if (abv != null) {
+    txt = `≈ ${fmt(alcoholKcal(abv))} kcal per 100 ml`;
+    if (pack) txt += `, ${fmt(alcoholKcal(abv, pack))} kcal the whole package`;
+    txt += ", from the alcohol alone.";
+  }
+  $("#food-abv-hint").textContent = txt;
 }
 
 function resetFoodForm() {
   const form = $("#food-form");
   form.reset();
   state.editingFoodId = null;
-  $("#food-form-h").textContent = "New food";
+  $("#food-form-h").textContent = "New food item";
   $("#food-submit").textContent = "Save food";
   $("#food-cancel").hidden = true;
   setEanStatus("");
   updateKcalHint();
-  updateFormUnit();
+  updateFoodFormKind();
   renderFoods();
 }
 
@@ -1566,7 +1604,7 @@ function fillFoodForm(f) {
   for (const k of FOOD_FIELDS) el[k].value = f[k] ?? "";
   for (const t of state.vocab.diet_tags) el[t.key].checked = !!f[t.key];
   updateKcalHint();
-  updateFormUnit();
+  updateFoodFormKind();
 }
 
 function editFood(id) {
@@ -1665,6 +1703,11 @@ async function submitFood(ev) {
   };
   for (const m of MACROS) body[m.key] = num(v[m.key]) ?? 0;
   for (const t of state.vocab.diet_tags) body[t.key] = form.elements[t.key].checked;
+  if (v.food_group === ALCOHOLIC) {
+    // the rest comes from the alcohol content (the backend works it out)
+    Object.assign(body, { basis_qty: 100, unit: "ml", kcal: null, serving_qty: null, abv_pct: num(v.abv_pct) });
+    for (const m of MACROS) body[m.key] = 0;
+  }
   try {
     const editing = state.editingFoodId;
     const saved = editing ? await api("PUT", `/foods/${editing}`, body) : await api("POST", "/foods", body);
@@ -4114,8 +4157,10 @@ function wire() {
   foodForm.addEventListener("submit", submitFood);
   foodForm.addEventListener("input", (e) => {
     updateKcalHint();
+    updateAbvHint();
     if (e.target.name === "unit") updateFormUnit();
   });
+  foodForm.elements.food_group.addEventListener("change", updateFoodFormKind);
   foodForm.addEventListener("change", (e) => {
     // A diet implies the broader ones (vegan -> vegetarian -> pescatarian and
     // ovolactovegetarian): checking one checks those, unchecking one unchecks the
@@ -4374,7 +4419,7 @@ async function init() {
   buildVocabControls();
   $("#profile-gender").innerHTML = state.vocab.genders.map((g) => `<option value="${g.key}">${esc(g.label)}</option>`).join("");
   fillConfigControls();
-  updateFormUnit();
+  updateFoodFormKind();
   route();
 }
 

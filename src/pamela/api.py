@@ -23,6 +23,7 @@ from .schemas import (
     FEELING_GROUPS,
     FOOD_GROUPS,
     GENDERS,
+    GLASSES,
     MACRO_FIELDS,
     MOODS,
     TARGETS,
@@ -134,6 +135,7 @@ def read_vocab() -> dict:
             {"key": k, "label": label, "emoji": emoji} for k, (label, emoji) in FOOD_GROUPS.items()
         ],
         "units": list(UNITS),
+        "glasses": [{"label": label, "emoji": emoji, "ml": ml} for label, emoji, ml in GLASSES],
         "wipe_targets": [
             {"key": k, "label": label, "hint": hint} for k, (label, hint) in WIPE_TARGETS.items()
         ],

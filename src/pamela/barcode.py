@@ -103,6 +103,10 @@ def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
     analysis = [str(t).lower() for t in product.get("ingredients_analysis_tags") or []]
     allergens = [str(t).lower() for t in product.get("allergens_tags") or []]
 
+    # alcohol_100g is the alcohol content in % vol; under 0.5 % counts as alcohol-free
+    abv = _num(n.get("alcohol_100g"))
+    alcoholic = abv is not None and abv >= 0.5
+
     vegan = "en:vegan" in labels or "en:vegan" in analysis
     vegetarian = vegan or "en:vegetarian" in labels or "en:vegetarian" in analysis
 
@@ -122,6 +126,8 @@ def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
         "fiber_g": r(_num(n.get("fiber_100g"))),
         "serving_qty": _num(product.get("serving_quantity")) or None,
         "package_qty": _num(product.get("product_quantity")) or None,
+        "food_group": "alcoholic" if alcoholic else "",
+        "abv_pct": abv if alcoholic else None,
         "pescatarian": vegetarian,  # implied, as in FoodIn
         "ovolactovegetarian": vegetarian,
         "vegetarian": vegetarian,

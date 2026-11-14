@@ -659,3 +659,44 @@ def test_wipe_everything_and_validation(client, oats):
     assert client.get("/api/activity-types").json()
     assert client.post("/api/wipe", json={"what": []}).status_code == 422
     assert client.post("/api/wipe", json={"what": ["profile"]}).status_code == 422
+
+
+def test_alcoholic_drink_from_abv_and_package(client):
+    """An alcoholic drink takes only its alcohol content and package size: it's kept
+    per 100 ml, with kcal from the ethanol and no other macros."""
+    r = client.post(
+        "/api/foods",
+        json={
+            "name": "Lager",
+            "food_group": "alcoholic",
+            "abv_pct": 5,
+            "package_qty": 473,
+            # whatever else comes along is replaced
+            "basis_qty": 1,
+            "unit": "u",
+            "kcal": 999,
+            "carbs_g": 12,
+            "serving_qty": 10,
+        },
+    )
+    assert r.status_code == 201, r.text
+    f = r.json()
+    assert (f["unit"], f["basis_qty"], f["serving_qty"], f["package_qty"]) == ("ml", 100, None, 473)
+    assert f["kcal"] == 27.6  # 5 ml ethanol x 0.789 g/ml x 7 kcal/g
+    assert f["carbs_g"] == 0 and f["abv_pct"] == 5
+
+    # alcohol content and package size are both needed
+    for missing in ("abv_pct", "package_qty"):
+        body = {"name": "Wine", "food_group": "alcoholic", "abv_pct": 13, "package_qty": 750}
+        del body[missing]
+        assert client.post("/api/foods", json=body).status_code == 422
+
+    # leaving the group drops the alcohol content
+    r = client.put(
+        f"/api/foods/{f['id']}",
+        json={"name": "Lager", "food_group": "drinks", "abv_pct": 5, "kcal": 40},
+    )
+    assert r.status_code == 200 and r.json()["abv_pct"] is None
+
+    glasses = client.get("/api/vocab").json()["glasses"]
+    assert {"label": "Wine glass", "emoji": "🍷", "ml": 150} in glasses
