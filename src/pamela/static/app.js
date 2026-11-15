@@ -1830,7 +1830,7 @@ function renderGroceries() {
     tile(`Expiring within ${SOON_DAYS} days`, fmt(soon), soon ? "warn" : "", "Items whose expiry date is today or in the next days") +
     tile("Past their date", fmt(past), past ? "bad" : "", "Items still in stock whose expiry date has passed") +
     tile("Spent, 30 days", recent.length ? fmtMoney(recent.reduce((a, c) => a + c.total_price, 0)) : "–", "", "What carts of the last 30 days cost (items with a price)") +
-    tile("Thrown out, 30 days", fmt(g.expired.length), "", "Times something expired in the last 30 days");
+    tile("Thrown out, 30 days", fmt(g.expired.filter((h) => h.kind !== "others").length), "", "Times something expired in the last 30 days");
 
   const stores = new Set(g.carts.map((c) => c.store).filter(Boolean));
   $("#store-options").innerHTML = [...stores].map((s) => `<option value="${esc(s)}">`).join("");
@@ -1854,10 +1854,10 @@ function renderGroceries() {
   $("#groc-expired").innerHTML = g.expired.length
     ? groupedList(
         g.expired,
-        (h) => `<li><span class="hday">${fmtDay(h.day)}</span><span><b>${fmtQty(h.quantity)} ${esc(h.unit)}</b> ${foodLabel(h)}</span>
+        (h) => `<li><span class="hday">${fmtDay(h.day)}</span><span>${TAKEN_OUT[h.kind]?.emoji ?? "🗑️"} <b>${fmtQty(h.quantity)} ${esc(h.unit)}</b> ${foodLabel(h)}${h.kind === "others" ? ` <small>eaten by someone else</small>` : ""}</span>
             <button type="button" class="row-btn" data-undo-expired="${h.id}" title="Put it back in stock">Undo</button></li>`
       )
-    : `<li class="empty">Nothing expired in the last 30 days.</li>`;
+    : `<li class="empty">Nothing expired or eaten by others in the last 30 days.</li>`;
 }
 
 /** List items under a heading per food group (rows keep their order within a group). */
@@ -1903,7 +1903,7 @@ function renderStock(items) {
         <td class="n">${l.remaining < l.quantity ? `${fmtQty(l.remaining)} <small>of ${fmtQty(l.quantity)}</small>` : fmtQty(l.quantity)} <small>${esc(it.unit)}</small></td>
         <td>${expiryBadge(l.expires_on)}</td>
         <td class="n">${l.gift ? `<span class="gift-tag" title="A gift">🎁</span>` : fmtMoney(l.price)}</td>
-        <td class="act"><button type="button" class="row-btn expire-btn" data-expire-lot="${l.id}" title="It expired or went off">🗑️ Expired</button></td>
+        <td class="act"><button type="button" class="row-btn expire-btn" data-expire-lot="${l.id}" title="It expired or went off, or someone else ate it">➖ Take out</button></td>
       </tr>`
         )
         .join("");
@@ -1993,7 +1993,7 @@ function findLot(id) {
 // the cart being entered or edited ---------------------------------------------------------
 
 /** Cart item: { id (null if new), food: { id, name, brand, unit, package_qty }, quantity,
- * used (already eaten or thrown out), expires_on, price }. */
+ * used (already eaten, by you or others, or thrown out), expires_on, price }. */
 function addTripItem(food, quantity) {
   const q = quantity ?? food.package_qty ?? (["g", "ml"].includes(food.unit) ? food.basis_qty : 1) ?? 1;
   state.trip.push({ id: null, food, quantity: Math.round(q * 100) / 100, used: 0, expires_on: "", price: "" });
@@ -2247,7 +2247,7 @@ async function editCart(id) {
     id: it.id,
     food: { id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, package_qty: it.package_qty },
     quantity: it.quantity,
-    used: it.eaten + it.expired,
+    used: it.eaten + it.expired + (it.others ?? 0),
     expires_on: it.expires_on ?? "",
     price: it.price ?? "",
   }));
@@ -2334,7 +2334,13 @@ function buyAgain(foodId) {
   $(".trip-card").scrollIntoView({ block: "nearest" });
 }
 
-// expiring ----------------------------------------------------------------------------------
+// taking out: expired, or eaten by someone else ------------------------------------------
+
+// How food leaves the stock without being logged, so without counting toward your macros.
+const TAKEN_OUT = {
+  expired: { emoji: "🗑️", what: "expired", toast: "Thrown out: taken out of your stock" },
+  others: { emoji: "👥", what: "someone else ate", toast: "Eaten by someone else: taken out of your stock" },
+};
 
 let dialogLot = null;
 
@@ -2350,6 +2356,7 @@ function openExpire(id) {
   el.day.value = todayISO();
   el.day.min = lot.bought_on;
   el.day.max = todayISO();
+  el.kind.value = "expired";
   $("#expire-dialog").showModal();
   el.quantity.select();
 }
@@ -2359,14 +2366,16 @@ async function submitExpire(ev) {
   const lot = dialogLot;
   const el = ev.currentTarget.elements;
   const qty = num(el.quantity.value);
-  if (!qty || qty <= 0) return toast("Enter how much expired", true);
-  if (!el.day.value || el.day.value > todayISO()) return toast("Pick when it expired (today or before)", true);
+  const kind = el.kind.value || "expired";
+  const t = TAKEN_OUT[kind];
+  if (!qty || qty <= 0) return toast(`Enter how much ${t.what}`, true);
+  if (!el.day.value || el.day.value > todayISO()) return toast("Pick when (today or before)", true);
   // all that's left: let the server take the exact amount (no rounding leftovers)
   const all = qty >= lot.remaining - 0.005;
   try {
-    await api("POST", `/groceries/lots/${lot.id}/expired`, { day: el.day.value, quantity: all ? null : qty });
+    await api("POST", `/groceries/lots/${lot.id}/expired`, { day: el.day.value, quantity: all ? null : qty, kind });
     $("#expire-dialog").close();
-    toast("Taken out of your stock");
+    toast(t.toast);
     await loadGroceries();
   } catch (err) {
     showError(err);
@@ -2667,7 +2676,7 @@ function renderExpiredAlert(el, foods) {
         return `<button type="button" class="link-btn" data-goto-stock="${f.food_id}" title="Open it in Groceries, In stock">${esc(f.name)}</button> <small>(${d === 0 ? "today" : `${d} d ago`})</small>`;
       })
       .join(", ") +
-    `. <small>Click one to see it in Groceries: take out what went off with <b>Expired</b>, or fix the date in its cart.</small>`;
+    `. <small>Click one to see it in Groceries: take out what went off with <b>Take out</b>, or fix the date in its cart.</small>`;
 }
 
 /** Shows a food's row in Groceries' In stock, opening Groceries first when needed. */

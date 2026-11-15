@@ -962,6 +962,9 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .lot-dialog .dialog-fields .span2 { grid-column: span 2; }
 .lot-dialog .dialog-fields input[type="date"], .lot-dialog .dialog-fields input[type="text"] { width: 100%; }
 .lot-dialog .with-unit input { width: 110px; }
+.take-out-kind { border: 0; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.take-out-kind label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.take-out-kind small { color: var(--text-2); }
 
 /* the Day tab: what came from Groceries */
 .from-stock { font-size: .8rem; cursor: help; }

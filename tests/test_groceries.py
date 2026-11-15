@@ -151,6 +151,28 @@ def test_expire_and_undo(client, oats):
     assert client.delete(f"/api/groceries/expired/{expired[0]['id']}").status_code == 404
 
 
+def test_eaten_by_others_leaves_stock_but_not_macros(client, oats):
+    lot = buy(client, oats["id"], 500)
+    url = f"/api/groceries/lots/{lot['id']}/expired"
+    r = client.post(url, json={"day": D[1], "quantity": 120, "kind": "others"})
+    assert r.status_code == 200, r.text
+    assert r.json()["remaining"] == 380
+    assert r.json()["others"] == 120 and r.json()["expired"] == 0
+    assert stock(client)[oats["id"]]["in_stock"] == 380
+    assert client.get(f"/api/days/{D[1]}").json()["entries"] == []
+    taken = client.get("/api/groceries").json()["expired"]
+    assert [(h["kind"], h["quantity"]) for h in taken] == [("others", 120)]
+    # a cart item can't shrink below what others ate of it either
+    cart = client.get("/api/groceries").json()["carts"][0]
+    assert cart["items"][0]["others"] == 120
+    body = cart_body(cart)
+    body["items"][0]["quantity"] = 100
+    assert client.put(f"/api/groceries/carts/{cart['id']}", json=body).status_code == 422
+    assert client.delete(f"/api/groceries/expired/{taken[0]['id']}").status_code == 204
+    assert stock(client)[oats["id"]]["in_stock"] == 500
+    assert client.post(url, json={"day": D[1], "kind": "gift"}).status_code == 422
+
+
 def test_expire_validation(client, oats):
     lot = buy(client, oats["id"], 100, day=D[3])
     url = f"/api/groceries/lots/{lot['id']}/expired"

@@ -455,9 +455,15 @@ class CartIn(_In):
         return self
 
 
+# Ways food leaves the stock without being logged (so without counting toward the
+# user's macros): it expired / was thrown out, or someone else ate it.
+TakenOutKind = Literal["expired", "others"]
+
+
 class ExpiredIn(_In):
-    day: dt.date = Field(description="When it expired or was thrown out")
+    day: dt.date = Field(description="When it expired, was thrown out or was eaten")
     quantity: float | None = Field(None, gt=0, description="null = all that's left")
+    kind: TakenOutKind = Field("expired", description="'others' = someone else ate it")
 
 
 class Lot(BaseModel):
@@ -470,6 +476,7 @@ class Lot(BaseModel):
     remaining: float
     eaten: float = Field(description="Taken by logged food entries")
     expired: float = Field(description="Thrown out")
+    others: float = Field(0, description="Eaten by someone else")
     bought_on: dt.date
     expires_on: dt.date | None = None
     price: float | None = None
@@ -548,12 +555,15 @@ class Expiry(BaseModel):
     unit: str
     food_group: str = ""
     quantity: float
+    kind: TakenOutKind = "expired"
 
 
 class Groceries(BaseModel):
     items: list[StockItem]
     carts: list[Cart] = Field(description="Newest first")
-    expired: list[Expiry] = Field(description="What expired lately, newest first")
+    expired: list[Expiry] = Field(
+        description="What was taken out lately (expired or eaten by others), newest first"
+    )
 
 
 # --- fridge ------------------------------------------------------------------

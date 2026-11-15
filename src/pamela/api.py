@@ -270,11 +270,13 @@ def update_target(key: str, target: TargetIn, conn: Conn) -> dict:
 
 # --- foods -------------------------------------------------------------------
 
-# What's left of each lot: its quantity minus everything eaten or thrown out.
+# What's left of each lot: its quantity minus everything eaten (by the user or by
+# others) or thrown out.
 _LOT_LEFT = """
     SELECT l.*, c.bought_on, c.store, c.gift,
            COALESCE(SUM(CASE WHEN u.kind = 'eaten' THEN u.quantity END), 0) AS eaten,
            COALESCE(SUM(CASE WHEN u.kind = 'expired' THEN u.quantity END), 0) AS expired,
+           COALESCE(SUM(CASE WHEN u.kind = 'others' THEN u.quantity END), 0) AS others,
            l.quantity - COALESCE(SUM(u.quantity), 0) AS remaining
     FROM stock_lots l JOIN carts c ON c.id = l.cart_id
     LEFT JOIN stock_uses u ON u.lot_id = l.id
@@ -813,7 +815,7 @@ def read_groceries(
     conn: Conn, days: Annotated[int, Query(ge=1, le=MAX_HISTORY_DAYS)] = 30
 ) -> dict:
     """Every food ever bought with what's left of it (foods that ran out have no
-    lots), every cart, and what expired in the last ``days`` days."""
+    lots), every cart, and what expired or others ate in the last ``days`` days."""
     lots = conn.execute(
         _LOT_LEFT
         + """ GROUP BY l.id
@@ -865,9 +867,9 @@ def read_groceries(
 
     since = (dt.date.today() - dt.timedelta(days=days - 1)).isoformat()
     expired = conn.execute(
-        """SELECT u.id, u.lot_id, l.cart_id, u.day, l.food_id, u.quantity
+        """SELECT u.id, u.lot_id, l.cart_id, u.day, l.food_id, u.quantity, u.kind
            FROM stock_uses u JOIN stock_lots l ON l.id = u.lot_id
-           WHERE u.kind = 'expired' AND u.day >= ?
+           WHERE u.kind IN ('expired', 'others') AND u.day >= ?
            ORDER BY u.day DESC, u.created_at DESC, u.id DESC LIMIT 500""",
         (since,),
     ).fetchall()
@@ -946,7 +948,7 @@ def _store_cart_items(conn: sqlite3.Connection, cart_id: int, cart: CartIn) -> s
             raise HTTPException(
                 UNPROCESSABLE, f"an item's food can't change (it's {f['name']}): remove it instead"
             )
-        used = lot["eaten"] + lot["expired"]
+        used = lot["eaten"] + lot["expired"] + lot["others"]
         if it.quantity < used - EPS:
             raise HTTPException(
                 UNPROCESSABLE,
@@ -1026,11 +1028,12 @@ def _lot_unit(conn: sqlite3.Connection, lot: dict) -> str:
 
 @router.post("/groceries/lots/{lot_id}/expired", response_model=Lot)
 def expire_lot(lot_id: int, body: ExpiredIn, conn: Conn) -> dict:
-    """It expired or went off: take it (or part of it) out of the stock."""
+    """It expired or went off, or someone else ate it (``kind: "others"``): take it
+    (or part of it) out of the stock. Neither counts toward the user's macros."""
     lot = _lot_row(conn, lot_id)
     _not_future(body.day)
     if body.day.isoformat() < lot["bought_on"]:
-        raise HTTPException(UNPROCESSABLE, "it can't expire before the day it was bought")
+        raise HTTPException(UNPROCESSABLE, "it can't be taken out before the day it was bought")
     left = lot["remaining"]
     if left <= EPS:
         raise HTTPException(UNPROCESSABLE, "nothing is left of it")
@@ -1040,8 +1043,8 @@ def expire_lot(lot_id: int, body: ExpiredIn, conn: Conn) -> dict:
             UNPROCESSABLE, f"only {left:g} {_lot_unit(conn, lot)} of it is left"
         )
     conn.execute(
-        "INSERT INTO stock_uses (lot_id, kind, day, quantity) VALUES (?, 'expired', ?, ?)",
-        (lot_id, body.day.isoformat(), min(qty, left)),
+        "INSERT INTO stock_uses (lot_id, kind, day, quantity) VALUES (?, ?, ?, ?)",
+        (lot_id, body.kind, body.day.isoformat(), min(qty, left)),
     )
     _settle_places(conn)
     return _lot_row(conn, lot_id)
@@ -1049,8 +1052,10 @@ def expire_lot(lot_id: int, body: ExpiredIn, conn: Conn) -> dict:
 
 @router.delete("/groceries/expired/{use_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_expired(use_id: int, conn: Conn) -> Response:
-    """Undo marking something as expired: it's back in stock."""
-    cur = conn.execute("DELETE FROM stock_uses WHERE id = ? AND kind = 'expired'", (use_id,))
+    """Undo marking something as expired or eaten by others: it's back in stock."""
+    cur = conn.execute(
+        "DELETE FROM stock_uses WHERE id = ? AND kind IN ('expired', 'others')", (use_id,)
+    )
     if cur.rowcount == 0:
         raise _not_found("expiry")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

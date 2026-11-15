@@ -486,6 +486,26 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE foods ADD COLUMN abv_pct REAL CHECK (abv_pct BETWEEN 0 AND 100);
     """,
+    # 19: a third way food leaves the stock: eaten by someone else ('others'). Like
+    # 'expired' it has no food entry, so it never counts toward the user's macros.
+    """
+    CREATE TABLE stock_uses_new (
+        id          INTEGER PRIMARY KEY,
+        lot_id      INTEGER NOT NULL REFERENCES stock_lots (id) ON DELETE CASCADE,
+        kind        TEXT    NOT NULL CHECK (kind IN ('eaten', 'expired', 'others')),
+        entry_id    INTEGER REFERENCES food_entries (id) ON DELETE CASCADE,
+        day         TEXT    NOT NULL,               -- YYYY-MM-DD
+        quantity    REAL    NOT NULL CHECK (quantity > 0),
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        CHECK ((kind = 'eaten') = (entry_id IS NOT NULL))
+    );
+    INSERT INTO stock_uses_new SELECT id, lot_id, kind, entry_id, day, quantity, created_at
+    FROM stock_uses;
+    DROP TABLE stock_uses;
+    ALTER TABLE stock_uses_new RENAME TO stock_uses;
+    CREATE INDEX stock_uses_lot ON stock_uses (lot_id);
+    CREATE INDEX stock_uses_entry ON stock_uses (entry_id);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.
