@@ -17,6 +17,16 @@ const FEELING_GROUP_EMOJI = { Content: "😊", Driven: "⚡", Tense: "😬", Dow
 const MEAL_EMOJI = { breakfast: "🌅", lunch: "☀️", dinner: "🌙", supper: "🌙", snack: "🍪", snacks: "🍪", brunch: "🥐" };
 const TARGET_EMOJI = { kcal: "🔥", protein_g: "💪", carbs_g: "🍞", fat_g: "🥑", fiber_g: "🌾", steps: "👟", sleep_h: "😴" };
 const COPY = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13 4.5V4a1.5 1.5 0 0 0-1.5-1.5h-7A1.5 1.5 0 0 0 3 4v7a1.5 1.5 0 0 0 1.5 1.5H5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+const HEART = `<svg class="ico" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 16.8s-6.6-4-6.6-8.7A3.7 3.7 0 0 1 10 5.9a3.7 3.7 0 0 1 6.6 2.2c0 4.7-6.6 8.7-6.6 8.7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+/** The heart that makes a food or a meal a favorite, and takes it off again. */
+function favButton(kind, x) {
+  const label = `${x.favorite ? "Remove" : "Add"} ${x.name} ${x.favorite ? "from" : "to"} favorites`;
+  return `<button type="button" class="row-btn icon fav-btn" data-fav-${kind}="${x.id}" aria-pressed="${!!x.favorite}" title="${x.favorite ? "Favorite: press to take it off" : "Add to favorites"}" aria-label="${esc(label)}">${HEART}</button>`;
+}
+/** Favorites first, keeping the order the list came in otherwise. */
+function favoritesFirst(list) {
+  return list.map((x, i) => [x, i]).sort(([a, i], [b, j]) => (b.favorite - a.favorite) || i - j).map(([x]) => x);
+}
 const PENCIL = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M13.3 3.3a1.9 1.9 0 0 1 2.7 0l.7.7a1.9 1.9 0 0 1 0 2.7L7.4 16 3.5 16.9l.9-3.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.8 4.8l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
 
 const state = {
@@ -422,7 +432,7 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
     let html = c.results
       .map(
         (f, i) => `<li role="option" id="${idp}-${i}" data-i="${i}" aria-selected="${i === c.active}">
-          <span class="s-name">${esc(f.name)} ${f.is_meta ? `<span class="meta-pill" title="Any brand: you pick which one when you log the meal">🔀 any brand</span>` : f.brand ? `<span class="brand-tag">${esc(f.brand)}</span>` : ""}${tagPills(f, "mini")}</span>
+          <span class="s-name">${f.favorite ? `<span class="fav-mark" title="Favorite">♥</span> ` : ""}${esc(f.name)} ${f.is_meta ? `<span class="meta-pill" title="Any brand: you pick which one when you log the meal">🔀 any brand</span>` : f.brand ? `<span class="brand-tag">${esc(f.brand)}</span>` : ""}${tagPills(f, "mini")}</span>
           <span class="meta">${f.kcal == null ? `<span class="warn-kcal">⚠ no kcal</span>` : `${fmt(f.kcal)} kcal`} / ${fmtQty(f.basis_qty)} ${esc(f.unit)}${stockMeta(f)}</span></li>`
       )
       .join("");
@@ -1311,11 +1321,14 @@ let draftTable;
 function fillSavedPick() {
   const sel = $("#saved-pick");
   const prev = sel.value;
+  const opt = (sm) => `<option value="${sm.id}">${sm.favorite ? "♥ " : ""}${esc(sm.name)} · ${fmt(sm.totals.kcal)} kcal${sm.default_meals.length ? ` · ${esc(sm.default_meals.join(" / "))}` : ""}</option>`;
+  const favs = state.savedMeals.filter((sm) => sm.favorite);
+  const rest = state.savedMeals.filter((sm) => !sm.favorite);
   sel.innerHTML =
     `<option value="">${state.savedMeals.length ? "Choose a saved meal…" : "No saved meals yet"}</option>` +
-    state.savedMeals
-      .map((sm) => `<option value="${sm.id}">${esc(sm.name)} · ${fmt(sm.totals.kcal)} kcal${sm.default_meals.length ? ` · ${esc(sm.default_meals.join(" / "))}` : ""}</option>`)
-      .join("");
+    (favs.length
+      ? `<optgroup label="♥ Favorites">${favs.map(opt).join("")}</optgroup>` + (rest.length ? `<optgroup label="Other meals">${rest.map(opt).join("")}</optgroup>` : "")
+      : rest.map(opt).join(""));
   sel.value = state.savedMeals.some((sm) => String(sm.id) === prev) ? prev : "";
   $("#saved-hint").innerHTML = state.savedMeals.length
     ? "Picking one fills in a draft below. Nothing is logged until you press <b>Log</b>."
@@ -1516,7 +1529,7 @@ function renderFoods() {
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
       ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
       <td class="n">${f.uses}</td>
-      <td class="act"><button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
+      <td class="act">${favButton("food", f)}<button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
     </tr>`;
   const box = $("#foods-groups");
   if (!rows.length) {
@@ -1822,6 +1835,21 @@ async function submitFood(ev) {
     setFoodSaved(saved, editing ? "Updated" : "Added");
     await loadFoods();
     form.elements.ean.focus();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function toggleFavoriteFood(id) {
+  const f = state.foods.find((x) => x.id === id);
+  if (!f) return;
+  try {
+    const saved = await api("PUT", `/foods/${id}/favorite`, { favorite: !f.favorite });
+    f.favorite = saved.favorite;
+    state.foods = favoritesFirst([...state.foods].sort((a, b) => b.uses - a.uses || collator.compare(a.name, b.name)));
+    renderFoods();
+    $(`#food-row-${id} [data-fav-food]`)?.focus();
+    toast(f.favorite ? `♥ ${f.name} is a favorite` : `${f.name} is no longer a favorite`);
   } catch (err) {
     showError(err);
   }
@@ -2926,7 +2954,7 @@ function renderSavedMeals() {
       };
       return `<article class="sm-card${sm.id === state.editingSavedMealId ? " editing" : ""}" id="sm-card-${sm.id}">
         <div class="sm-top">
-          <h3>${esc(sm.name)}</h3>
+          <h3>${favButton("sm", sm)}${esc(sm.name)}</h3>
           ${usualMeals(sm).length ? `<span class="sm-fors">${usualMeals(sm).map((m) => `<span class="sm-for">${esc(mealLabel(m))}</span>`).join("")}</span>` : ""}
         </div>
         ${tagPills(sm.tags)}
@@ -3036,6 +3064,20 @@ async function submitSavedMeal(ev) {
     }
     await loadSavedMeals();
     resetSmForm();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function toggleFavoriteMeal(id) {
+  const sm = state.savedMeals.find((x) => x.id === id);
+  if (!sm) return;
+  try {
+    await api("PUT", `/saved-meals/${id}/favorite`, { favorite: !sm.favorite });
+    await loadSavedMeals(); // favorites first, as the server orders them
+    renderSavedMeals();
+    $(`#sm-card-${id} [data-fav-sm]`)?.focus();
+    toast(!sm.favorite ? `♥ ${sm.name} is a favorite` : `${sm.name} is no longer a favorite`);
   } catch (err) {
     showError(err);
   }
@@ -4341,6 +4383,8 @@ function wire() {
   $("#foods-groups").addEventListener("click", (e) => {
     const sort = e.target.closest("[data-sort]");
     if (sort) return sortFoodsBy(sort.dataset.sort);
+    const fav = e.target.closest("[data-fav-food]");
+    if (fav) return toggleFavoriteFood(Number(fav.dataset.favFood));
     const edit = e.target.closest("[data-edit-food]");
     if (edit) return editFood(Number(edit.dataset.editFood));
     const del = e.target.closest("[data-del-food]");
@@ -4449,6 +4493,8 @@ function wire() {
   });
   $("#sm-only-ready").checked = prefGet("pamela-meals-ready") === "1";
   $("#sm-list").addEventListener("click", (e) => {
+    const fav = e.target.closest("[data-fav-sm]");
+    if (fav) return toggleFavoriteMeal(Number(fav.dataset.favSm));
     const use = e.target.closest("[data-use-sm]");
     if (use) return useSavedMealToday(Number(use.dataset.useSm));
     const buy = e.target.closest("[data-buy-sm]");

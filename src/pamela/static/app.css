@@ -20,6 +20,7 @@
   --danger: #c0392b;
   --warn: #b26a00;
   --done: #e3b100;      /* a fridge sector with every item ticked */
+  --fav: #d6336c;       /* the favorite heart */
   --track: #d8e5ca;
   /* macro identity colors (categorical slots 1-4, always shown with a text label) */
   --c-kcal: #2a78d6;
@@ -70,6 +71,7 @@
     --danger: #e66767;
     --warn: #e0a030;
     --done: #f2c94c;
+    --fav: #f06595;
     --track: #263321;
     --c-kcal: #3987e5;
     --c-protein: #d95926;
@@ -112,6 +114,7 @@
   --danger: #e66767;
   --warn: #e0a030;
   --done: #f2c94c;
+  --fav: #f06595;
   --track: #263321;
   --c-kcal: #3987e5;
   --c-protein: #d95926;
@@ -485,7 +488,7 @@ input.invalid { border-color: var(--danger); }
 .foods-table col.c-brand { width: 20%; }
 .foods-table col.c-per { width: 82px; }
 .foods-table col.c-n { width: 52px; }
-.foods-table col.c-act { width: 76px; }
+.foods-table col.c-act { width: 106px; }
 .foods-table td { overflow-wrap: anywhere; }
 .foods-groups.hide-tags .tags { display: none; }
 .sort-btn {
@@ -1110,3 +1113,12 @@ a.stock-where:hover { text-decoration: underline; color: var(--text); }
 .meta-pick { max-width: 100%; min-width: 12rem; }
 .meta-pick.unpicked { border-color: var(--accent-2-line); background: var(--accent-2-soft); color: var(--text); }
 tr.unpicked td[data-k] { color: var(--text-3); font-style: italic; }
+
+/* --- favorites: a heart that fills in ------------------------------------------ */
+.fav-btn svg path { fill: none; }
+.fav-btn:hover { color: var(--fav); }
+.fav-btn[aria-pressed="true"] { color: var(--fav); }
+.fav-btn[aria-pressed="true"] svg path { fill: currentColor; }
+.sm-top h3 { display: flex; align-items: center; gap: 2px; }
+.sm-top h3 .fav-btn { margin-left: -6px; }
+.fav-mark { color: var(--fav); }

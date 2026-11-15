@@ -49,6 +49,7 @@ from .schemas import (
     EntryBatchIn,
     EntryIn,
     ExpiredIn,
+    FavoriteIn,
     Food,
     FoodIn,
     Fridge,
@@ -340,7 +341,7 @@ def list_foods(
     sql = _FOOD_SELECT
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY uses DESC, f.name COLLATE NOCASE LIMIT ?"
+    sql += " ORDER BY f.favorite DESC, uses DESC, f.name COLLATE NOCASE LIMIT ?"
     return conn.execute(sql, (*params, limit)).fetchall()
 
 
@@ -466,6 +467,16 @@ def update_food(food_id: int, food: FoodIn, conn: Conn) -> dict:
     return _food_row(conn, food_id)
 
 
+@router.put("/foods/{food_id}/favorite", response_model=Food)
+def favorite_food(food_id: int, body: FavoriteIn, conn: Conn) -> dict:
+    """Favorites are listed first, in the Foods tab and in every food search."""
+    if conn.execute(
+        "UPDATE foods SET favorite = ? WHERE id = ?", (int(body.favorite), food_id)
+    ).rowcount == 0:
+        raise _not_found("food")
+    return _food_row(conn, food_id)
+
+
 def _refresh_entries(conn: sqlite3.Connection, food_id: int) -> None:
     """Recompute every logged entry of a food from its current values, on any day."""
     food = conn.execute("SELECT * FROM foods WHERE id = ?", (food_id,)).fetchone()
@@ -516,7 +527,8 @@ _ITEM_COLS = ", ".join(
 def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> list[dict]:
     where, params = ("WHERE id = ?", (saved_meal_id,)) if saved_meal_id is not None else ("", ())
     meals = conn.execute(
-        f"SELECT * FROM saved_meals {where} ORDER BY name COLLATE NOCASE, id", params
+        f"SELECT * FROM saved_meals {where} ORDER BY favorite DESC, name COLLATE NOCASE, id",
+        params,
     ).fetchall()
     item_where = "WHERE i.saved_meal_id = ?" if saved_meal_id is not None else ""
     items = conn.execute(
@@ -537,7 +549,7 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
         marks = ", ".join("?" * len(meta_ids))
         for f in conn.execute(
             _FOOD_SELECT + f" WHERE f.meta_id IN ({marks})"
-            " ORDER BY uses DESC, f.name COLLATE NOCASE",
+            " ORDER BY f.favorite DESC, uses DESC, f.name COLLATE NOCASE",
             (*meta_ids,),
         ):
             options.setdefault(f["meta_id"], []).append(f)
@@ -631,6 +643,16 @@ def update_saved_meal(saved_meal_id: int, meal: SavedMealIn, conn: Conn) -> dict
     if cur.rowcount == 0:
         raise _not_found("saved meal")
     _store_items(conn, saved_meal_id, meal)
+    return _saved_meal(conn, saved_meal_id)
+
+
+@router.put("/saved-meals/{saved_meal_id}/favorite", response_model=SavedMeal)
+def favorite_saved_meal(saved_meal_id: int, body: FavoriteIn, conn: Conn) -> dict:
+    """Favorites are listed first, in the Meals tab and in the Day tab's meal picker."""
+    if conn.execute(
+        "UPDATE saved_meals SET favorite = ? WHERE id = ?", (int(body.favorite), saved_meal_id)
+    ).rowcount == 0:
+        raise _not_found("saved meal")
     return _saved_meal(conn, saved_meal_id)
 
 

@@ -15,9 +15,9 @@
     <nav class="tabs" aria-label="Sections">
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
+      <a href="#/meals" data-nav="meals">Meals</a>
       <a href="#/groceries" data-nav="groceries">Groceries</a>
       <a href="#/fridge" data-nav="fridge">Fridge</a>
-      <a href="#/meals" data-nav="meals">Meals</a>
       <a href="#/history" data-nav="history">History</a>
       <a href="#/settings" data-nav="settings">Settings</a>
       <a href="#/help" data-nav="help" title="Help ( ? )">Help</a>
@@ -611,9 +611,9 @@
               <li><a href="#/help" data-jump="help-day-summary">Summary</a></li>
             </ol></li>
           <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
+          <li><a href="#/help" data-jump="help-meals">⭐ Meals</a></li>
           <li><a href="#/help" data-jump="help-groceries">🛒 Groceries</a></li>
           <li><a href="#/help" data-jump="help-fridge">🧊 Fridge</a></li>
-          <li><a href="#/help" data-jump="help-meals">⭐ Meals</a></li>
           <li><a href="#/help" data-jump="help-history">📈 History</a></li>
           <li><a href="#/help" data-jump="help-settings-tab">⚙️ Settings</a></li>
           <li><a href="#/help" data-jump="help-exit">🚪 Closing Pamela</a></li>
@@ -748,6 +748,9 @@
             <b>One of</b> (they have to share the unit, like g). A meal can list a meta food, and when
             you log that meal you pick which one you used. Meta foods can't be logged on their own or
             bought: their foods are.</p>
+          <p>♥ <b>Favorites.</b> Press the heart on a food's row to make it a favorite, and again to
+            take it off. Favorites come first: in each group of the list, and in every food search,
+            like the one in the Day tab.</p>
           <p>🏷️ <b>Diet tags</b>: <span class="tag tag-pescatarian">Pescatarian</span>
             <span class="tag tag-ovolactovegetarian">Ovolactovegetarian</span>
             <span class="tag tag-vegetarian">Vegetarian</span>
@@ -788,6 +791,28 @@
           <p>🧮 A hint shows the calories your macros add up to, which helps catch typos.</p>
           <p>🔄 Editing a food updates every day you logged it on, with its new values. Deleting a
             food leaves logged days as they are.</p>
+        </section>
+
+        <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">
+          <h2 id="help-meals-h">⭐ Meals</h2>
+          <p>Combos you eat often, like your usual breakfast. Build one here, or press
+            <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> takes any number of meals (none means any meal), and using it in the Day tab picks one of them for you. The
+            tags show what all its foods have in common. In the Day tab they're under
+            <b>Saved meal</b>.</p>
+          <p>📝 <b>Recipe.</b> Each meal can hold a recipe as free text: steps, times, tips. Open
+            <i>📝 Recipe</i> on its card to read it.</p>
+          <p>🛒 <b>Can I make it?</b> Each card compares the meal with your groceries: ✓ next to the
+            foods you have enough of, ⚠ next to the ones you're short of, and a line saying either
+            <i>You have everything to make it</i> or what's <i>Missing</i> and how much. <b>+ Buy
+            missing</b> puts what's missing in the cart in Groceries (in whole packs when the food has
+            a package size). Tick <i>Only what I can make now</i> to see just the meals you can cook
+            with what's at home.</p>
+          <p>🔀 <b>Any brand.</b> Add a meta food (like <i>mozzarella cheese</i>) to a meal when any
+            of its foods will do. Logging the meal asks which one you used, and the card counts what's
+            left of all of them together.</p>
+          <p>♥ <b>Favorites.</b> Press the heart on a meal's card to make it a favorite, and again to
+            take it off. Favorite meals come first here and at the top of <b>Saved meal</b> in the Day
+            tab.</p>
         </section>
 
         <section class="card help-card" id="help-groceries" aria-labelledby="help-groceries-h">
@@ -878,24 +903,6 @@
             gone off? Fix it in Groceries (<b>Take out</b>) or by logging what you ate.</p>
         </section>
 
-        <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">
-          <h2 id="help-meals-h">⭐ Meals</h2>
-          <p>Combos you eat often, like your usual breakfast. Build one here, or press
-            <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> takes any number of meals (none means any meal), and using it in the Day tab picks one of them for you. The
-            tags show what all its foods have in common. In the Day tab they're under
-            <b>Saved meal</b>.</p>
-          <p>📝 <b>Recipe.</b> Each meal can hold a recipe as free text: steps, times, tips. Open
-            <i>📝 Recipe</i> on its card to read it.</p>
-          <p>🛒 <b>Can I make it?</b> Each card compares the meal with your groceries: ✓ next to the
-            foods you have enough of, ⚠ next to the ones you're short of, and a line saying either
-            <i>You have everything to make it</i> or what's <i>Missing</i> and how much. <b>+ Buy
-            missing</b> puts what's missing in the cart in Groceries (in whole packs when the food has
-            a package size). Tick <i>Only what I can make now</i> to see just the meals you can cook
-            with what's at home.</p>
-          <p>🔀 <b>Any brand.</b> Add a meta food (like <i>mozzarella cheese</i>) to a meal when any
-            of its foods will do. Logging the meal asks which one you used, and the card counts what's
-            left of all of them together.</p>
-        </section>
 
         <section class="card help-card" id="help-history" aria-labelledby="help-history-h">
           <h2 id="help-history-h">📈 History</h2>

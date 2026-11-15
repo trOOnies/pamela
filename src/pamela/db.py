@@ -521,6 +521,12 @@ MIGRATIONS: list[str] = [
     UPDATE saved_meals SET default_meals = json_array(default_meal) WHERE default_meal != '';
     ALTER TABLE saved_meals DROP COLUMN default_meal;
     """,
+    # 22: favorite foods and meals, listed first wherever they're listed.
+    """
+    ALTER TABLE foods ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1));
+    ALTER TABLE saved_meals ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0
+        CHECK (favorite IN (0, 1));
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

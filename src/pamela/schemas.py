@@ -283,6 +283,7 @@ class Food(Macros, DietTags):
     is_meta: bool = False
     meta_id: int | None = None
     meta_name: str | None = Field(None, description="The name of its meta food")
+    favorite: bool = Field(False, description="Listed first wherever foods are listed")
     variants: int = Field(0, description="For a meta food: how many foods are one of it")
     uses: int = 0
     in_stock: float | None = Field(
@@ -317,6 +318,10 @@ class BarcodeLookup(BaseModel):
     )
     food: Food | None = None
     draft: FoodDraft | None = None
+
+
+class FavoriteIn(_In):
+    favorite: bool
 
 
 # --- saved meals -------------------------------------------------------------
@@ -372,6 +377,7 @@ class SavedMeal(BaseModel):
     tags: list[str] = Field(description="Diet tags shared by every item")
     recipe: str = ""
     can_make: bool = Field(description="Groceries hold enough of every item")
+    favorite: bool = Field(False, description="Listed first wherever meals are listed")
 
 
 # --- food entries ------------------------------------------------------------
