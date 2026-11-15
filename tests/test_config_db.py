@@ -230,3 +230,20 @@ def test_purchases_become_carts(tmp_path):
     assert set(r["id"] for r in conn.execute("SELECT id FROM stock_lots")) == {7, 8}
     assert conn.execute("SELECT COUNT(*) AS n FROM stock_uses").fetchone()["n"] == 0
     conn.close()
+
+
+def test_migration_21_keeps_each_meals_usual_meal(tmp_path, monkeypatch):
+    path = tmp_path / "db.sqlite3"
+    monkeypatch.setattr(db, "MIGRATIONS", db.MIGRATIONS[:20])
+    db.migrate(path)
+    with db.session(path) as conn:
+        conn.execute("INSERT INTO saved_meals (name, default_meal) VALUES ('Oats', 'Breakfast')")
+        conn.execute("INSERT INTO saved_meals (name) VALUES ('Anytime')")
+    monkeypatch.undo()
+    assert db.migrate(path) == len(db.MIGRATIONS)
+    with db.session(path) as conn:
+        rows = conn.execute("SELECT name, default_meals FROM saved_meals ORDER BY id").fetchall()
+    assert rows == [
+        {"name": "Oats", "default_meals": '["Breakfast"]'},
+        {"name": "Anytime", "default_meals": "[]"},
+    ]

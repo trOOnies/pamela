@@ -6,7 +6,7 @@ import datetime as dt
 import json
 import sqlite3
 from collections.abc import Iterator
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
@@ -282,8 +282,10 @@ _LOT_LEFT = """
     LEFT JOIN stock_uses u ON u.lot_id = l.id
 """
 _FOOD_SELECT = f"""
-    SELECT f.*, COALESCE(u.uses, 0) AS uses, s.in_stock
+    SELECT f.*, COALESCE(u.uses, 0) AS uses, s.in_stock, m.name AS meta_name,
+           (SELECT COUNT(*) FROM foods v WHERE v.meta_id = f.id) AS variants
     FROM foods f
+    LEFT JOIN foods m ON m.id = f.meta_id
     LEFT JOIN (
         SELECT food_id, COUNT(*) AS uses FROM food_entries
         WHERE food_id IS NOT NULL AND day >= date('now', '-90 days')
@@ -320,11 +322,15 @@ def list_foods(
     conn: Conn,
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    kind: Literal["all", "foods", "meta"] = "all",
 ) -> list[dict]:
     """Foods ordered by how often they were logged recently, then by name.
 
-    ``q`` matches every whitespace-separated word against name, brand or barcode."""
+    ``q`` matches every whitespace-separated word against name, brand or barcode.
+    ``kind`` keeps only the foods you can log or buy (``foods``) or the meta foods."""
     where, params = [], []
+    if kind != "all":
+        where.append(f"f.is_meta = {int(kind == 'meta')}")
     for word in q.split():
         like = _like(word)
         where.append(
@@ -365,9 +371,51 @@ def list_brands(conn: Conn) -> list[str]:
     return list(seen.values())
 
 
+def _meta_check(conn: sqlite3.Connection, food: FoodIn, food_id: int | None = None) -> None:
+    """A food's meta food must be a meta food in the same unit, so a meal's amount of
+    it means the same whichever food is picked. A food stops being or becomes a meta
+    food only when nothing depends on what it was."""
+    if food.meta_id is not None:
+        meta = conn.execute("SELECT * FROM foods WHERE id = ?", (food.meta_id,)).fetchone()
+        if meta is None or not meta["is_meta"]:
+            raise HTTPException(UNPROCESSABLE, "meta food not found")
+        if meta["id"] == food_id:
+            raise HTTPException(UNPROCESSABLE, "a food can't be one of itself")
+        if meta["unit"] != food.unit:
+            raise HTTPException(
+                UNPROCESSABLE,
+                f"\u201c{meta['name']}\u201d is measured in {meta['unit']}: "
+                f"this food has to be in {meta['unit']} too",
+            )
+    if food_id is None:
+        return
+    old = conn.execute("SELECT is_meta, unit FROM foods WHERE id = ?", (food_id,)).fetchone()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM foods WHERE meta_id = ?", (food_id,)
+    ).fetchone()["n"]
+    if old["is_meta"] and n and (not food.is_meta or food.unit != old["unit"]):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{n} food{'s are' if n != 1 else ' is'} one of it: unlink "
+            f"{'them' if n != 1 else 'it'} first, or keep it a meta food in {old['unit']}",
+        )
+    if food.is_meta and not old["is_meta"]:
+        busy = conn.execute(
+            """SELECT EXISTS (SELECT 1 FROM stock_lots WHERE food_id = ?)
+                   OR EXISTS (SELECT 1 FROM fridge_places WHERE food_id = ?) AS busy""",
+            (food_id, food_id),
+        ).fetchone()["busy"]
+        if busy:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "it's in Groceries or the Fridge: a meta food can't be bought or stored",
+            )
+
+
 @router.post("/foods", response_model=Food, status_code=status.HTTP_201_CREATED)
 def create_food(food: FoodIn, conn: Conn) -> dict:
     _ean_conflict(conn, food)
+    _meta_check(conn, food)
     data = food.model_dump()
     cols = ", ".join(data)
     marks = ", ".join("?" * len(data))
@@ -407,6 +455,7 @@ def read_food(food_id: int, conn: Conn) -> dict:
 def update_food(food_id: int, food: FoodIn, conn: Conn) -> dict:
     _food_row(conn, food_id)
     _ean_conflict(conn, food, food_id)
+    _meta_check(conn, food, food_id)
     data = food.model_dump()
     sets = ", ".join(f"{k} = ?" for k in data)
     conn.execute(
@@ -457,6 +506,7 @@ _ITEM_COLS = ", ".join(
         "serving_qty",
         "package_qty",
         "food_group",
+        "is_meta",
         *MACRO_FIELDS,
         *DIET_FIELDS,
     )
@@ -479,6 +529,20 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
     for it in items:
         by_meal[it["saved_meal_id"]].append(it)
     stock = _stock_left(conn)
+    # A meta food's options: the foods that are one of it, most used first. What's
+    # left of a meta food is what's left of all of them together.
+    options: dict[int, list[dict]] = {}
+    meta_ids = {it["food_id"] for it in items if it["is_meta"]}
+    if meta_ids:
+        marks = ", ".join("?" * len(meta_ids))
+        for f in conn.execute(
+            _FOOD_SELECT + f" WHERE f.meta_id IN ({marks})"
+            " ORDER BY uses DESC, f.name COLLATE NOCASE",
+            (*meta_ids,),
+        ):
+            options.setdefault(f["meta_id"], []).append(f)
+    for meta_id, opts in options.items():
+        stock[meta_id] = sum(stock.get(f["id"], 0) for f in opts)
     out = []
     for m in meals:
         rows = by_meal[m["id"]]
@@ -497,6 +561,7 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
                     "kcal_missing": it["kcal"] is None,
                     "in_stock": stock.get(it["food_id"], 0),
                     "missing": missing if missing > EPS else 0,
+                    "options": options.get(it["food_id"], []) if it["is_meta"] else [],
                 }
             )
         tags = [t for t in DIET_FIELDS if rows and all(it[t] for it in rows)]
@@ -505,6 +570,7 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
         out.append(
             m
             | {
+                "default_meals": json.loads(m["default_meals"]),
                 "items": scaled,
                 "totals": {k: sum(it[k] for it in scaled) for k in MACRO_FIELDS},
                 "tags": tags,
@@ -543,8 +609,8 @@ def list_saved_meals(conn: Conn) -> list[dict]:
 @router.post("/saved-meals", response_model=SavedMeal, status_code=status.HTTP_201_CREATED)
 def create_saved_meal(meal: SavedMealIn, conn: Conn) -> dict:
     cur = conn.execute(
-        "INSERT INTO saved_meals (name, default_meal, recipe) VALUES (?, ?, ?)",
-        (meal.name, meal.default_meal, meal.recipe),
+        "INSERT INTO saved_meals (name, default_meals, recipe) VALUES (?, ?, ?)",
+        (meal.name, json.dumps(meal.default_meals), meal.recipe),
     )
     _store_items(conn, cur.lastrowid, meal)
     return _saved_meal(conn, cur.lastrowid)
@@ -558,9 +624,9 @@ def read_saved_meal(saved_meal_id: int, conn: Conn) -> dict:
 @router.put("/saved-meals/{saved_meal_id}", response_model=SavedMeal)
 def update_saved_meal(saved_meal_id: int, meal: SavedMealIn, conn: Conn) -> dict:
     cur = conn.execute(
-        "UPDATE saved_meals SET name = ?, default_meal = ?, recipe = ?, "
+        "UPDATE saved_meals SET name = ?, default_meals = ?, recipe = ?, "
         "updated_at = datetime('now') WHERE id = ?",
-        (meal.name, meal.default_meal, meal.recipe, saved_meal_id),
+        (meal.name, json.dumps(meal.default_meals), meal.recipe, saved_meal_id),
     )
     if cur.rowcount == 0:
         raise _not_found("saved meal")
@@ -591,6 +657,11 @@ def _entry_values(entry: EntryIn, conn: sqlite3.Connection, config: AppConfig) -
         food = conn.execute("SELECT * FROM foods WHERE id = ?", (entry.food_id,)).fetchone()
         if food is None:
             raise HTTPException(UNPROCESSABLE, "food not found")
+        if food["is_meta"]:
+            raise HTTPException(
+                UNPROCESSABLE,
+                f"\u201c{food['name']}\u201d is a meta food: pick which one of it you ate",
+            )
         assert entry.quantity is not None  # guaranteed by EntryIn validation
         values |= {
             "food_id": food["id"],
@@ -732,10 +803,17 @@ def _lot_row(conn: sqlite3.Connection, lot_id: int) -> dict:
 
 
 def _food_exists(conn: sqlite3.Connection, ids: set[int]) -> None:
+    """Every food can be bought: it exists and isn't a meta food."""
     marks = ", ".join("?" * len(ids))
-    known = {r["id"] for r in conn.execute(f"SELECT id FROM foods WHERE id IN ({marks})", (*ids,))}
-    if missing := ids - known:
+    rows = conn.execute(
+        f"SELECT id, name, is_meta FROM foods WHERE id IN ({marks})", (*ids,)
+    ).fetchall()
+    if missing := ids - {r["id"] for r in rows}:
         raise HTTPException(UNPROCESSABLE, f"food not found: {', '.join(map(str, missing))}")
+    if meta := [r["name"] for r in rows if r["is_meta"]]:
+        raise HTTPException(
+            UNPROCESSABLE, f"meta foods can't be bought, only their foods: {', '.join(meta)}"
+        )
 
 
 def _foods_info(conn: sqlite3.Connection) -> dict[int, dict]:

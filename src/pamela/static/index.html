@@ -225,7 +225,12 @@
           <button type="button" class="btn ghost" id="food-cancel" hidden>Cancel edit</button>
         </div>
         <form id="food-form" class="food-form" autocomplete="off">
-          <div class="field span2 ean-field">
+          <label class="field check span2 meta-check" title="A kind of food with no brand, like mozzarella cheese: a meal can list it, and you pick which one you used when you log the meal">
+            <input type="checkbox" name="is_meta" id="food-is-meta"><span>🔀 Meta food: a kind of food, any brand <small>(e.g. mozzarella cheese)</small></span></label>
+          <p class="hint span2 only-meta" hidden>Enter typical values: they estimate the meals that list it.
+            When you log one of those meals, you pick which of its foods you used. To add a food to it,
+            pick it under <b>One of</b> in that food's form.</p>
+          <div class="field span2 ean-field not-meta">
             <span id="ean-label">Barcode (EAN) <small>(optional)</small></span>
             <div class="ean-row">
               <input type="text" name="ean" id="food-ean" inputmode="numeric" maxlength="20"
@@ -233,10 +238,12 @@
               <button type="button" class="btn" id="ean-lookup">Look up</button>
             </div>
           </div>
-          <p class="hint span2 ean-status" id="ean-status" aria-live="polite"></p>
+          <p class="hint span2 ean-status not-meta" id="ean-status" aria-live="polite"></p>
           <label class="field span2"><span>Name</span><input type="text" name="name" required maxlength="200"></label>
-          <label class="field span2"><span>Brand <small>(optional)</small></span><input type="text" name="brand" maxlength="200" list="brand-options" autocomplete="on"></label>
+          <label class="field span2 not-meta"><span>Brand <small>(optional)</small></span><input type="text" name="brand" maxlength="200" list="brand-options" autocomplete="on"></label>
           <datalist id="brand-options"></datalist>
+          <label class="field span2 not-meta"><span>One of <small>(optional: a meta food it is a kind of)</small></span>
+            <select name="meta_id" id="food-meta"><option value="">None</option></select></label>
           <label class="field span2"><span>Group <small>(optional)</small></span>
             <select name="food_group" id="food-group"><option value="">No group</option></select></label>
           <label class="field not-alc"><span>Values per</span><input type="number" name="basis_qty" min="0" step="any" value="100" required></label>
@@ -254,7 +261,7 @@
             <span class="with-unit"><input type="number" name="abv_pct" min="0" max="100" step="any" placeholder="e.g. 5"><span class="unit">% V/V</span></span></label>
           <label class="field not-alc"><span>Serving size <small>(optional)</small></span>
             <span class="with-unit"><input type="number" name="serving_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
-          <label class="field"><span>Package size <small class="not-alc">(optional)</small></span>
+          <label class="field not-meta"><span>Package size <small class="not-alc">(optional)</small></span>
             <span class="with-unit"><input type="number" name="package_qty" min="0" step="any"><span class="unit form-unit">g</span></span></label>
           <p class="hint span2 only-alc" id="food-abv-hint" hidden></p>
           <p class="hint span2 unit-hint not-alc">Units: <b>u</b> is one piece of a pack (an egg from a carton),
@@ -416,8 +423,10 @@
         <form id="sm-form" class="sm-form" autocomplete="off">
           <div class="sm-fields">
             <label class="field grow"><span>Name</span><input type="text" name="name" required maxlength="200" placeholder="e.g. Usual breakfast"></label>
-            <label class="field"><span>Usually for</span><select name="default_meal" id="sm-default-meal"></select></label>
           </div>
+          <fieldset class="tag-picks meal-picks" id="sm-default-meals">
+            <legend>Usually for <small>(any that apply; none = any meal)</small></legend>
+          </fieldset>
           <table class="draft-table sm-items">
             <thead><tr><th>Food</th><th class="n">Amount</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
             <tbody id="sm-body"></tbody>
@@ -734,6 +743,11 @@
             <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>
             (only the barcode is sent) and the form fills in for you to check. Not found anywhere?
             Copy the values from the label once, and the barcode will find it next time.</p>
+          <p>🔀 <b>Meta foods.</b> A kind of food with no brand, like <i>mozzarella cheese</i>: tick
+            <i>Meta food</i> and enter typical values. Then, in each real food's form, pick it under
+            <b>One of</b> (they have to share the unit, like g). A meal can list a meta food, and when
+            you log that meal you pick which one you used. Meta foods can't be logged on their own or
+            bought: their foods are.</p>
           <p>🏷️ <b>Diet tags</b>: <span class="tag tag-pescatarian">Pescatarian</span>
             <span class="tag tag-ovolactovegetarian">Ovolactovegetarian</span>
             <span class="tag tag-vegetarian">Vegetarian</span>
@@ -867,7 +881,7 @@
         <section class="card help-card" id="help-meals" aria-labelledby="help-meals-h">
           <h2 id="help-meals-h">⭐ Meals</h2>
           <p>Combos you eat often, like your usual breakfast. Build one here, or press
-            <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> picks the meal for you, and the
+            <b>☆ save</b> on a meal in the Day tab. <i>Usually for</i> takes any number of meals (none means any meal), and using it in the Day tab picks one of them for you. The
             tags show what all its foods have in common. In the Day tab they're under
             <b>Saved meal</b>.</p>
           <p>📝 <b>Recipe.</b> Each meal can hold a recipe as free text: steps, times, tips. Open
@@ -878,6 +892,9 @@
             missing</b> puts what's missing in the cart in Groceries (in whole packs when the food has
             a package size). Tick <i>Only what I can make now</i> to see just the meals you can cook
             with what's at home.</p>
+          <p>🔀 <b>Any brand.</b> Add a meta food (like <i>mozzarella cheese</i>) to a meal when any
+            of its foods will do. Logging the meal asks which one you used, and the card counts what's
+            left of all of them together.</p>
         </section>
 
         <section class="card help-card" id="help-history" aria-labelledby="help-history-h">
@@ -933,8 +950,8 @@
           <h2 id="help-exit-h">🚪 Closing Pamela</h2>
           <p>Press <b>Exit</b> in the top right corner and confirm. Pamela waits for anything still
             being saved, tidies up its database file and stops its server, so nothing is left
-            running in the background. Your browser may not let a page close its own tab; if the tab
-            stays open, just close it.</p>
+            running in the background. The tab then shows Pamela's goodbye, with a little summary of
+            your day; close it whenever you like. Going to <code>/exit</code> does the same.</p>
           <p>Everything you've added is already saved as you go, so if the window closes by
             accident you won't lose anything. Exit is simply the clean way to finish. To start again,
             run <code>make serve</code>.</p>

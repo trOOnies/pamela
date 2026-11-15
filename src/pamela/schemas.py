@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from itertools import pairwise
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -220,6 +220,10 @@ class FoodIn(DietTags, _In):
     abv_pct: float | None = Field(
         None, ge=0, le=100, description="% alcohol by volume; alcoholic drinks only"
     )
+    is_meta: bool = Field(
+        False, description="A kind of food with no brand (e.g. mozzarella cheese), typical values"
+    )
+    meta_id: int | None = Field(None, description="The meta food this food is one of")
 
     @field_validator("ean")
     @classmethod
@@ -227,6 +231,20 @@ class FoodIn(DietTags, _In):
         if v is None or not v.strip():
             return None
         return normalize_ean(v)
+
+    @model_validator(mode="after")
+    def _meta(self) -> FoodIn:
+        """A meta food has no brand, barcode or package: it isn't bought, its foods are."""
+        if not self.is_meta:
+            return self
+        if self.brand:
+            raise ValueError("a meta food has no brand: its foods have one each")
+        if self.food_group == ALCOHOLIC:
+            raise ValueError("an alcoholic drink can't be a meta food")
+        if self.meta_id is not None:
+            raise ValueError("a meta food can't be one of another meta food")
+        self.ean = self.package_qty = None
+        return self
 
     @model_validator(mode="after")
     def _alcoholic(self) -> FoodIn:
@@ -262,6 +280,10 @@ class Food(Macros, DietTags):
     package_qty: float | None = None
     food_group: str = ""
     abv_pct: float | None = None
+    is_meta: bool = False
+    meta_id: int | None = None
+    meta_name: str | None = Field(None, description="The name of its meta food")
+    variants: int = Field(0, description="For a meta food: how many foods are one of it")
     uses: int = 0
     in_stock: float | None = Field(
         None, description="What's left in Groceries, in `unit`; null if never bought there"
@@ -310,7 +332,14 @@ RECIPE_MAX = 10_000
 
 class SavedMealIn(_In):
     name: str = Field(min_length=1, max_length=200)
-    default_meal: str = Field("", max_length=100)
+    default_meals: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(
+        [], max_length=50, description="The meals it's usually for; none = any"
+    )
+
+    @field_validator("default_meals")
+    @classmethod
+    def _unique_meals(cls, v: list[str]) -> list[str]:
+        return list(dict.fromkeys(v))
     items: list[SavedMealItemIn] = Field(min_length=1, max_length=100)
     recipe: str = Field("", max_length=RECIPE_MAX, description="How to make it, as free text")
 
@@ -328,12 +357,16 @@ class SavedMealItem(Macros):
     kcal_missing: bool = Field(False, description="The food has no kcal yet (counted as 0)")
     in_stock: float = Field(0, description="What's left of the food in Groceries")
     missing: float = Field(0, description="How much more of it the meal needs than is left")
+    is_meta: bool = Field(False, description="A meta food: its macros are typical values")
+    options: list[Food] = Field(
+        [], description="For a meta food: the foods that are one of it, to pick when logging"
+    )
 
 
 class SavedMeal(BaseModel):
     id: int
     name: str
-    default_meal: str
+    default_meals: list[str] = Field(description="The meals it's usually for; none = any")
     items: list[SavedMealItem]
     totals: Macros
     tags: list[str] = Field(description="Diet tags shared by every item")

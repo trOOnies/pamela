@@ -236,7 +236,7 @@ def test_saved_meal_crud_and_tags(client, oats):
     )
     body = {
         "name": "Usual breakfast",
-        "default_meal": "Breakfast",
+        "default_meals": ["Breakfast", "Snack", "Breakfast"],
         "items": [
             {"food_id": oats["id"], "quantity": 60},
             {"food_id": milk["id"], "quantity": 200},
@@ -245,6 +245,7 @@ def test_saved_meal_crud_and_tags(client, oats):
     r = client.post("/api/saved-meals", json=body)
     assert r.status_code == 201, r.text
     sm = r.json()
+    assert sm["default_meals"] == ["Breakfast", "Snack"]  # each once
     assert [it["name"] for it in sm["items"]] == ["Rolled oats", "Milk"]
     assert sm["items"][1]["kcal"] == pytest.approx(100)
     assert sm["totals"]["kcal"] == pytest.approx(380 * 0.6 + 100)

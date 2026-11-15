@@ -269,12 +269,28 @@ function fillConfigControls() {
   if (cfg.meals.names.includes(prevMeal)) mealSel.value = prevMeal;
   else mealSel.value = defaultMeal();
 
-  const smSel = $("#sm-default-meal");
-  const prevSm = smSel.value;
-  smSel.innerHTML = `<option value="">Any meal</option>` + cfg.meals.names.map((m) => `<option value="${esc(m)}">${esc(mealLabel(m))}</option>`).join("");
-  smSel.value = cfg.meals.names.includes(prevSm) ? prevSm : "";
+  const box = $("#sm-default-meals");
+  const ticked = usualMealsTicked();
+  for (const l of $$("label", box)) l.remove();
+  box.insertAdjacentHTML(
+    "beforeend",
+    cfg.meals.names.map((m) => `<label class="tag-pick meal-pick"><input type="checkbox" name="default_meals" value="${esc(m)}"><span>${esc(mealLabel(m))}</span></label>`).join("")
+  );
+  setUsualMeals(ticked); // as properties: resetting the form unticks them all
   updateActivityForm();
   updateDraftCommit();
+}
+
+/** The meals ticked under "Usually for" in the Meals form, in the configured order. */
+function usualMealsTicked() {
+  return $$('#sm-default-meals input:checked').map((x) => x.value);
+}
+function setUsualMeals(names) {
+  for (const x of $$("#sm-default-meals input")) x.checked = names.includes(x.value);
+}
+/** A saved meal's usual meals that still exist in the settings. */
+function usualMeals(sm) {
+  return sm.default_meals.filter((m) => state.config.meals.names.includes(m));
 }
 
 /** Guess the meal from the time of day, spreading configured meals over 06:00-22:00. */
@@ -387,7 +403,7 @@ function openDayPicker() {
  * onPick(food) is called on a choice; onCreate(query), if given, adds a last
  * "create / look up" option. Enter never submits a form unless canSubmit() says so.
  */
-function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => false }) {
+function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => false, kind = "foods" }) {
   // pending: a search is waiting (debounce or request). Enter meanwhile is held
   // and picks the first fresh result, so fast typing and barcode scanners
   // (digits + Enter in a few ms) never pick a stale suggestion.
@@ -406,7 +422,7 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
     let html = c.results
       .map(
         (f, i) => `<li role="option" id="${idp}-${i}" data-i="${i}" aria-selected="${i === c.active}">
-          <span class="s-name">${esc(f.name)} ${f.brand ? `<span class="brand-tag">${esc(f.brand)}</span>` : ""}${tagPills(f, "mini")}</span>
+          <span class="s-name">${esc(f.name)} ${f.is_meta ? `<span class="meta-pill" title="Any brand: you pick which one when you log the meal">🔀 any brand</span>` : f.brand ? `<span class="brand-tag">${esc(f.brand)}</span>` : ""}${tagPills(f, "mini")}</span>
           <span class="meta">${f.kcal == null ? `<span class="warn-kcal">⚠ no kcal</span>` : `${fmt(f.kcal)} kcal`} / ${fmtQty(f.basis_qty)} ${esc(f.unit)}${stockMeta(f)}</span></li>`
       )
       .join("");
@@ -431,7 +447,7 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
     const q = input.value.trim();
     const seq = ++c.seq;
     try {
-      const foods = await api("GET", `/foods?limit=12&q=${encodeURIComponent(q)}`);
+      const foods = await api("GET", `/foods?limit=12&kind=${kind}&q=${encodeURIComponent(q)}`);
       if (seq !== c.seq) return;
       c.pending = false;
       c.results = foods;
@@ -515,17 +531,59 @@ function stockMeta(f) {
 
 // --- editable item tables (saved meal draft and editor) ---------------------------
 
+/** A food's macros per 1 unit (a missing kcal counts as 0). */
+function perUnit(f) {
+  const per = { kcal: (f.kcal ?? 0) / f.basis_qty };
+  for (const m of MACROS) per[m.key] = f[m.key] / f.basis_qty;
+  return per;
+}
 /** A food as an item: macros are kept per 1 unit so any amount can be recomputed. */
 function itemFromFood(f, quantity) {
-  const per = { kcal: f.kcal / f.basis_qty };
-  for (const m of MACROS) per[m.key] = f[m.key] / f.basis_qty;
-  return { food_id: f.id, name: f.name, brand: f.brand, unit: f.unit, per, quantity: quantity ?? f.serving_qty ?? f.basis_qty };
+  return { food_id: f.id, name: f.name, brand: f.brand, unit: f.unit, is_meta: !!f.is_meta, per: perUnit(f), quantity: quantity ?? f.serving_qty ?? f.basis_qty };
 }
 /** A saved meal item (macros already scaled to its quantity) as an item. */
 function itemFromSaved(it) {
   const per = { kcal: it.kcal / it.quantity };
   for (const m of MACROS) per[m.key] = it[m.key] / it.quantity;
-  return { food_id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, per, quantity: it.quantity };
+  return { food_id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, is_meta: !!it.is_meta, per, quantity: it.quantity };
+}
+/** A saved meal item about to be logged. A meta food needs one of its foods picked
+ * first (``pick``): until then it has no food_id and shows its typical values. */
+function itemToLog(it) {
+  const item = itemFromSaved(it);
+  if (!it.is_meta) return item;
+  item.pick = { id: it.food_id, name: it.name, options: it.options, typical: item.per };
+  item.food_id = null;
+  item.brand = "";
+  if (it.options.length === 1) pickOption(item, it.options[0]);
+  return item;
+}
+/** Logs ``f`` in place of the item's meta food (they share the unit). */
+function pickOption(item, f) {
+  if (!f) {
+    Object.assign(item, { food_id: null, name: item.pick.name, brand: "", per: item.pick.typical });
+    return;
+  }
+  Object.assign(item, { food_id: f.id, name: f.name, brand: f.brand, per: perUnit(f) });
+}
+/** The name cell of an item: a picker for a meta food being logged. */
+function itemNameCell(it, i) {
+  const p = it.pick;
+  if (!p) {
+    const meta = it.is_meta ? ` <span class="meta-pill" title="Any brand: you pick which one when you log the meal">🔀 any brand</span>` : "";
+    return `${esc(it.name)}${it.brand ? ` <span class="brand-tag">${esc(it.brand)}</span>` : ""}${meta}`;
+  }
+  if (!p.options.length) {
+    return `🔀 ${esc(p.name)} <span class="meta-none">No food is one of it yet: <a href="#/foods">link one in Foods</a>, or remove it</span>`;
+  }
+  const opts = p.options
+    .map((f) => {
+      const stock = f.in_stock > 1e-6 ? ` · 🛒 ${fmtQty(f.in_stock)} ${f.unit}` : "";
+      return `<option value="${f.id}"${f.id === it.food_id ? " selected" : ""}>${esc(f.name)}${f.brand ? ` (${esc(f.brand)})` : ""}${stock}</option>`;
+    })
+    .join("");
+  return `<select class="meta-pick${it.food_id ? "" : " unpicked"}" data-pick-i="${i}" aria-label="Which ${esc(p.name)}?">
+      <option value="">🔀 Which ${esc(p.name)}?</option>${opts}</select>`;
 }
 function itemMacros(it) {
   const q = it.quantity > 0 ? it.quantity : 0;
@@ -557,8 +615,8 @@ function itemsTable({ tbody, tfoot, getItems, fiber, empty, onChange }) {
     tbody.innerHTML = items.length
       ? items
           .map(
-            (it, i) => `<tr data-i="${i}">
-          <td>${esc(it.name)}${it.brand ? ` <span class="brand-tag">${esc(it.brand)}</span>` : ""}</td>
+            (it, i) => `<tr data-i="${i}"${it.pick && !it.food_id ? ` class="unpicked" title="Typical values, until you pick which ${esc(it.pick.name)}"` : ""}>
+          <td>${itemNameCell(it, i)}</td>
           <td class="n"><span class="with-unit qty-cell"><input class="qty-input" type="number" min="0" step="any" value="${it.quantity}" data-qty-i="${i}" aria-label="Amount of ${esc(it.name)}"><span class="unit">${esc(it.unit)}</span></span></td>
           ${cells(itemMacros(it))}
           <td class="act"><button type="button" class="row-btn del" data-del-i="${i}" title="Remove" aria-label="Remove ${esc(it.name)}">✕</button></td>
@@ -578,6 +636,16 @@ function itemsTable({ tbody, tfoot, getItems, fiber, empty, onChange }) {
     for (const td of $$(`tr[data-i="${i}"] td[data-k]`, tbody)) td.textContent = fmt(o[td.dataset.k], td.dataset.k === "kcal" ? 0 : 1);
     foot();
     onChange?.();
+  });
+  tbody.addEventListener("change", (e) => {
+    const sel = e.target.closest("[data-pick-i]");
+    if (!sel) return;
+    const i = Number(sel.dataset.pickI);
+    const it = getItems()[i];
+    pickOption(it, it.pick.options.find((f) => String(f.id) === sel.value));
+    render();
+    onChange?.();
+    $(`[data-pick-i="${i}"]`, tbody)?.focus();
   });
   tbody.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.closest("[data-qty-i]")) e.preventDefault();
@@ -744,7 +812,7 @@ async function saveMealAsSaved(meal) {
   try {
     await api("POST", "/saved-meals", {
       name: name.trim(),
-      default_meal: meal,
+      default_meals: [meal],
       items: rows.map((e) => ({ food_id: e.food_id, quantity: e.quantity })),
     });
     await loadSavedMeals();
@@ -1246,7 +1314,7 @@ function fillSavedPick() {
   sel.innerHTML =
     `<option value="">${state.savedMeals.length ? "Choose a saved meal…" : "No saved meals yet"}</option>` +
     state.savedMeals
-      .map((sm) => `<option value="${sm.id}">${esc(sm.name)} · ${fmt(sm.totals.kcal)} kcal${sm.default_meal ? ` · ${esc(sm.default_meal)}` : ""}</option>`)
+      .map((sm) => `<option value="${sm.id}">${esc(sm.name)} · ${fmt(sm.totals.kcal)} kcal${sm.default_meals.length ? ` · ${esc(sm.default_meals.join(" / "))}` : ""}</option>`)
       .join("");
   sel.value = state.savedMeals.some((sm) => String(sm.id) === prev) ? prev : "";
   $("#saved-hint").innerHTML = state.savedMeals.length
@@ -1255,8 +1323,9 @@ function fillSavedPick() {
 }
 
 function startDraft(sm) {
-  state.draft = { id: sm.id, name: sm.name, items: sm.items.map(itemFromSaved) };
-  if (sm.default_meal && state.config.meals.names.includes(sm.default_meal)) $("#entry-meal").value = sm.default_meal;
+  state.draft = { id: sm.id, name: sm.name, items: sm.items.map(itemToLog) };
+  const usual = usualMeals(sm);
+  if (usual.length && !usual.includes($("#entry-meal").value)) $("#entry-meal").value = usual[0];
   renderDraft();
   $("#draft-commit").focus();
 }
@@ -1295,6 +1364,13 @@ async function commitDraft() {
   if (bad >= 0) {
     toast(`Enter an amount for ${d.items[bad].name}`, true);
     $(`#draft-body [data-qty-i="${bad}"]`)?.focus();
+    return;
+  }
+  const unpicked = d.items.findIndex((it) => it.pick && !it.food_id);
+  if (unpicked >= 0) {
+    const p = d.items[unpicked].pick;
+    toast(p.options.length ? `Pick which ${p.name} you used` : `No food is one of ${p.name} yet: link one in Foods, or remove it`, true);
+    $(`#draft-body [data-pick-i="${unpicked}"]`)?.focus();
     return;
   }
   const meal = $("#entry-meal").value;
@@ -1387,7 +1463,7 @@ async function submitActivity(ev) {
 
 // --- foods view --------------------------------------------------------------
 
-const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty", "food_group", "abv_pct"];
+const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty", "food_group", "abv_pct", "meta_id"];
 
 // Alcoholic drinks are entered by their alcohol content and package size alone: the
 // backend keeps them per 100 ml, with kcal from the ethanol (0.789 g/ml, 7 kcal/g).
@@ -1402,6 +1478,7 @@ async function loadFoods() {
   try {
     const [foods, brands] = await Promise.all([api("GET", "/foods?limit=1000"), api("GET", "/brands")]);
     state.foods = foods;
+    fillMetaSelect();
     $("#brand-options").innerHTML = brands.map((b) => `<option value="${esc(b)}">`).join("");
     renderFoods();
     if (state.focusRow != null) goToFood(state.focusRow);
@@ -1426,7 +1503,7 @@ function renderFoods() {
   const tags = [...state.foodTagFilter];
   const group = $("#group-filter").value;
   const rows = state.foods.filter((f) => {
-    const hay = `${f.name} ${f.brand} ${f.ean ?? ""}`.toLowerCase();
+    const hay = `${f.name} ${f.brand} ${f.ean ?? ""} ${f.meta_name ?? ""}`.toLowerCase();
     return words.every((w) => hay.includes(w)) && tags.every((t) => f[t]) && (!group || f.food_group === group);
   }).map(per100);
   const missing = state.foods.filter((f) => f.kcal == null).length;
@@ -1434,8 +1511,8 @@ function renderFoods() {
     (rows.length === state.foods.length ? `(${rows.length})` : `(${rows.length} of ${state.foods.length})`) +
     (missing ? ` · ⚠ ${missing} without kcal` : "");
   const row = (f) => `<tr id="food-row-${f.id}" class="${f.id === state.editingFoodId ? "editing" : ""}">
-      <td>${esc(f.name)}${f.abv_pct != null ? ` <small class="abv">${fmt(f.abv_pct, 1)}% V/V</small>` : ""}${tagPills(f)}</td>
-      <td>${esc(f.brand)}${f.ean ? `<span class="ean" title="Barcode">${esc(f.ean)}</span>` : ""}</td>
+      <td>${esc(f.name)}${f.abv_pct != null ? ` <small class="abv">${fmt(f.abv_pct, 1)}% V/V</small>` : ""}${metaNote(f)}${tagPills(f)}</td>
+      <td>${f.is_meta ? `<span class="muted">any brand</span>` : esc(f.brand)}${f.ean ? `<span class="ean" title="Barcode">${esc(f.ean)}</span>` : ""}</td>
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
       ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
       <td class="n">${f.uses}</td>
@@ -1498,6 +1575,25 @@ function groupEmoji(key) {
 function groupHeading(g, n, id) {
   return `<h3${id ? ` id="${id}"` : ""}><span aria-hidden="true">${g.emoji}</span> ${esc(g.label)} <span class="count">(${n})</span></h3>`;
 }
+/** Next to a food's name: "🔀 Meta food · 2 foods", or "↳ one of Mozzarella cheese". */
+function metaNote(f) {
+  if (f.is_meta) {
+    const n = f.variants;
+    return ` <span class="meta-pill" title="A kind of food, any brand: values are typical ones">🔀 Meta food · ${n ? `${n} food${n === 1 ? "" : "s"}` : "no foods yet"}</span>`;
+  }
+  return f.meta_name ? ` <small class="meta-of" title="It's one of this meta food">↳ one of ${esc(f.meta_name)}</small>` : "";
+}
+
+/** The "One of" choices: every meta food but the one being edited. */
+function fillMetaSelect() {
+  const sel = $("#food-meta");
+  const prev = sel.value;
+  const metas = state.foods.filter((f) => f.is_meta && f.id !== state.editingFoodId).sort((a, b) => collator.compare(a.name, b.name));
+  sel.innerHTML = `<option value="">${metas.length ? "None" : "None (no meta foods yet)"}</option>` +
+    metas.map((f) => `<option value="${f.id}">🔀 ${esc(f.name)} (${esc(f.unit)})</option>`).join("");
+  sel.value = metas.some((f) => String(f.id) === prev) ? prev : "";
+}
+
 // Sortable catalog columns: the value to sort by, and whether it's text. The first
 // click sorts text A→Z and numbers high→low.
 const FOOD_SORT = {
@@ -1565,8 +1661,12 @@ function updateFormUnit() {
 function updateFoodFormKind() {
   const el = $("#food-form").elements;
   const alc = el.food_group.value === ALCOHOLIC;
-  for (const x of $$("#food-form .not-alc")) x.hidden = alc;
-  for (const x of $$("#food-form .only-alc")) x.hidden = !alc;
+  const meta = el.is_meta.checked;
+  // A meta food has no brand, barcode, package or meta food of its own.
+  for (const x of $$("#food-form .not-alc, #food-form .only-alc, #food-form .not-meta, #food-form .only-meta")) {
+    const c = x.classList;
+    x.hidden = (alc && c.contains("not-alc")) || (!alc && c.contains("only-alc")) || (meta && c.contains("not-meta")) || (!meta && c.contains("only-meta"));
+  }
   el.basis_qty.required = el.unit.required = !alc;
   el.abv_pct.required = el.package_qty.required = alc;
   updateFormUnit();
@@ -1589,6 +1689,7 @@ function resetFoodForm() {
   const form = $("#food-form");
   form.reset();
   state.editingFoodId = null;
+  fillMetaSelect();
   $("#food-form-h").textContent = "New food item";
   $("#food-submit").textContent = "Save food";
   $("#food-cancel").hidden = true;
@@ -1601,7 +1702,9 @@ function resetFoodForm() {
 /** Puts a food (or a barcode lookup draft) into the form. */
 function fillFoodForm(f) {
   const el = $("#food-form").elements;
+  fillMetaSelect();
   for (const k of FOOD_FIELDS) el[k].value = f[k] ?? "";
+  el.is_meta.checked = !!f.is_meta;
   for (const t of state.vocab.diet_tags) el[t.key].checked = !!f[t.key];
   updateKcalHint();
   updateFoodFormKind();
@@ -1612,7 +1715,7 @@ function editFood(id) {
   if (!f) return;
   state.editingFoodId = id;
   fillFoodForm(f);
-  $("#food-form-h").textContent = "Edit food";
+  $("#food-form-h").textContent = f.is_meta ? "Edit meta food" : "Edit food";
   setFoodSaved(null);
   $("#food-submit").textContent = "Update food";
   $("#food-cancel").hidden = false;
@@ -1700,7 +1803,10 @@ async function submitFood(ev) {
     serving_qty: num(v.serving_qty) || null,
     package_qty: num(v.package_qty) || null,
     food_group: v.food_group,
+    is_meta: form.elements.is_meta.checked,
+    meta_id: num(v.meta_id) || null,
   };
+  if (body.is_meta) Object.assign(body, { brand: "", ean: null, package_qty: null, meta_id: null });
   for (const m of MACROS) body[m.key] = num(v[m.key]) ?? 0;
   for (const t of state.vocab.diet_tags) body[t.key] = form.elements[t.key].checked;
   if (v.food_group === ALCOHOLIC) {
@@ -1728,6 +1834,7 @@ async function deleteFood(id) {
     title: "🗑️ Delete this food?",
     body: `<p><b>${esc(f.name)}</b>${f.brand ? ` <span class="brand-tag">${esc(f.brand)}</span>` : ""} leaves your Foods.
       Days you already logged it on keep their values. It's also removed from saved meals and groceries.</p>
+      ${f.is_meta && f.variants ? `<p>The ${f.variants} food${f.variants === 1 ? "" : "s"} that ${f.variants === 1 ? "is" : "are"} one of it stay in Foods, just unlinked.</p>` : ""}
       <p>This can't be undone.</p>`,
     ok: "Delete food",
   });
@@ -2812,12 +2919,15 @@ function renderSavedMeals() {
         const title = it.missing > 0
           ? `${fmtQty(it.in_stock)} ${it.unit} in stock: ${fmtQty(it.missing)} ${it.unit} short`
           : `${fmtQty(it.in_stock)} ${it.unit} in stock`;
-        return `<li class="${it.missing > 0 ? "short" : ""}" title="${esc(title)}"><span>${groupEmoji(it.food_group)}${esc(it.name)}${it.kcal_missing ? ` <span class="warn-kcal" title="No kcal entered yet for this food: counted as 0">⚠</span>` : ""}</span><span class="n">${it.missing > 0 ? "⚠ " : "✓ "}${fmtQty(it.quantity)} ${esc(it.unit)}</span></li>`;
+        const any = it.is_meta
+          ? ` <span class="meta-pill" title="${esc(it.options.length ? `Any of: ${it.options.map((f) => f.brand ? `${f.name} (${f.brand})` : f.name).join(", ")}` : "No food is one of it yet")}">🔀 any</span>`
+          : "";
+        return `<li class="${it.missing > 0 ? "short" : ""}" title="${esc(title)}"><span>${groupEmoji(it.food_group)}${esc(it.name)}${any}${it.kcal_missing ? ` <span class="warn-kcal" title="No kcal entered yet for this food: counted as 0">⚠</span>` : ""}</span><span class="n">${it.missing > 0 ? "⚠ " : "✓ "}${fmtQty(it.quantity)} ${esc(it.unit)}</span></li>`;
       };
       return `<article class="sm-card${sm.id === state.editingSavedMealId ? " editing" : ""}" id="sm-card-${sm.id}">
         <div class="sm-top">
           <h3>${esc(sm.name)}</h3>
-          ${sm.default_meal ? `<span class="sm-for">${esc(mealLabel(sm.default_meal))}</span>` : ""}
+          ${usualMeals(sm).length ? `<span class="sm-fors">${usualMeals(sm).map((m) => `<span class="sm-for">${esc(mealLabel(m))}</span>`).join("")}</span>` : ""}
         </div>
         ${tagPills(sm.tags)}
         <ul class="sm-foods">${sm.items.map(food).join("")}</ul>
@@ -2855,12 +2965,17 @@ function goToMeal(id) {
 function buyMissing(id) {
   const sm = state.savedMeals.find((x) => x.id === id);
   if (!sm) return;
-  const short = sm.items.filter((it) => it.missing > 0);
-  for (const it of short) {
-    const q = it.package_qty ? Math.ceil(it.missing / it.package_qty - 1e-6) * it.package_qty : it.missing;
-    addTripItem({ id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, package_qty: it.package_qty, basis_qty: it.basis_qty }, q);
+  // A meta food is bought as its most used food; one with no foods yet can't be.
+  const short = sm.items
+    .filter((it) => it.missing > 0)
+    .map((it) => (it.is_meta ? it.options[0] && { ...it.options[0], missing: it.missing } : { ...it, id: it.food_id }));
+  const can = short.filter(Boolean);
+  for (const f of can) {
+    const q = f.package_qty ? Math.ceil(f.missing / f.package_qty - 1e-6) * f.package_qty : f.missing;
+    addTripItem({ id: f.id, name: f.name, brand: f.brand, unit: f.unit, package_qty: f.package_qty, basis_qty: f.basis_qty }, q);
   }
-  toast(`${short.length} food${short.length === 1 ? "" : "s"} added to the cart`);
+  const skipped = short.length - can.length;
+  toast(`${can.length} food${can.length === 1 ? "" : "s"} added to the cart${skipped ? ` (${skipped} meta food${skipped === 1 ? " has" : "s have"} no foods to buy yet)` : ""}`);
   location.hash = "#/groceries";
 }
 
@@ -2882,7 +2997,7 @@ function editSavedMeal(id) {
   state.smItems = sm.items.map(itemFromSaved);
   const el = $("#sm-form").elements;
   el.name.value = sm.name;
-  el.default_meal.value = state.config.meals.names.includes(sm.default_meal) ? sm.default_meal : "";
+  setUsualMeals(sm.default_meals);
   el.recipe.value = sm.recipe || "";
   $("#sm-form-h").textContent = "Edit meal";
   $("#sm-submit").textContent = "Update meal";
@@ -2907,7 +3022,7 @@ async function submitSavedMeal(ev) {
   }
   const body = {
     name: v.name.trim(),
-    default_meal: v.default_meal,
+    default_meals: usualMealsTicked(),
     items: state.smItems.map((it) => ({ food_id: it.food_id, quantity: it.quantity })),
     recipe: (v.recipe || "").trim(),
   };
@@ -3936,26 +4051,15 @@ async function saveAndClose() {
   try {
     // A save can start another (e.g. a reload after it), so wait until nothing is left.
     while (inFlight.size) await Promise.allSettled([...inFlight]);
-    await api("POST", "/shutdown");
+    await api("GET", "/config"); // still running? /exit can't report an error once it's down
   } catch (err) {
     btn.disabled = false;
     btn.textContent = "Save & close";
     $("#exit-dialog").close();
     return showError(err.status ? err : new Error("Couldn't reach Pamela's server. Is it still running?"));
   }
-  $("#exit-dialog").close();
-  document.title = "Pamela · closed";
-  document.body.innerHTML = `
-    <main class="closed">
-      <div class="card closed-card">
-        <img src="/static/pamela.svg" alt="" width="72" height="72">
-        <h1>👋 Pamela is closed</h1>
-        <p>Everything is saved and the server has stopped.</p>
-        <p class="hint">You can close this tab. To open Pamela again, run <code>make serve</code>.</p>
-      </div>
-    </main>`;
-  // Browsers only let a page close a tab that a script opened; otherwise this does nothing.
-  window.close();
+  // The farewell page stops the server once it has been sent.
+  location.replace("/exit");
 }
 
 // --- wiring ------------------------------------------------------------------
@@ -4206,6 +4310,7 @@ function wire() {
     }
   });
   $("#food-cancel").addEventListener("click", resetFoodForm);
+  $("#food-is-meta").addEventListener("change", updateFoodFormKind);
   $("#foods-filter").addEventListener("input", renderFoods);
   $("#group-filter").addEventListener("change", renderFoods);
   $("#ean-status").addEventListener("click", (e) => {
@@ -4328,6 +4433,7 @@ function wire() {
   foodCombo({
     input: $("#sm-search"),
     list: $("#sm-suggest"),
+    kind: "all",
     onPick: (f) => {
       state.smItems.push(itemFromFood(f));
       $("#sm-search").value = "";

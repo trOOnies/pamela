@@ -506,6 +506,21 @@ MIGRATIONS: list[str] = [
     CREATE INDEX stock_uses_lot ON stock_uses (lot_id);
     CREATE INDEX stock_uses_entry ON stock_uses (entry_id);
     """,
+    # 20: meta foods: a kind of food with no brand ("mozzarella cheese"), with typical
+    # values. A catalog food can be one of a meta food (meta_id); a saved meal can list
+    # a meta food, and logging the meal asks which of its foods was used.
+    """
+    ALTER TABLE foods ADD COLUMN is_meta INTEGER NOT NULL DEFAULT 0 CHECK (is_meta IN (0, 1));
+    ALTER TABLE foods ADD COLUMN meta_id INTEGER REFERENCES foods (id) ON DELETE SET NULL;
+    CREATE INDEX foods_meta ON foods (meta_id);
+    """,
+    # 21: a saved meal can be usual for several meals (or none): a JSON list of meal
+    # names replaces the single default_meal.
+    """
+    ALTER TABLE saved_meals ADD COLUMN default_meals TEXT NOT NULL DEFAULT '[]';
+    UPDATE saved_meals SET default_meals = json_array(default_meal) WHERE default_meal != '';
+    ALTER TABLE saved_meals DROP COLUMN default_meal;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

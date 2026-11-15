@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import random
 import sqlite3
 import sys
@@ -176,7 +177,8 @@ def seed(conn: sqlite3.Connection, meal_names: list[str], weight_kg: float,
     for name, slot, plate in SAVED_MEALS:
         default = next((m for i, m in enumerate(meal_names) if _slot(meal_names, i) == slot), "")
         meal_id = conn.execute(
-            "INSERT INTO saved_meals (name, default_meal) VALUES (?, ?)", (name, default)
+            "INSERT INTO saved_meals (name, default_meals) VALUES (?, ?)",
+            (name, json.dumps([default] if default else [])),
         ).lastrowid
         conn.executemany(
             "INSERT INTO saved_meal_items (saved_meal_id, food_id, quantity, position) "

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import html
 import os
+import random
 import signal
 from contextlib import asynccontextmanager
 from importlib import resources
+from urllib.parse import quote
 
 from fastapi import BackgroundTasks, FastAPI, Request, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, db
@@ -27,6 +31,73 @@ def request_exit() -> None:
     then the lifespan shutdown runs."""
     pid = int(os.environ.get(SUPERVISOR_PID_ENV) or os.getpid())
     os.kill(pid, signal.SIGINT)
+
+
+# Pamela's goodbyes: one by time of day (from the hour it starts), and a line at random.
+GREETINGS = (
+    (0, "🌙 Good night, sleep well!"),
+    (5, "☀️ Have a lovely day!"),
+    (12, "🌤️ Enjoy the rest of your day!"),
+    (19, "🌇 Have a nice evening!"),
+    (22, "🌙 Good night, sleep well!"),
+)
+FAREWELL_LINES = (
+    "Pamela is putting her sun hat away until next time.",
+    "Your log is tucked in and the garden is watered.",
+    "Every bite and every step is safely written down.",
+    "Drink some water, stretch a little, and come back soon.",
+    "The fridge is tidy, the notes are saved: see you soon!",
+)
+
+
+def _greeting(hour: int) -> str:
+    return [text for start, text in GREETINGS if hour >= start][-1]
+
+
+def _today_tally(settings: Settings) -> str:
+    """A few pills about today, or nothing when today is still empty."""
+    today = dt.date.today().isoformat()
+    with db.session(settings.db_path) as conn:
+        food = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(kcal), 0) AS kcal FROM food_entries WHERE day = ?",
+            (today,),
+        ).fetchone()
+        act = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(duration_min), 0) AS min FROM activities "
+            "WHERE day = ?",
+            (today,),
+        ).fetchone()
+        steps = conn.execute("SELECT steps FROM day_metrics WHERE day = ?", (today,)).fetchone()
+    pills = []
+    if food["n"]:
+        foods = f"{food['n']} food{'s' if food['n'] != 1 else ''}"
+        pills.append(f"🍽️ <b>{foods}</b> · {round(food['kcal']):,} kcal")
+    if act["n"]:
+        pills.append(f"💪 <b>{round(act['min'])} min</b> of exercise")
+    if steps and steps["steps"]:
+        pills.append(f"👟 <b>{steps['steps']:,}</b> steps")
+    if not pills:
+        return ""
+    items = "".join(f"<li>{p}</li>" for p in pills)
+    return f'<ul class="tally" aria-label="Today">{items}</ul>'
+
+
+def farewell_page(settings: Settings) -> str:
+    page = (STATIC_DIR / "exit.html").read_text(encoding="utf-8")
+    logo = (STATIC_DIR / "pamela.svg").read_text(encoding="utf-8")
+    try:
+        tally = _today_tally(settings)
+    except Exception:  # a goodbye never fails over a summary
+        tally = ""
+    values = {
+        "logo_url": html.escape(quote(logo)),
+        "greeting": html.escape(_greeting(dt.datetime.now().hour)),
+        "line": html.escape(random.choice(FAREWELL_LINES)),
+        "tally": tally,
+    }
+    for key, value in values.items():
+        page = page.replace("{{" + key + "}}", value)
+    return page
 
 
 def prepare(settings: Settings, config_store: ConfigStore) -> None:
@@ -80,6 +151,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Save & close: stop the server once this response has been sent."""
         background.add_task(app.state.request_exit)
         return {"detail": "Pamela is closing"}
+
+    @app.get("/exit", include_in_schema=False)
+    def exit_page(background: BackgroundTasks) -> HTMLResponse:
+        """Say goodbye, then stop the server once the page has been sent. The page
+        carries everything it needs, since nothing answers after it."""
+        background.add_task(app.state.request_exit)
+        return HTMLResponse(farewell_page(settings), headers={"Cache-Control": "no-store"})
 
     static_dir = str(STATIC_DIR)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")

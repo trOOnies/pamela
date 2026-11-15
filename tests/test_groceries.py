@@ -422,7 +422,8 @@ def test_delivery_fee(client, oats):
 
 
 def test_cart_items_carry_the_food_group(client, oats):
-    body = {k: v for k, v in oats.items() if k not in ("id", "uses", "in_stock", "calorie_free")}
+    read_only = ("id", "uses", "in_stock", "calorie_free", "meta_name", "variants")
+    body = {k: v for k, v in oats.items() if k not in read_only}
     r = client.put(f"/api/foods/{oats['id']}", json=body | {"food_group": "carbs"})
     assert r.status_code == 200, r.text
     buy(client, oats["id"], 500)
