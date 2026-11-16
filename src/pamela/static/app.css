@@ -280,7 +280,8 @@ main { padding: 20px 24px 24px; }
 .entry-form:not([data-mode="catalog"]) .catalog-only,
 .entry-form:not([data-mode="quick"]) .quick-only,
 .entry-form:not([data-mode="saved"]) .saved-only,
-.entry-form[data-mode="saved"] .not-saved { display: none; }
+.entry-form[data-mode="saved"] .not-saved,
+.entry-form[data-mode="quick"] .not-quick { display: none; }
 #saved-pick { width: 100%; min-width: 220px; }
 .entry-form .hint { flex-basis: 100%; }
 .food-field { flex: 1 1 240px; }
@@ -331,6 +332,7 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transpa
 }
 .log-table .qty-input { width: 80px; height: 28px; text-align: right; }
 .log-table td.n.qty { white-space: nowrap; cursor: text; }
+.log-table td .out-tag { font-size: .72rem; color: var(--text-3); margin-left: 6px; cursor: help; white-space: nowrap; }
 .log-table td .quick-tag { font-size: .72rem; color: var(--text-3); margin-left: 6px; }
 .log-table td .entry-link { text-decoration: none; font-size: .8rem; opacity: .6; }
 .log-table td .entry-link:hover, .log-table td .entry-link:focus-visible { opacity: 1; }

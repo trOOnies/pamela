@@ -397,6 +397,7 @@ class EntryIn(_In):
     carbs_g: float | None = OptNonNeg
     fat_g: float | None = OptNonNeg
     fiber_g: float | None = OptNonNeg
+    eaten_out: bool = Field(False, description="Eaten out: never taken from Groceries")
 
     @model_validator(mode="after")
     def _food_or_quick(self) -> EntryIn:
@@ -419,6 +420,7 @@ class Entry(Macros):
     from_stock: float = Field(0, description="How much of it was taken from Groceries")
     saved_meal_id: int | None = Field(None, description="The meal it was logged from, if any")
     saved_meal_name: str | None = None
+    eaten_out: bool = Field(False, description="Eaten out: not taken from Groceries")
 
 
 class EntryBatchIn(_In):
@@ -428,6 +430,7 @@ class EntryBatchIn(_In):
     meal: str = Field(min_length=1)
     items: list[SavedMealItemIn] = Field(min_length=1, max_length=100)
     saved_meal_id: int | None = Field(None, description="The meal they come from, if any")
+    eaten_out: bool = Field(False, description="Eaten out: never taken from Groceries")
 
 
 # --- groceries ---------------------------------------------------------------

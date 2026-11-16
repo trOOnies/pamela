@@ -60,6 +60,8 @@
             <span>Meal</span>
             <select name="meal" id="entry-meal"></select>
           </label>
+          <label class="not-quick field check eaten-out" title="Eaten at a restaurant, at a friend's…: it's logged as usual, but not taken from Groceries">
+            <input type="checkbox" name="eaten_out" id="entry-out"><span>🍽️ Eaten out</span></label>
 
           <div class="catalog-only field food-field">
             <span id="food-search-label">Food</span>
@@ -674,6 +676,10 @@
             <i>1 serving</i>, <i>⅙ pack</i>, <i>⅓ pack</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
           <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
             the list, and the Foods tab opens with it filled in.</p>
+          <p>🍽️ <b>Eaten out?</b> At a restaurant or at a friend's, the food didn't come from home.
+            Tick <b>Eaten out</b> and whatever you log (a food or a saved meal) counts toward your
+            day as usual, but isn't taken from Groceries nor compared with it. Those entries show
+            <i>🍽️ out</i> in the log. The tick stays while you log more, and clears on another day.</p>
 
           <h3 id="help-day-saved">⭐ Saved meals</h3>
           <p>Switch to <b>Saved meal</b> and pick one. Its foods show up as a <i>draft</i>:
@@ -848,7 +854,7 @@
             log shows it. Change or delete the entry, or clear the day, and it goes back. Ate more
             than you had? It takes what's there; the rest isn't counted. Days before you bought it
             never take from it, but if you enter a cart a few days late, what you logged since
-            that day is taken from it.</p>
+            that day is taken from it. Food logged as <b>Eaten out</b> never takes from it.</p>
           <p>📦 <b>In stock</b> lists every food you have, one table per food group like in Foods
             (foods without a group last), with what's left from each cart under it (click the cart
             to open it). <i>Ran out</i> and <i>Taken out</i> are grouped the same way. Expiry dates

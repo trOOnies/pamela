@@ -351,7 +351,9 @@ function route() {
       toast("Days in the future can't be opened yet", true);
       return location.replace("#/");
     }
-    state.day = d && isISODate(d) ? d : todayISO();
+    const day = d && isISODate(d) ? d : todayISO();
+    if (day !== state.day) setEatenOut(false); // eating out is about one day, not the next
+    state.day = day;
   }
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
   for (const a of $$("[data-nav]")) {
@@ -413,7 +415,7 @@ function openDayPicker() {
  * onPick(food) is called on a choice; onCreate(query), if given, adds a last
  * "create / look up" option. Enter never submits a form unless canSubmit() says so.
  */
-function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => false, kind = "foods" }) {
+function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => false, showStock = () => true, kind = "foods" }) {
   // pending: a search is waiting (debounce or request). Enter meanwhile is held
   // and picks the first fresh result, so fast typing and barcode scanners
   // (digits + Enter in a few ms) never pick a stale suggestion.
@@ -433,7 +435,7 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
       .map(
         (f, i) => `<li role="option" id="${idp}-${i}" data-i="${i}" aria-selected="${i === c.active}">
           <span class="s-name">${f.favorite ? `<span class="fav-mark" title="Favorite">♥</span> ` : ""}${esc(f.name)} ${f.is_meta ? `<span class="meta-pill" title="Any brand: you pick which one when you log the meal">🔀 any brand</span>` : f.brand ? `<span class="brand-tag">${esc(f.brand)}</span>` : ""}${tagPills(f, "mini")}</span>
-          <span class="meta">${f.kcal == null ? `<span class="warn-kcal">⚠ no kcal</span>` : `${fmt(f.kcal)} kcal`} / ${fmtQty(f.basis_qty)} ${esc(f.unit)}${stockMeta(f)}</span></li>`
+          <span class="meta">${f.kcal == null ? `<span class="warn-kcal">⚠ no kcal</span>` : `${fmt(f.kcal)} kcal`} / ${fmtQty(f.basis_qty)} ${esc(f.unit)}${showStock() ? stockMeta(f) : ""}</span></li>`
       )
       .join("");
     if (q && onCreate) {
@@ -588,7 +590,7 @@ function itemNameCell(it, i) {
   }
   const opts = p.options
     .map((f) => {
-      const stock = f.in_stock > 1e-6 ? ` · 🛒 ${fmtQty(f.in_stock)} ${f.unit}` : "";
+      const stock = f.in_stock > 1e-6 && !eatenOut() ? ` · 🛒 ${fmtQty(f.in_stock)} ${f.unit}` : "";
       return `<option value="${f.id}"${f.id === it.food_id ? " selected" : ""}>${esc(f.name)}${f.brand ? ` (${esc(f.brand)})` : ""}${stock}</option>`;
     })
     .join("");
@@ -796,7 +798,7 @@ function renderLog() {
       }
       const qtyAttrs = e.food_id != null ? ` class="n qty" data-edit-qty="${e.id}" title="Click to change amount"` : ' class="n"';
       html += `<tr data-entry="${e.id}">
-        <td>${esc(e.name)}${entryLink(e)}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
+        <td>${esc(e.name)}${entryLink(e)}${e.eaten_out ? '<span class="out-tag" title="Eaten out: not taken from Groceries">🍽️ out</span>' : ""}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
         <td${qtyAttrs}>${amount}</td>
         ${macroCells(e)}
         <td class="act"><button type="button" class="row-btn del" data-del-entry="${e.id}" title="Delete" aria-label="Delete ${esc(e.name)}">✕</button></td>
@@ -1161,6 +1163,23 @@ function setEntryMode(mode) {
   if (mode === "saved") fillSavedPick();
 }
 
+/** Is what's being logged eaten out? Then it isn't compared with, nor taken from,
+ * Groceries. Quick adds never are, so it doesn't apply to them. */
+function eatenOut() {
+  return $("#entry-out").checked && entryMode() !== "quick";
+}
+
+function setEatenOut(on) {
+  $("#entry-out").checked = on;
+  onEatenOutChange();
+}
+
+function onEatenOutChange() {
+  updatePreview();
+  if (state.draft) draftTable.render();
+  updateDraftCommit();
+}
+
 function portionOptions(f) {
   if (f.food_group === ALCOHOLIC) {
     // usual glasses that fit in the package, then the whole of it
@@ -1196,7 +1215,8 @@ function updatePreview() {
     .join("");
   // what's left in Groceries (only for foods bought there, and only today's stock)
   let stock = "";
-  if (f.in_stock != null) {
+  if (eatenOut()) stock = " · 🍽️ eaten out: not taken from Groceries";
+  else if (f.in_stock != null) {
     const left = Math.max(f.in_stock, 0);
     if (left <= 1e-6) stock = " · 🛒 none left in Groceries";
     else if (qty && qty > left + 1e-6) stock = ` · 🛒 only ${fmtQty(left)} ${f.unit} in Groceries`;
@@ -1256,7 +1276,7 @@ async function submitEntry(ev) {
       $("#entry-qty").focus();
       return;
     }
-    body = { ...body, food_id: state.selectedFood.id, quantity: qty };
+    body = { ...body, food_id: state.selectedFood.id, quantity: qty, eaten_out: eatenOut() };
   } else {
     if (!v.name.trim()) {
       toast("Give the entry a name", true);
@@ -1300,7 +1320,7 @@ function startQtyEdit(td) {
     const qty = num(input.value);
     if (save && qty && qty > 0 && qty !== entry.quantity) {
       try {
-        await api("PUT", `/entries/${id}`, { day: entry.day, meal: entry.meal, food_id: entry.food_id, quantity: qty, name: entry.name });
+        await api("PUT", `/entries/${id}`, { day: entry.day, meal: entry.meal, food_id: entry.food_id, quantity: qty, name: entry.name, eaten_out: entry.eaten_out });
       } catch (err) {
         showError(err);
       }
@@ -1356,7 +1376,7 @@ function updateDraftCommit() {
   if (!state.draft) return;
   const n = state.draft.items.length;
   const btn = $("#draft-commit");
-  btn.textContent = `Log ${n} ${n === 1 ? "food" : "foods"} to ${$("#entry-meal").value} · ${fmtDay(state.day)}`;
+  btn.textContent = `Log ${n} ${n === 1 ? "food" : "foods"} to ${$("#entry-meal").value} · ${fmtDay(state.day)}${eatenOut() ? " · 🍽️ eaten out" : ""}`;
   btn.disabled = !n;
 }
 
@@ -1393,6 +1413,7 @@ async function commitDraft() {
       meal,
       items: d.items.map((it) => ({ food_id: it.food_id, quantity: it.quantity })),
       saved_meal_id: state.savedMeals.some((sm) => sm.id === d.id) ? d.id : null,
+      eaten_out: eatenOut(),
     });
     toast(`Logged “${d.name}” to ${meal}`);
     discardDraft();
@@ -4143,12 +4164,17 @@ function wire() {
   });
 
   // entry form
-  for (const r of $$('input[name="entry-mode"]')) r.addEventListener("change", () => setEntryMode(entryMode()));
+  for (const r of $$('input[name="entry-mode"]')) r.addEventListener("change", () => {
+    setEntryMode(entryMode());
+    onEatenOutChange();
+  });
   $("#entry-form").addEventListener("submit", submitEntry);
   $("#entry-qty").addEventListener("input", updatePreview);
   $("#entry-meal").addEventListener("change", updateDraftCommit);
+  $("#entry-out").addEventListener("change", onEatenOutChange);
   foodCombo({
     input: $("#food-search"),
+    showStock: () => !eatenOut(),
     list: $("#food-suggest"),
     onPick: selectFood,
     onCreate: createFoodFrom,
@@ -4181,6 +4207,7 @@ function wire() {
   });
   foodCombo({
     input: $("#draft-search"),
+    showStock: () => !eatenOut(),
     list: $("#draft-suggest"),
     onPick: (f) => {
       state.draft.items.push(itemFromFood(f));

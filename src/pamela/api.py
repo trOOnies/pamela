@@ -674,7 +674,11 @@ def _entry_values(entry: EntryIn, conn: sqlite3.Connection, config: AppConfig) -
             f"unknown meal {entry.meal!r}; configured meals: {', '.join(config.meals.names)}",
         )
     _not_future(entry.day)
-    values: dict = {"day": entry.day.isoformat(), "meal": entry.meal}
+    values: dict = {
+        "day": entry.day.isoformat(),
+        "meal": entry.meal,
+        "eaten_out": int(entry.eaten_out),
+    }
     if entry.food_id is not None:
         food = conn.execute("SELECT * FROM foods WHERE id = ?", (entry.food_id,)).fetchone()
         if food is None:
@@ -744,7 +748,13 @@ def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict
     ids = [
         _insert_entry(
             conn,
-            EntryIn(day=batch.day, meal=batch.meal, food_id=it.food_id, quantity=it.quantity),
+            EntryIn(
+                day=batch.day,
+                meal=batch.meal,
+                food_id=it.food_id,
+                quantity=it.quantity,
+                eaten_out=batch.eaten_out,
+            ),
             config,
         )
         for it in batch.items
@@ -793,10 +803,11 @@ def _open_lots(conn: sqlite3.Connection, food_id: int, day: str) -> list[dict]:
 
 def _take_stock(conn: sqlite3.Connection, entry_id: int, values: dict) -> None:
     """(Re)takes what a logged entry ate from Groceries, as far as there is any. An
-    entry eating more than is left simply takes what's there."""
+    entry eating more than is left simply takes what's there; food eaten out takes
+    nothing (and gives back what it took, when an entry is changed to eaten out)."""
     conn.execute("DELETE FROM stock_uses WHERE entry_id = ?", (entry_id,))
     need = values["quantity"] or 0
-    if values["food_id"] is None or need <= 0:
+    if values["food_id"] is None or need <= 0 or values["eaten_out"]:
         return
     _take_from_lots(conn, entry_id, values["food_id"], values["day"], need)
     _settle_places(conn)  # what was eaten leaves its place in Fridge
@@ -986,7 +997,7 @@ def _fill_shortfalls(conn: sqlite3.Connection, food_id: int, since: str) -> None
     rows = conn.execute(
         """SELECT e.id, e.day, e.quantity - COALESCE(SUM(u.quantity), 0) AS short
            FROM food_entries e LEFT JOIN stock_uses u ON u.entry_id = e.id
-           WHERE e.food_id = ? AND e.day >= ? AND e.quantity IS NOT NULL
+           WHERE e.food_id = ? AND e.day >= ? AND e.quantity IS NOT NULL AND NOT e.eaten_out
            GROUP BY e.id HAVING short > ? ORDER BY e.day, e.created_at, e.id""",
         (food_id, since, EPS),
     ).fetchall()

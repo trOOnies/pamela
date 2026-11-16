@@ -464,3 +464,49 @@ def test_gift_cart(client, oats):
     # a normal cart isn't a gift
     lot = buy(client, oats["id"], 100)
     assert lot["gift"] is False
+
+
+def test_eaten_out_never_takes_from_stock(client, oats):
+    buy(client, oats["id"], 500)
+    r = client.post(
+        "/api/entries",
+        json={"day": D[1], "meal": "Breakfast", "food_id": oats["id"], "quantity": 100,
+              "eaten_out": True},
+    )
+    e = r.json()
+    assert e["eaten_out"] is True and e["from_stock"] == 0 and e["kcal"] > 0
+    r = client.post(
+        "/api/entries/batch",
+        json={"day": D[1], "meal": "Lunch", "eaten_out": True,
+              "items": [{"food_id": oats["id"], "quantity": 60}]},
+    )
+    assert [x["from_stock"] for x in r.json()] == [0] and r.json()[0]["eaten_out"] is True
+    assert stock(client)[oats["id"]]["in_stock"] == 500
+    # changing an amount keeps it eaten out; a home entry turned eaten out gives back
+    r = client.put(
+        f"/api/entries/{e['id']}",
+        json={"day": e["day"], "meal": e["meal"], "food_id": oats["id"], "quantity": 40,
+              "eaten_out": True},
+    )
+    assert r.json()["from_stock"] == 0
+    home = eat(client, oats["id"], 50)
+    assert stock(client)[oats["id"]]["in_stock"] == 450
+    client.put(
+        f"/api/entries/{home['id']}",
+        json={"day": home["day"], "meal": home["meal"], "food_id": oats["id"], "quantity": 50,
+              "eaten_out": True},
+    )
+    assert stock(client)[oats["id"]]["in_stock"] == 500
+
+
+def test_late_purchase_skips_eaten_out(client, oats):
+    out = client.post(
+        "/api/entries",
+        json={"day": D[2], "meal": "Breakfast", "food_id": oats["id"], "quantity": 80,
+              "eaten_out": True},
+    ).json()
+    buy(client, oats["id"], 500, day=D[3])
+    entries = client.get(f"/api/days/{D[2]}").json()["entries"]
+    entry = next(x for x in entries if x["id"] == out["id"])
+    assert entry["from_stock"] == 0
+    assert stock(client)[oats["id"]]["in_stock"] == 500

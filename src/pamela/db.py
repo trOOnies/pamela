@@ -527,6 +527,12 @@ MIGRATIONS: list[str] = [
     ALTER TABLE saved_meals ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0
         CHECK (favorite IN (0, 1));
     """,
+    # 23: food eaten out (at a restaurant, at a friend's) is logged like any other, but
+    # never taken from Groceries: it didn't come from home.
+    """
+    ALTER TABLE food_entries ADD COLUMN eaten_out INTEGER NOT NULL DEFAULT 0
+        CHECK (eaten_out IN (0, 1));
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.
