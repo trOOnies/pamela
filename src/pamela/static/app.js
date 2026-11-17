@@ -54,6 +54,10 @@ const state = {
   smItems: [],          // items of the saved meal in the editor
   editingSavedMealId: null,
   editingTypeId: null,
+  reminders: [],        // GET /reminders (Settings)
+  editingReminderId: null,
+  rmFood: null,         // food picked in the reminder form
+  rmOptions: {},        // reminder id -> the foods of its meta food, offered in the Day tab
   historyRange: 30,
   groceries: null,      // GET /groceries: { items, carts, expired }
   trip: [],             // food items of the cart being entered or edited in Groceries
@@ -104,6 +108,10 @@ function fmt(n, digits = 0) {
 function fmtQty(n) {
   return fmt(n, n < 10 ? 2 : 1);
 }
+/** Text for searching: lowercase and without accents, so "mani" finds "Maní". */
+const fold = (t) => String(t ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+/** The words of a filter box, folded. */
+const searchWords = (input) => fold(input.value).split(/\s+/).filter(Boolean);
 /** Minutes as "7:30". */
 function fmtSleep(min) {
   if (min == null) return "–";
@@ -697,6 +705,7 @@ async function loadDay() {
     renderNote();
     renderActivities();
     renderDraft();
+    renderDayReminders();
   } catch (err) {
     showError(err);
   }
@@ -1504,7 +1513,7 @@ async function submitActivity(ev) {
 
 // --- foods view --------------------------------------------------------------
 
-const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "serving_qty", "package_qty", "food_group", "abv_pct", "meta_id"];
+const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "b12_ug", "serving_qty", "package_qty", "food_group", "abv_pct", "meta_id"];
 
 // Alcoholic drinks are entered by their alcohol content and package size alone: the
 // backend keeps them per 100 ml, with kcal from the ethanol (0.789 g/ml, 7 kcal/g).
@@ -1536,15 +1545,16 @@ function per100(f) {
   const k = 100 / f.basis_qty;
   const out = { ...f, basis_qty: 100, kcal: f.kcal == null ? null : f.kcal * k };
   for (const m of MACROS) out[m.key] = f[m.key] == null ? null : f[m.key] * k;
+  out.b12_ug = f.b12_ug == null ? null : f.b12_ug * k;
   return out;
 }
 
 function renderFoods() {
-  const words = $("#foods-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = searchWords($("#foods-filter"));
   const tags = [...state.foodTagFilter];
   const group = $("#group-filter").value;
   const rows = state.foods.filter((f) => {
-    const hay = `${f.name} ${f.brand} ${f.ean ?? ""} ${f.meta_name ?? ""}`.toLowerCase();
+    const hay = fold(`${f.name} ${f.brand} ${f.ean ?? ""} ${f.meta_name ?? ""}`);
     return words.every((w) => hay.includes(w)) && tags.every((t) => f[t]) && (!group || f.food_group === group);
   }).map(per100);
   const missing = state.foods.filter((f) => f.kcal == null).length;
@@ -1556,6 +1566,7 @@ function renderFoods() {
       <td>${f.is_meta ? `<span class="muted">any brand</span>` : esc(f.brand)}${f.ean ? `<span class="ean" title="Barcode">${esc(f.ean)}</span>` : ""}</td>
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
       ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
+      <td class="n">${f.b12_ug == null ? `<span class="muted" title="Not entered yet">–</span>` : fmt(f.b12_ug, f.b12_ug < 10 ? 2 : 1)}</td>
       <td class="n">${f.uses}</td>
       <td class="act">${favButton("food", f)}<button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
     </tr>`;
@@ -1580,7 +1591,7 @@ function renderFoods() {
     const arrow = sorted ? (sorted > 0 ? " ▲" : " ▼") : "";
     return `<th class="${cls}"${aria}${title ? ` title="${title}"` : ""}><button type="button" class="sort-btn" data-sort="${key}">${label}<span class="sort-arrow" aria-hidden="true">${arrow}</span></button></th>`;
   };
-  const head = `<tr>${th("name", "Name")}${th("brand", "Brand")}${th("per", "Per", "n")}${th("kcal", "kcal", "n")}${th("protein_g", "P", "n")}${th("carbs_g", "C", "n")}${th("fat_g", "F", "n")}${th("fiber_g", "Fib", "n")}${th("uses", "Uses", "n", "Times logged in the last 90 days")}<th class="act"><span class="sr">Actions</span></th></tr>`;
+  const head = `<tr>${th("name", "Name")}${th("brand", "Brand")}${th("per", "Per", "n")}${th("kcal", "kcal", "n")}${th("protein_g", "P", "n")}${th("carbs_g", "C", "n")}${th("fat_g", "F", "n")}${th("fiber_g", "Fib", "n")}${th("b12_ug", "B12", "n", "Vitamin B12 (µg)")}${th("uses", "Uses", "n", "Times logged in the last 90 days")}<th class="act"><span class="sr">Actions</span></th></tr>`;
   // One table per group, in the vocabulary's order; foods without a group last.
   box.innerHTML = byFoodGroup(rows)
     .map(
@@ -1588,7 +1599,7 @@ function renderFoods() {
       ${groupHeading(g, list.length, `fg-${g.key || "none"}`)}
       <div class="table-wrap">
         <table class="foods-table">
-          <colgroup><col class="c-name"><col class="c-brand"><col class="c-per"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-act"></colgroup>
+          <colgroup><col class="c-name"><col class="c-brand"><col class="c-per"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-act"></colgroup>
           <thead>${head}</thead>
           <tbody>${list.map(row).join("")}</tbody>
         </table>
@@ -1646,6 +1657,7 @@ const FOOD_SORT = {
   carbs_g: { get: (f) => f.carbs_g },
   fat_g: { get: (f) => f.fat_g },
   fiber_g: { get: (f) => f.fiber_g },
+  b12_ug: { get: (f) => f.b12_ug },
   uses: { get: (f) => f.uses },
 };
 
@@ -1841,6 +1853,7 @@ async function submitFood(ev) {
     basis_qty: num(v.basis_qty),
     unit: v.unit.trim(),
     kcal: num(v.kcal), // empty = not known yet, unlike 0
+    b12_ug: num(v.b12_ug), // empty = not known yet, unlike 0
     serving_qty: num(v.serving_qty) || null,
     package_qty: num(v.package_qty) || null,
     food_group: v.food_group,
@@ -1852,7 +1865,7 @@ async function submitFood(ev) {
   for (const t of state.vocab.diet_tags) body[t.key] = form.elements[t.key].checked;
   if (v.food_group === ALCOHOLIC) {
     // the rest comes from the alcohol content (the backend works it out)
-    Object.assign(body, { basis_qty: 100, unit: "ml", kcal: null, serving_qty: null, abv_pct: num(v.abv_pct) });
+    Object.assign(body, { basis_qty: 100, unit: "ml", kcal: null, serving_qty: null, abv_pct: num(v.abv_pct), b12_ug: null });
     for (const m of MACROS) body[m.key] = 0;
   }
   try {
@@ -2036,8 +2049,8 @@ function cartName(c) {
 }
 
 function renderStock(items) {
-  const words = $("#stock-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
-  const rows = items.filter((it) => words.every((w) => `${it.name} ${it.brand}`.toLowerCase().includes(w)));
+  const words = searchWords($("#stock-filter"));
+  const rows = items.filter((it) => words.every((w) => fold(`${it.name} ${it.brand}`).includes(w)));
   const byExpiry = $('input[name="stock-sort"]:checked').value === "expiry";
   rows.sort(
     (a, b) =>
@@ -2621,8 +2634,7 @@ function fridgeRow(f, sector) {
 
 /** The foods of a list that match the Fridge search (all of them when it's empty). */
 function fridgeMatches(foods) {
-  const fold = (t) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase(); // "Puré" matches "pure"
-  const words = fold($("#fridge-filter").value).split(/\s+/).filter(Boolean);
+  const words = searchWords($("#fridge-filter"));
   return words.length ? foods.filter((f) => words.every((w) => fold(`${f.name} ${f.brand}`).includes(w))) : foods;
 }
 const ofCount = (shown, all) => (shown === all ? `(${all})` : `(${shown} of ${all})`);
@@ -3284,6 +3296,7 @@ async function loadSettings() {
       loadActivityTypes(),
       loadTargets(),
       loadProfile(),
+      loadReminders(),
       api("GET", "/body-references").then((r) => (state.bodyRefs = r)),
     ]);
     renderProfile();
@@ -3291,15 +3304,19 @@ async function loadSettings() {
     renderTargets();
     renderTypes();
     updateTypeEmojiPlaceholder();
+    fillReminderControls();
+    if (!state.editingReminderId) resetReminderForm();
+    else renderReminders();
+    syncReminderForm();
   } catch (err) {
     showError(err);
   }
 }
 
 function renderTypes() {
-  const words = $("#at-filter").value.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = searchWords($("#at-filter"));
   const all = state.activityTypes;
-  const rows = all.filter((t) => words.every((w) => `${t.name} ${t.category}`.toLowerCase().includes(w)));
+  const rows = all.filter((t) => words.every((w) => fold(`${t.name} ${t.category}`).includes(w)));
   $("#at-count").textContent = rows.length === all.length ? `(${all.length})` : `(${rows.length} of ${all.length})`;
   $("#at-categories").innerHTML = [...new Set(all.map((t) => t.category))].map((c) => `<option value="${esc(c)}">`).join("");
   const w = estimateWeight();
@@ -3405,6 +3422,218 @@ async function deleteType(id) {
     if (state.editingTypeId === id) resetTypeForm();
     await loadActivityTypes();
     renderTypes();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+// --- reminders ---------------------------------------------------------------------
+
+/** "1st", "2nd", "23rd", "11th" */
+function ordinal(n) {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : { 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th";
+  return `${n}${s}`;
+}
+
+/** "Every day", "Every Monday", "Every 2 weeks on Monday", "Monthly on the 15th" */
+function repeatText(r) {
+  if (r.repeat === "weekly") {
+    const wd = state.vocab.weekdays[r.weekday];
+    return r.every > 1 ? `Every ${r.every} weeks on ${wd}` : `Every ${wd}`;
+  }
+  if (r.repeat === "monthly") return `Monthly on the ${ordinal(r.month_day)}${r.month_day > 28 ? " (or the last day)" : ""}`;
+  return "Every day";
+}
+
+function whenText(iso) {
+  if (!iso) return "–";
+  const today = todayISO();
+  if (iso === today) return "Today";
+  if (iso === addDays(today, 1)) return "Tomorrow";
+  return fmtDayWd(iso);
+}
+
+const reminderLabel = (r) => `${esc(r.name)}${r.brand ? ` <span class="brand-tag">${esc(r.brand)}</span>` : ""}${r.is_meta ? ` <span class="meta-pill" title="Any of its foods ticks it off">🔀 any brand</span>` : ""}${r.saved_meal_id ? ` <span class="meta-pill" title="A saved meal">⭐ meal</span>` : ""}`;
+
+/** The Day tab: the reminders due that day that weren't logged yet. */
+function renderDayReminders() {
+  const due = (state.dayData?.reminders ?? []).filter((r) => !r.done);
+  const ul = $("#day-reminders");
+  ul.hidden = !due.length;
+  ul.innerHTML = due
+    .map((r) => {
+      const opts = state.rmOptions[r.id];
+      const picks = opts
+        ? `<span class="rm-picks">${opts.map((f) => `<button type="button" class="chip" data-rem-food="${f.id}" data-rem="${r.id}">${esc(f.name)}${f.brand ? ` <small>${esc(f.brand)}</small>` : ""}</button>`).join("")}</span>`
+        : `<button type="button" class="chip" data-rem-log="${r.id}">Log it</button>`;
+      return `<li><span class="rm-bell" aria-hidden="true">⏰</span><span class="rm-text">Eat ${reminderLabel(r)}${r.note ? ` <small>· ${esc(r.note)}</small>` : ""}</span>${picks}</li>`;
+    })
+    .join("");
+}
+
+function logReminderFood(food) {
+  setEntryMode("catalog");
+  onEatenOutChange();
+  selectFood(food);
+}
+
+/** "Log it": fills in the entry form with the reminder's food, or starts its meal's draft. */
+async function logReminder(id) {
+  const r = state.dayData.reminders.find((x) => x.id === id);
+  if (!r) return;
+  try {
+    if (r.saved_meal_id) {
+      const sm = state.savedMeals.find((x) => x.id === r.saved_meal_id);
+      if (!sm) return toast("That meal is gone", true);
+      setEntryMode("saved");
+      onEatenOutChange();
+      $("#saved-pick").value = String(sm.id);
+      return startDraft(sm);
+    }
+    if (!r.is_meta) return logReminderFood(await api("GET", `/foods/${r.food_id}`));
+    // a meta food: pick which of its foods
+    const opts = await api("GET", `/foods?kind=foods&limit=50&meta=${r.food_id}`);
+    if (!opts.length) return toast(`No food is one of “${r.name}” yet: set that in Foods`, true);
+    if (opts.length === 1) return logReminderFood(opts[0]);
+    state.rmOptions[id] = opts;
+    renderDayReminders();
+    $(`#day-reminders [data-rem="${id}"]`)?.focus();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function loadReminders() {
+  state.reminders = await api("GET", "/reminders");
+}
+
+function renderReminders() {
+  const all = state.reminders;
+  $("#rm-count").textContent = `(${all.length})`;
+  $("#rm-body").innerHTML =
+    all
+      .map(
+        (r) => `<tr class="${r.id === state.editingReminderId ? "editing" : ""}">
+      <td>${reminderLabel(r)}</td><td>${esc(repeatText(r))}</td><td>${esc(whenText(r.next_day))}</td><td>${esc(r.note)}</td>
+      <td class="act"><button type="button" class="row-btn icon" data-edit-rem="${r.id}" title="Edit" aria-label="Edit the reminder for ${esc(r.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-rem="${r.id}" aria-label="Delete the reminder for ${esc(r.name)}">✕</button></td>
+    </tr>`
+      )
+      .join("") || `<tr class="empty"><td colspan="5">No reminders yet. Add one with the form.</td></tr>`;
+}
+
+function fillReminderControls() {
+  $("#rm-weekday").innerHTML = state.vocab.weekdays.map((d, i) => `<option value="${i}">${d}</option>`).join("");
+  const sel = $("#rm-meal");
+  const prev = sel.value;
+  sel.innerHTML =
+    `<option value="">${state.savedMeals.length ? "Choose a meal…" : "No saved meals yet"}</option>` +
+    state.savedMeals.map((sm) => `<option value="${sm.id}">${sm.favorite ? "♥ " : ""}${esc(sm.name)}</option>`).join("");
+  sel.value = state.savedMeals.some((sm) => String(sm.id) === prev) ? prev : "";
+}
+
+/** Shows only the fields the chosen kind and repeat use (the others are disabled, so
+ * they're neither validated nor sent), and what the reminder will do. */
+function syncReminderForm() {
+  const form = $("#rm-form");
+  const el = form.elements;
+  const kind = el.kind.value;
+  const repeat = el.repeat.value;
+  const show = { "rm-food": kind === "food", "rm-meal": kind === "meal", "rm-weekly": repeat === "weekly", "rm-monthly": repeat === "monthly" };
+  for (const [cls, on] of Object.entries(show)) {
+    for (const x of $$(`.${cls}`, form)) {
+      x.hidden = !on;
+      for (const i of $$("input, select", x)) i.disabled = !on;
+    }
+  }
+  const what = kind === "food" ? state.rmFood?.name : state.savedMeals.find((sm) => String(sm.id) === el.saved_meal_id.value)?.name;
+  const r = { repeat, every: Math.max(1, Number(el.every.value) || 1), weekday: Number(el.weekday.value), month_day: Number(el.month_day.value) || 1 };
+  $("#rm-hint").textContent = what ? `⏰ ${what}: ${repeatText(r).toLowerCase()}, starting ${whenText(el.start_day.value).toLowerCase()}.` : "";
+}
+
+function setReminderFood(food) {
+  state.rmFood = food;
+  $("#rm-food-search").value = food ? (food.brand ? `${food.name} (${food.brand})` : food.name) : "";
+  syncReminderForm();
+}
+
+function resetReminderForm() {
+  const form = $("#rm-form");
+  form.reset();
+  form.elements.start_day.value = todayISO();
+  form.elements.weekday.value = String((parseISO(todayISO()).getDay() + 6) % 7); // 0 = Monday
+  form.elements.month_day.value = String(parseISO(todayISO()).getDate());
+  state.editingReminderId = null;
+  setReminderFood(null);
+  $("#rm-form-h").textContent = "New reminder";
+  $("#rm-submit").textContent = "Add reminder";
+  $("#rm-cancel").hidden = true;
+  renderReminders();
+}
+
+function editReminder(id) {
+  const r = state.reminders.find((x) => x.id === id);
+  if (!r) return;
+  state.editingReminderId = id;
+  const el = $("#rm-form").elements;
+  el.kind.value = r.saved_meal_id ? "meal" : "food";
+  el.saved_meal_id.value = r.saved_meal_id ? String(r.saved_meal_id) : "";
+  el.repeat.value = r.repeat;
+  el.every.value = r.every;
+  if (r.weekday != null) el.weekday.value = String(r.weekday);
+  if (r.month_day != null) el.month_day.value = r.month_day;
+  el.start_day.value = r.start_day;
+  el.note.value = r.note;
+  setReminderFood(r.food_id ? { id: r.food_id, name: r.name, brand: r.brand } : null);
+  $("#rm-form-h").textContent = "Edit reminder";
+  $("#rm-submit").textContent = "Update reminder";
+  $("#rm-cancel").hidden = false;
+  renderReminders();
+  (r.food_id ? $("#rm-food-search") : $("#rm-meal")).focus();
+}
+
+async function submitReminder(ev) {
+  ev.preventDefault();
+  const el = ev.currentTarget.elements;
+  const kind = el.kind.value;
+  const body = { repeat: el.repeat.value, start_day: el.start_day.value, note: el.note.value.trim() };
+  if (kind === "food") {
+    if (!state.rmFood) return toast("Pick a food from the search first", true);
+    body.food_id = state.rmFood.id;
+  } else {
+    if (!el.saved_meal_id.value) return toast("Choose a meal first", true);
+    body.saved_meal_id = Number(el.saved_meal_id.value);
+  }
+  if (body.repeat === "weekly") Object.assign(body, { every: Number(el.every.value), weekday: Number(el.weekday.value) });
+  if (body.repeat === "monthly") body.month_day = Number(el.month_day.value);
+  try {
+    if (state.editingReminderId) {
+      await api("PUT", `/reminders/${state.editingReminderId}`, body);
+      toast("Reminder updated");
+    } else {
+      await api("POST", "/reminders", body);
+      toast("Reminder added");
+    }
+    await loadReminders();
+    resetReminderForm();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function deleteReminder(id) {
+  const r = state.reminders.find((x) => x.id === id);
+  if (!r) return;
+  const ok = await confirmDialog({
+    title: "🗑️ Delete this reminder?",
+    body: `<p>You won't be reminded to eat <b>${esc(r.name)}</b> any more (${esc(repeatText(r).toLowerCase())}). Days you logged it on stay as they are.</p>`,
+    ok: "Delete reminder",
+  });
+  if (!ok) return;
+  try {
+    await api("DELETE", `/reminders/${id}`);
+    if (state.editingReminderId === id) resetReminderForm();
+    await loadReminders();
+    renderReminders();
   } catch (err) {
     showError(err);
   }
@@ -3642,9 +3871,15 @@ function moodLabel(mood) {
 }
 
 function renderHistory(days, baseline) {
-  const logged = days.filter((d) => d.entry_count > 0);
-  const avg = (key, list = logged) => (list.length ? list.reduce((s, d) => s + d[key], 0) / list.length : null);
-  const withKey = (key) => days.filter((d) => d[key] != null);
+  // A logged day has food with calories: a day with only a 0 kcal entry (a pill,
+  // water) would count as eating nothing and pull the averages down.
+  const logged = days.filter((d) => d.kcal > 0);
+  // Today is still going: its food, steps and burned kcal would pull the averages down.
+  const today = todayISO();
+  const done = days.filter((d) => d.day !== today);
+  const avg = (key, list = logged.filter((d) => d.day !== today)) =>
+    list.length ? list.reduce((s, d) => s + d[key], 0) / list.length : null;
+  const withKey = (key, list = days) => list.filter((d) => d[key] != null);
   const t = days[days.length - 1].targets; // in force on the last (latest) day
   const activeDays = days.filter((d) => d.active_min > 0).length;
   const sleepAvg = avg("sleep_min", withKey("sleep_min"));
@@ -3667,7 +3902,7 @@ function renderHistory(days, baseline) {
   const gauge = (value, target, overshoot = false) =>
     value != null && target ? { pct: value / target, overshoot: overshoot && value > target * 1.1 } : null;
   const sleepAvgH = sleepAvg != null ? sleepAvg / 60 : null;
-  const stepsAvg = avg("steps", withKey("steps"));
+  const stepsAvg = avg("steps", withKey("steps", done));
   const weight = trend("weight_kg", " kg"), fat = trend("body_fat_pct", " %");
   // { k: label, v: value, s: note, g: gauge, t: trend } (a trend replaces the note)
   const tiles = [
@@ -3675,7 +3910,7 @@ function renderHistory(days, baseline) {
     { k: "Avg protein", v: `${fmt(avg("protein_g"))} g`, s: t.protein_g ? `of ${fmt(t.protein_g)} g` : "", g: gauge(avg("protein_g"), t.protein_g, true) },
     { k: "Days logged", v: `${logged.length}`, s: `of ${days.length}`, g: gauge(logged.length, days.length) },
     { k: "Active days", v: `${activeDays}`, s: `of ${days.length}`, g: gauge(activeDays, days.length) },
-    { k: "Avg burned / day", v: fmt(avg("burned_kcal", days)), s: "kcal" },
+    { k: "Avg burned / day", v: fmt(avg("burned_kcal", done)), s: "kcal" },
     { k: "Avg steps", v: fmt(stepsAvg), s: t.steps ? `of ${fmt(t.steps)}` : "", g: gauge(stepsAvg, t.steps) },
     { k: "Avg sleep", v: sleepAvg != null ? fmtSleep(sleepAvg) : "–", s: t.sleep_h ? `of ${fmtSleep(t.sleep_h * 60)} h` : "h", g: gauge(sleepAvgH, t.sleep_h) },
     { k: "Latest weight", v: lastOf("weight_kg") ? `${fmt(lastOf("weight_kg").weight_kg, 1)} kg` : "–", t: weight },
@@ -4628,6 +4863,37 @@ function wire() {
     if (edit) return editType(Number(edit.dataset.editType));
     const del = e.target.closest("[data-del-type]");
     if (del) deleteType(Number(del.dataset.delType));
+  });
+
+  // reminders
+  $("#rm-form").addEventListener("submit", submitReminder);
+  $("#rm-form").addEventListener("input", syncReminderForm);
+  $("#rm-form").addEventListener("change", syncReminderForm);
+  $("#rm-cancel").addEventListener("click", resetReminderForm);
+  foodCombo({
+    input: $("#rm-food-search"),
+    list: $("#rm-food-suggest"),
+    kind: "all",
+    showStock: () => false,
+    onPick: setReminderFood,
+    onInput: () => {
+      state.rmFood = null;
+      syncReminderForm();
+    },
+  });
+  $("#rm-body").addEventListener("click", (e) => {
+    const edit = e.target.closest("[data-edit-rem]");
+    if (edit) return editReminder(Number(edit.dataset.editRem));
+    const del = e.target.closest("[data-del-rem]");
+    if (del) deleteReminder(Number(del.dataset.delRem));
+  });
+  $("#day-reminders").addEventListener("click", (e) => {
+    const log = e.target.closest("[data-rem-log]");
+    if (log) return logReminder(Number(log.dataset.remLog));
+    const pick = e.target.closest("[data-rem-food]");
+    if (!pick) return;
+    const food = state.rmOptions[pick.dataset.rem]?.find((f) => f.id === Number(pick.dataset.remFood));
+    if (food) logReminderFood(food);
   });
 
   // history

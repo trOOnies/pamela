@@ -82,6 +82,13 @@ def test_food_search_and_usage_order(client, oats):
     # LIKE wildcards are matched literally
     assert [f["name"] for f in client.get("/api/foods", params={"q": "%"}).json()] == ["100% juice"]
 
+    # case and accents don't matter, either way round
+    client.post("/api/foods", json={"name": "Maní tostado", "brand": "Ñandú", "kcal": 600})
+    for q in ("mani", "MANÍ", "nandu", "ÑANDU"):
+        found = [f["name"] for f in client.get("/api/foods", params={"q": q}).json()]
+        assert found == ["Maní tostado"], q
+    client.delete(f"/api/foods/{client.get('/api/foods', params={'q': 'mani'}).json()[0]['id']}")
+
     # recently logged foods float to the top
     today = dt.date.today().isoformat()
     for _ in range(2):

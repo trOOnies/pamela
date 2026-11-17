@@ -55,6 +55,7 @@
             <label><input type="radio" name="entry-mode" value="quick"><span>Quick add</span></label>
           </div>
         </div>
+        <ul class="day-reminders" id="day-reminders" aria-label="Reminders for this day" hidden></ul>
 
         <form id="entry-form" class="entry-form" autocomplete="off">
           <label class="field meal-field">
@@ -259,6 +260,9 @@
           <label class="field not-alc"><span>Protein (g)</span><input type="number" name="protein_g" min="0" step="any" value="0"></label>
           <label class="field not-alc"><span>Fat (g)</span><input type="number" name="fat_g" min="0" step="any" value="0"></label>
           <label class="field not-alc"><span>Fiber (g)</span><input type="number" name="fiber_g" min="0" step="any" value="0"></label>
+          <label class="field not-alc"><span>Vitamin B12 (µg) <small>(optional)</small></span>
+            <input type="number" name="b12_ug" min="0" step="any" placeholder="unknown"
+                   title="Per the amount in Values per. Leave empty if you don't know it yet; 0 means it has none"></label>
           <p class="hint span2 not-alc" id="food-kcal-hint"></p>
           <label class="field only-alc" hidden><span>Alcohol content</span>
             <span class="with-unit"><input type="number" name="abv_pct" min="0" max="100" step="any" placeholder="e.g. 5"><span class="unit">% V/V</span></span></label>
@@ -589,6 +593,59 @@
         </div>
       </section>
 
+      <section class="card" aria-labelledby="rm-form-h">
+        <div class="card-head">
+          <h2 id="rm-form-h">New reminder</h2>
+          <button type="button" class="btn ghost" id="rm-cancel" hidden>Cancel edit</button>
+        </div>
+        <form id="rm-form" class="at-form rm-form" autocomplete="off" data-kind="food" data-repeat="daily">
+          <div class="field span2"><span>Remind me to eat</span>
+            <div class="seg" role="radiogroup" aria-label="A food or a meal">
+              <label><input type="radio" name="kind" value="food" checked><span>A food</span></label>
+              <label><input type="radio" name="kind" value="meal"><span>A meal</span></label>
+            </div></div>
+          <div class="field span2 rm-food"><span id="rm-food-label">Food</span>
+            <div class="combo">
+              <input type="search" id="rm-food-search" placeholder="Search your foods…"
+                     role="combobox" aria-expanded="false" aria-controls="rm-food-suggest"
+                     aria-autocomplete="list" aria-labelledby="rm-food-label">
+              <ul id="rm-food-suggest" class="suggest" role="listbox" hidden></ul>
+            </div></div>
+          <label class="field span2 rm-meal"><span>Meal</span><select name="saved_meal_id" id="rm-meal"></select></label>
+          <label class="field"><span>Repeats</span>
+            <select name="repeat">
+              <option value="daily">Every day</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select></label>
+          <label class="field rm-weekly"><span>Every <small>(weeks)</small></span>
+            <input type="number" name="every" min="1" max="52" step="1" value="1" required></label>
+          <label class="field rm-weekly"><span>On</span><select name="weekday" id="rm-weekday"></select></label>
+          <label class="field rm-monthly"><span>On day</span>
+            <input type="number" name="month_day" min="1" max="31" step="1" value="1" required
+                   title="A month without this day reminds you on its last day"></label>
+          <label class="field"><span>Starting</span><input type="date" name="start_day" required></label>
+          <label class="field span2"><span>Note <small>(optional)</small></span>
+            <input type="text" name="note" maxlength="200" placeholder="e.g. for iron"></label>
+          <p class="hint span2" id="rm-hint" aria-live="polite"></p>
+          <button class="btn primary span2" type="submit" id="rm-submit">Add reminder</button>
+        </form>
+        <p class="hint at-explain">Due reminders show at the top of the Day tab's Food card. Logging
+          the food or meal that day ticks it off until next time.</p>
+      </section>
+
+      <section class="card" aria-labelledby="rm-list-h">
+        <div class="card-head">
+          <h2 id="rm-list-h">Reminders <span class="count" id="rm-count"></span></h2>
+        </div>
+        <div class="table-wrap">
+          <table class="at-table rm-table">
+            <thead><tr><th>Food or meal</th><th>Repeats</th><th>Next</th><th>Note</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+            <tbody id="rm-body"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card danger-zone" aria-labelledby="danger-h">
         <div class="card-head"><h2 id="danger-h">⚠️ Danger Zone</h2></div>
         <p class="hint">Delete tracked information for good: this can't be undone. Your settings (targets,
@@ -683,6 +740,9 @@
           </ol>
           <p>🥄 Had only part of it? If the food has a serving or package size, tap
             <i>1 serving</i>, <i>⅙ pack</i>, <i>⅓ pack</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
+          <p>⏰ <b>Reminders.</b> A food or meal you asked to be reminded of (in Settings) shows above
+            the form on the days it's due. <b>Log it</b> fills in the form; once it's logged that day,
+            the reminder goes away until next time.</p>
           <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
             the list, and the Foods tab opens with it filled in.</p>
           <p>🍽️ <b>Eaten out?</b> At a restaurant or at a friend's, the food didn't come from home.
@@ -791,6 +851,9 @@
             as 0 kcal, and the list marks it with <span class="warn-kcal">⚠ ?</span> until you fill it in.
             Entering <b>0</b> means it really has none, and it gets the
             <span class="tag tag-calorie_free">Calorie-free</span> tag on its own (you can't set that tag yourself).</p>
+          <p>💊 <b>Vitamin B12</b> (µg, per the amount in <i>Values per</i>) is optional: empty means
+            not known yet and shows as – in the list, 0 means it has none. It's kept on the food only,
+            not added up in your days.</p>
           <p>✍️ The <b>Brand</b> field suggests brands you've already used.</p>
           <p>📏 <b>Units</b>: besides <b>g</b> and <b>ml</b>, use <b>u</b> for one piece of a pack
             (one egg of a carton, one cookie) and <b>whole</b> for one whole item (an apple).</p>
@@ -934,7 +997,10 @@
             jump to that day.</p>
           <p>🫙 The cards on top fill up as you get closer to the target (or, for days logged and
             active days, to the whole period; for mood, to 😄). Hover one to see the %.
-            Average calories or protein more than 10% above target turn the card amber.</p>
+            Average calories or protein more than 10% above target turn the card amber. They average
+            the days logged, which are the days with any calories: one with only a 0 kcal entry
+            (a pill, water) doesn't count. Today is left out of the calorie, protein, steps and
+            burned averages until it's over, since it's still adding up.</p>
           <p>⚖️ Latest weight and body fat show <span class="trend-demo up">▲</span> up,
             <span class="trend-demo flat">–</span> no change or <span class="trend-demo down">▼</span> down,
             compared with the latest value logged <i>before</i> the period. Hover for the exact change.</p>
@@ -969,8 +1035,15 @@
             🥊 classes &amp; combat, 🏅 sports, 🏞️ outdoors &amp; water, 🏡 everyday, and 💪 for
             groups you make up). Types done on foot (walking, running, hiking…) have the steps they
             take per minute, so your day's steps don't count them twice; leave it empty for the rest.</p>
+          <p>⏰ <b>Reminders</b>: to eat a food or a meal every day, weekly on a day (or every 2, 3…
+            weeks on it, counted from <i>Starting</i>), or monthly on a day of the month (a month
+            without that day uses its last one). A due reminder shows at the top of the Day tab's
+            Food card: <b>Log it</b> fills in the form for you, and once that food or meal is logged
+            that day (eaten out too), the reminder is gone until next time. A reminder for a meta
+            food is ticked off by any of its foods; one for a food, also when it's part of a logged
+            meal. A reminder goes when its food or meal is deleted.</p>
           <p>⚠️ <b>Danger Zone</b>, at the bottom: tick what to delete for good (food log,
-            activities, check-ins, day notes, meals, fridge sectors, groceries, food catalog), or <i>Select all</i>, and
+            activities, check-ins, day notes, meals, fridge sectors, groceries, reminders, food catalog), or <i>Select all</i>, and
             press <b>Delete</b>. To confirm, type <b>delete</b> (or <b>delete all</b> when everything is
             ticked). Deleting the food catalog keeps the values of days you logged, but empties
             meals made of those foods. Settings are never deleted.</p>

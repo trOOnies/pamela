@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import json
 import sqlite3
@@ -28,6 +29,7 @@ from .schemas import (
     MOODS,
     TARGETS,
     UNITS,
+    WEEKDAYS,
     WIPE_TARGETS,
     Activity,
     ActivityIn,
@@ -63,6 +65,8 @@ from .schemas import (
     Macros,
     Profile,
     ProfileIn,
+    Reminder,
+    ReminderIn,
     SavedMeal,
     SavedMealIn,
     Target,
@@ -143,6 +147,7 @@ def read_vocab() -> dict:
         "moods": choices(MOODS),
         "feelings": feelings,
         "genders": choices(GENDERS),
+        "weekdays": list(WEEKDAYS),
     }
 
 
@@ -324,18 +329,25 @@ def list_foods(
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
     kind: Literal["all", "foods", "meta"] = "all",
+    meta: int | None = None,
 ) -> list[dict]:
     """Foods ordered by how often they were logged recently, then by name.
 
-    ``q`` matches every whitespace-separated word against name, brand or barcode.
-    ``kind`` keeps only the foods you can log or buy (``foods``) or the meta foods."""
+    ``q`` matches every whitespace-separated word against name, brand or barcode,
+    ignoring case and accents.
+    ``kind`` keeps only the foods you can log or buy (``foods``) or the meta foods;
+    ``meta`` only the foods that are one of that meta food."""
     where, params = [], []
+    if meta is not None:
+        where.append("f.meta_id = ?")
+        params.append(meta)
     if kind != "all":
         where.append(f"f.is_meta = {int(kind == 'meta')}")
     for word in q.split():
-        like = _like(word)
+        like = _like(db.fold(word))
         where.append(
-            "(f.name LIKE ? ESCAPE '\\' OR f.brand LIKE ? ESCAPE '\\' OR f.ean LIKE ? ESCAPE '\\')"
+            "(fold(f.name) LIKE ? ESCAPE '\\' OR fold(f.brand) LIKE ? ESCAPE '\\'"
+            " OR f.ean LIKE ? ESCAPE '\\')"
         )
         params += [like, like, like]
     sql = _FOOD_SELECT
@@ -662,6 +674,137 @@ def delete_saved_meal(saved_meal_id: int, conn: Conn) -> Response:
     if conn.execute("DELETE FROM saved_meals WHERE id = ?", (saved_meal_id,)).rowcount == 0:
         raise _not_found("saved meal")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- reminders ---------------------------------------------------------------
+
+_REMINDER_SELECT = """
+    SELECT r.*, COALESCE(f.name, m.name) AS name, COALESCE(f.brand, '') AS brand,
+           COALESCE(f.is_meta, 0) AS is_meta
+    FROM reminders r
+    LEFT JOIN foods f ON f.id = r.food_id
+    LEFT JOIN saved_meals m ON m.id = r.saved_meal_id
+"""
+_REMINDER_ORDER = " ORDER BY name COLLATE NOCASE, r.id"
+
+
+def _is_due(r: dict, day: dt.date) -> bool:
+    start = dt.date.fromisoformat(r["start_day"])
+    if day < start:
+        return False
+    if r["repeat"] == "weekly":
+        # counted in weeks from its first such weekday on or after the start
+        first = start + dt.timedelta(days=(r["weekday"] - start.weekday()) % 7)
+        return day >= first and (day - first).days % (7 * r["every"]) == 0
+    if r["repeat"] == "monthly":
+        last = calendar.monthrange(day.year, day.month)[1]
+        return day.day == min(r["month_day"], last)
+    return True
+
+
+def _reminders_done(conn: sqlite3.Connection, day: str) -> tuple[set[int], set[int]]:
+    """The foods (and the meta foods they're one of) and the meals logged on a day."""
+    foods, meals = set(), set()
+    for e in conn.execute(
+        "SELECT e.food_id, f.meta_id, e.saved_meal_id FROM food_entries e "
+        "LEFT JOIN foods f ON f.id = e.food_id WHERE e.day = ?",
+        (day,),
+    ):
+        foods.update(x for x in (e["food_id"], e["meta_id"]) if x is not None)
+        if e["saved_meal_id"] is not None:
+            meals.add(e["saved_meal_id"])
+    return foods, meals
+
+
+def _is_done(r: dict, done: tuple[set[int], set[int]]) -> bool:
+    foods, meals = done
+    return r["food_id"] in foods if r["food_id"] is not None else r["saved_meal_id"] in meals
+
+
+def _next_day(r: dict, today: dt.date, done_today: bool) -> dt.date | None:
+    """The first day it's due from today on, skipping today if it was eaten already."""
+    day = today + dt.timedelta(days=int(done_today))
+    for _ in range(2 * 366):  # every 52 weeks at most, so one is always found
+        if _is_due(r, day):
+            return day
+        day += dt.timedelta(days=1)
+    return None
+
+
+def _with_next(conn: sqlite3.Connection, rows: list[dict]) -> list[dict]:
+    today = dt.date.today()
+    done = _reminders_done(conn, today.isoformat())
+    for r in rows:
+        r["next_day"] = _next_day(r, today, _is_due(r, today) and _is_done(r, done))
+    return rows
+
+
+def _reminder_row(conn: sqlite3.Connection, reminder_id: int) -> dict:
+    row = conn.execute(_REMINDER_SELECT + " WHERE r.id = ?", (reminder_id,)).fetchone()
+    if row is None:
+        raise _not_found("reminder")
+    return _with_next(conn, [row])[0]
+
+
+def _check_target(conn: sqlite3.Connection, r: ReminderIn) -> None:
+    if r.food_id is not None:
+        _food_row(conn, r.food_id)
+    elif not conn.execute("SELECT 1 FROM saved_meals WHERE id = ?", (r.saved_meal_id,)).fetchone():
+        raise _not_found("saved meal")
+
+
+_REMINDER_FIELDS = (
+    "food_id", "saved_meal_id", "repeat", "every", "weekday", "month_day", "start_day", "note"
+)
+
+
+def _reminder_values(r: ReminderIn) -> tuple:
+    v = r.model_dump()
+    v["start_day"] = r.start_day.isoformat()
+    return tuple(v[k] for k in _REMINDER_FIELDS)
+
+
+@router.get("/reminders", response_model=list[Reminder])
+def list_reminders(conn: Conn) -> list[dict]:
+    return _with_next(conn, conn.execute(_REMINDER_SELECT + _REMINDER_ORDER).fetchall())
+
+
+@router.post("/reminders", response_model=Reminder, status_code=status.HTTP_201_CREATED)
+def create_reminder(r: ReminderIn, conn: Conn) -> dict:
+    _check_target(conn, r)
+    cur = conn.execute(
+        f"INSERT INTO reminders ({', '.join(_REMINDER_FIELDS)}) "
+        f"VALUES ({', '.join('?' * len(_REMINDER_FIELDS))})",
+        _reminder_values(r),
+    )
+    return _reminder_row(conn, cur.lastrowid)
+
+
+@router.put("/reminders/{reminder_id}", response_model=Reminder)
+def update_reminder(reminder_id: int, r: ReminderIn, conn: Conn) -> dict:
+    _reminder_row(conn, reminder_id)
+    _check_target(conn, r)
+    conn.execute(
+        f"UPDATE reminders SET {', '.join(f'{k} = ?' for k in _REMINDER_FIELDS)} WHERE id = ?",
+        (*_reminder_values(r), reminder_id),
+    )
+    return _reminder_row(conn, reminder_id)
+
+
+@router.delete("/reminders/{reminder_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_reminder(reminder_id: int, conn: Conn) -> Response:
+    if conn.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,)).rowcount == 0:
+        raise _not_found("reminder")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _day_reminders(conn: sqlite3.Connection, day: dt.date) -> list[dict]:
+    """The reminders due on a day, each with whether it was eaten that day."""
+    rows = [r for r in conn.execute(_REMINDER_SELECT + _REMINDER_ORDER) if _is_due(r, day)]
+    done = _reminders_done(conn, day.isoformat())
+    for r in rows:
+        r["done"] = _is_done(r, done)
+    return _with_next(conn, rows)
 
 
 # --- food entries ------------------------------------------------------------
@@ -1761,6 +1904,7 @@ _WIPE_TABLES = {
     "saved_meals": "saved_meals",
     "fridge": "fridge_sectors",
     "groceries": "carts",
+    "reminders": "reminders",
     "foods": "foods",
 }
 
@@ -1812,6 +1956,7 @@ def read_day(day: dt.date, conn: Conn, config: Config) -> dict:
         "previous_weight": _last_weight(conn, iso, before=True),
         "estimate_weight_kg": weight,
         "targets": _targets_on(_target_periods(conn), iso),
+        "reminders": _day_reminders(conn, day),
     }
 
 

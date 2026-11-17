@@ -404,7 +404,7 @@ input.invalid { border-color: var(--danger); }
 .food-group + .food-group { margin-top: 18px; }
 .food-group h3 { margin: 0 0 4px; font-size: 1rem; }
 .food-group h3 .count { color: var(--text-3); font-weight: 400; font-size: .85rem; }
-.foods-table { table-layout: fixed; min-width: 640px; }
+.foods-table { table-layout: fixed; min-width: 690px; }
 .foods-table col.c-brand { width: 20%; }
 .foods-table col.c-per { width: 82px; }
 .foods-table col.c-n { width: 52px; }
@@ -496,6 +496,18 @@ th[aria-sort] { color: var(--text); }
 #at-filter { width: 220px; }
 .at-table tr.group-head td { font-weight: 600; padding-top: 20px; background: transparent; }
 .at-table tr.empty td { color: var(--text-3); font-style: italic; }
+
+/* reminders: managed in Settings, due ones on top of the Day tab's Food card */
+.rm-form > .field > .seg { align-self: start; }
+.day-reminders { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.day-reminders li {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+}
+.day-reminders .rm-text { flex: 1 1 12em; min-width: 0; }
+.day-reminders .rm-text small { color: var(--text-2); }
+.rm-picks { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* --- history view ----------------------------------------------------- */
 #view-history { display: flex; flex-direction: column; gap: var(--gap); }

@@ -7,6 +7,7 @@ records how many have run. Never edit an existing migration - append a new one.
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -533,6 +534,29 @@ MIGRATIONS: list[str] = [
     ALTER TABLE food_entries ADD COLUMN eaten_out INTEGER NOT NULL DEFAULT 0
         CHECK (eaten_out IN (0, 1));
     """,
+    # 24: reminders to eat a food or a meal, daily, weekly (every so many weeks) or
+    # monthly. Logging it on a day it's due ticks it off for that day.
+    """
+    CREATE TABLE reminders (
+        id            INTEGER PRIMARY KEY,
+        food_id       INTEGER REFERENCES foods (id) ON DELETE CASCADE,
+        saved_meal_id INTEGER REFERENCES saved_meals (id) ON DELETE CASCADE,
+        repeat        TEXT    NOT NULL CHECK (repeat IN ('daily', 'weekly', 'monthly')),
+        every         INTEGER NOT NULL DEFAULT 1 CHECK (every >= 1),  -- weeks, if weekly
+        weekday       INTEGER CHECK (weekday BETWEEN 0 AND 6),        -- 0 = Monday
+        month_day     INTEGER CHECK (month_day BETWEEN 1 AND 31),     -- else the last day
+        start_day     TEXT    NOT NULL,                               -- YYYY-MM-DD
+        note          TEXT    NOT NULL DEFAULT '',
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+        CHECK ((food_id IS NULL) != (saved_meal_id IS NULL))
+    );
+    CREATE INDEX reminders_food ON reminders (food_id);
+    CREATE INDEX reminders_saved_meal ON reminders (saved_meal_id);
+    """,
+    # 25: vitamin B12 (µg per basis_qty of the food), NULL until it's entered.
+    """
+    ALTER TABLE foods ADD COLUMN b12_ug REAL CHECK (b12_ug >= 0);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.
@@ -566,12 +590,21 @@ def _dict_row(cursor: sqlite3.Cursor, row: tuple) -> dict:
     return {col[0]: value for col, value in zip(cursor.description, row, strict=True)}
 
 
+def fold(text: str | None) -> str | None:
+    """Text for searching: lowercase and without accents, so "mani" finds "Maní"."""
+    if text is None:
+        return None
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+
+
 def connect(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False: FastAPI may open the connection in one worker
     # thread and use it in another; each request still gets its own connection.
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = _dict_row
+    conn.create_function("fold", 1, fold, deterministic=True)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
     return conn

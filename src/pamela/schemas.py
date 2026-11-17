@@ -214,6 +214,9 @@ class FoodIn(DietTags, _In):
     carbs_g: float = NonNeg
     fat_g: float = NonNeg
     fiber_g: float = NonNeg
+    b12_ug: float | None = Field(
+        None, ge=0, le=100_000, description="Vitamin B12 (µg) per basis_qty; empty = not known"
+    )
     serving_qty: float | None = Field(None, gt=0, description="One serving, in `unit`")
     package_qty: float | None = Field(None, gt=0, description="Whole package, in `unit`")
     food_group: FoodGroup | Literal[""] = Field("", description="'' = no group")
@@ -280,6 +283,7 @@ class Food(Macros, DietTags):
     package_qty: float | None = None
     food_group: str = ""
     abv_pct: float | None = None
+    b12_ug: float | None = Field(None, description="Vitamin B12 (µg) per basis_qty; null = unknown")
     is_meta: bool = False
     meta_id: int | None = None
     meta_name: str | None = Field(None, description="The name of its meta food")
@@ -378,6 +382,60 @@ class SavedMeal(BaseModel):
     recipe: str = ""
     can_make: bool = Field(description="Groceries hold enough of every item")
     favorite: bool = Field(False, description="Listed first wherever meals are listed")
+
+
+# --- reminders ---------------------------------------------------------------
+
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+class ReminderIn(_In):
+    """A reminder to eat one food or one saved meal: ``food_id`` or ``saved_meal_id``."""
+
+    food_id: int | None = None
+    saved_meal_id: int | None = None
+    repeat: Literal["daily", "weekly", "monthly"]
+    every: int = Field(1, ge=1, le=52, description="Weekly: every this many weeks")
+    weekday: int | None = Field(None, ge=0, le=6, description="Weekly: 0 = Monday")
+    month_day: int | None = Field(
+        None, ge=1, le=31, description="Monthly: the day; a shorter month uses its last day"
+    )
+    start_day: dt.date = Field(description="Not due before this day; weeks count from its week")
+    note: str = Field("", max_length=200)
+
+    @model_validator(mode="after")
+    def _shape(self) -> ReminderIn:
+        if (self.food_id is None) == (self.saved_meal_id is None):
+            raise ValueError("a reminder is for one food or one meal")
+        if self.repeat == "weekly" and self.weekday is None:
+            raise ValueError("a weekly reminder needs its day of the week")
+        if self.repeat == "monthly" and self.month_day is None:
+            raise ValueError("a monthly reminder needs its day of the month")
+        # only what its repeat uses is kept
+        if self.repeat != "weekly":
+            self.every, self.weekday = 1, None
+        if self.repeat != "monthly":
+            self.month_day = None
+        return self
+
+
+class Reminder(BaseModel):
+    id: int
+    food_id: int | None
+    saved_meal_id: int | None
+    name: str = Field(description="The food's or the meal's name")
+    brand: str = ""
+    is_meta: bool = Field(False, description="A meta food: any of its foods ticks it off")
+    repeat: Literal["daily", "weekly", "monthly"]
+    every: int
+    weekday: int | None
+    month_day: int | None
+    start_day: dt.date
+    note: str
+    next_day: dt.date | None = Field(
+        None, description="The next day it's due and not yet eaten, from today on"
+    )
+    done: bool = Field(False, description="In a Day: already eaten that day")
 
 
 # --- food entries ------------------------------------------------------------
@@ -852,6 +910,7 @@ WIPE_TARGETS = {
         "Groceries",
         "Every cart and expiry in Groceries. Logged days stay as they are",
     ),
+    "reminders": ("Reminders", "Every reminder to eat a food or a meal"),
     "foods": (
         "Food catalog",
         "Every food in Foods. Logged days keep their values; saved meals and groceries lose "
@@ -899,6 +958,7 @@ class Day(BaseModel):
     )
     estimate_weight_kg: float = Field(description="Weight used for calorie estimates this day")
     targets: dict[str, int | None] = Field(description="Targets in force on this day")
+    reminders: list[Reminder] = Field([], description="The reminders due this day")
 
 
 class HistoryDay(Macros):
@@ -1001,3 +1061,4 @@ class Vocabulary(BaseModel):
     moods: list[Choice]
     feelings: list[Choice]
     genders: list[Choice]
+    weekdays: list[str] = Field(description="Day names, Monday first (weekday 0)")
