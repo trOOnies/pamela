@@ -649,12 +649,28 @@ class FridgeSector(BaseModel):
     id: int
     name: str
     emoji: str
-    foods: list[FridgeFood] = Field(description="By name; foods that ran out included")
+    foods: list[FridgeFood] = Field(description="By name; only what has something left there")
+
+
+class RecentlyOut(BaseModel):
+    """A food that was in stock lately and has none left."""
+
+    food_id: int
+    name: str
+    brand: str
+    unit: str
+    food_group: str = ""
+    ran_out_on: dt.date = Field(description="The day the last of it was eaten or taken out")
+    sector: str | None = Field(None, description="Its main sector, where it goes back to")
+    emoji: str = ""
 
 
 class Fridge(BaseModel):
     sectors: list[FridgeSector] = Field(description="In the user's order")
     unsorted: list[FridgeFood] = Field(description="Stock that isn't in a sector")
+    recently_out: list[RecentlyOut] = Field(
+        default_factory=list, description="Ran out in the last 30 days, newest first"
+    )
 
 
 # --- activities --------------------------------------------------------------

@@ -149,13 +149,81 @@ def test_eating_and_buying_with_a_split_food(client):
     ]
     drink(300)
     fr = client.get("/api/fridge").json()
-    assert where(fr)["Shelf"] == [("Milk", 0, True)] and where(fr)["Door"] == [("Milk", 200, False)]
+    # the emptied main place isn't listed, but it's still where new cartons go
+    assert where(fr)["Shelf"] == [] and where(fr)["Door"] == [("Milk", 200, False)]
     # a new carton goes to the main place, not back to the door
     buy(client, milk["id"], 1000, day=D[1])
     fr = client.get("/api/fridge").json()
     assert where(fr)["Shelf"] == [("Milk", 1000, True)] and where(fr)["Door"] == [
         ("Milk", 200, False)
     ]
+
+
+def test_eating_takes_from_sectors_by_priority(client):
+    milk = food(client, "Milk", "ml")
+    buy(client, milk["id"], 1000)
+    outside, attic = sector(client, "Outside"), sector(client, "Attic")
+    move(client, milk["id"], None, attic)  # its main place is the second sector
+    move(client, milk["id"], attic, outside, 300)
+
+    def log(q):
+        r = client.post(
+            "/api/entries",
+            json={"day": D[1], "meal": "Lunch", "food_id": milk["id"], "quantity": q},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    def spots():
+        w = where(client.get("/api/fridge").json())
+        return w["Outside"], w["Attic"]
+
+    entry = log(200)  # the first sector goes first, even with the main place elsewhere
+    assert spots() == ([("Milk", 100, False)], [("Milk", 700, True)])
+
+    # changing the entry: eating more takes the extra by priority too...
+    def change(q):
+        r = client.put(
+            f"/api/entries/{entry}",
+            json={"day": D[1], "meal": "Lunch", "food_id": milk["id"], "quantity": q},
+        )
+        assert r.status_code == 200, r.text
+
+    change(250)
+    assert spots() == ([("Milk", 50, False)], [("Milk", 700, True)])
+    # ...and eating less gives it back to the main place
+    change(100)
+    assert spots() == ([("Milk", 50, False)], [("Milk", 850, True)])
+
+    # a saved meal's foods follow the same order, past the first sector into the next
+    r = client.post(
+        "/api/entries/batch",
+        json={"day": D[1], "meal": "Dinner", "items": [{"food_id": milk["id"], "quantity": 150}]},
+    )
+    assert r.status_code == 201, r.text
+    assert spots() == ([], [("Milk", 750, True)])
+
+    # the order is the user's: put Attic first and it goes first
+    move(client, milk["id"], attic, outside, 250)
+    client.put("/api/fridge/order", json={"ids": [attic, outside]})
+    log(100)
+    assert spots() == ([("Milk", 250, False)], [("Milk", 400, True)])
+
+
+def test_what_is_in_no_sector_is_eaten_last(client, oats):
+    buy(client, oats["id"], 1000)
+    shelf = sector(client, "Shelf")
+    move(client, oats["id"], None, shelf)
+    move(client, oats["id"], shelf, None)  # no main place: all of it is in no sector
+    fr = move(client, oats["id"], None, shelf, 300)
+    assert where(fr)["Shelf"] == [("Rolled oats", 300, False)]
+    assert where(fr)[None] == [("Rolled oats", 700, False)]
+    client.post(
+        "/api/entries",
+        json={"day": D[1], "meal": "Breakfast", "food_id": oats["id"], "quantity": 400},
+    )
+    fr = client.get("/api/fridge").json()
+    assert where(fr)["Shelf"] == [] and where(fr)[None] == [("Rolled oats", 600, False)]
 
 
 def test_food_that_ran_out_keeps_its_sector(client, oats):
@@ -170,11 +238,14 @@ def test_food_that_ran_out_keeps_its_sector(client, oats):
         json={"day": D[1], "meal": "Breakfast", "food_id": oats["id"], "quantity": 100},
     )
     fr = client.get("/api/fridge").json()
-    # ran out: its last place becomes its main one, so it goes back there
-    assert where(fr)["Door"] == [("Rolled oats", 0, True)]
+    # ran out: it leaves the sectors, but its last place becomes its main one...
+    assert where(fr)["Door"] == [] and where(fr)["Shelf"] == []
+    assert [(o["name"], o["sector"]) for o in fr["recently_out"]] == [("Rolled oats", "Door")]
     assert fr["unsorted"] == []  # foods that ran out aren't listed as unsorted
     buy(client, oats["id"], 300, day=D[0])
-    assert where(client.get("/api/fridge").json())["Door"] == [("Rolled oats", 300, True)]
+    # ...so it goes back there when bought again
+    fr = client.get("/api/fridge").json()
+    assert where(fr)["Door"] == [("Rolled oats", 300, True)] and fr["recently_out"] == []
 
 
 def test_deleting_a_sector_or_food(client, oats):
@@ -320,3 +391,30 @@ def test_steps_per_min_on_exercise_types(client):
     assert r.json()["steps_per_min"] is None
     r = client.post("/api/activity-types", json={"name": "x", "met": 6, "steps_per_min": 0})
     assert r.status_code == 422
+
+
+def test_recently_ran_out(client, oats):
+    old_day = (TODAY - dt.timedelta(days=40)).isoformat()
+    milk, rice, tea = food(client, "Milk", "ml"), food(client, "Rice"), food(client, "Tea")
+    buy(client, oats["id"], 100)
+    buy(client, milk["id"], 1000)
+    buy(client, rice["id"], 500)
+    buy(client, tea["id"], 50, day=old_day)
+    door = sector(client, "Door", "🚪")
+    move(client, milk["id"], None, door)
+
+    def eat(food_id, q, day):
+        r = client.post(
+            "/api/entries", json={"day": day, "meal": "Lunch", "food_id": food_id, "quantity": q}
+        )
+        assert r.status_code == 201, r.text
+
+    eat(milk["id"], 1000, D[2])
+    eat(rice["id"], 200, D[1])  # some left: still in stock
+    eat(oats["id"], 100, D[4])
+    eat(tea["id"], 50, (TODAY - dt.timedelta(days=31)).isoformat())  # too long ago
+    out = client.get("/api/fridge").json()["recently_out"]
+    assert [(o["name"], o["ran_out_on"], o["sector"], o["emoji"]) for o in out] == [
+        ("Milk", D[2], "Door", "🚪"),
+        ("Rolled oats", D[4], None, ""),
+    ]

@@ -2612,14 +2612,29 @@ function fridgeRow(f, sector) {
     <span class="ff-meta"><span>${has && f.next_expiry ? expiryBadge(f.next_expiry) : ""}</span><span class="ff-btns">${moveBtn}${out}</span></span></li>`;
 }
 
+/** The foods of a list that match the Fridge search (all of them when it's empty). */
+function fridgeMatches(foods) {
+  const fold = (t) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase(); // "Puré" matches "pure"
+  const words = fold($("#fridge-filter").value).split(/\s+/).filter(Boolean);
+  return words.length ? foods.filter((f) => words.every((w) => fold(`${f.name} ${f.brand}`).includes(w))) : foods;
+}
+const ofCount = (shown, all) => (shown === all ? `(${all})` : `(${shown} of ${all})`);
+
 function renderFridge() {
   const fr = state.fridge;
   if (!fr) return;
   const { sectors, unsorted } = fr;
   renderExpiredAlert($("#fridge-alert"), fridgeExpired());
-  $("#unsorted-count").textContent = `(${unsorted.length})`;
-  $("#unsorted-list").innerHTML = unsorted.length
-    ? (sectors.length ? "" : `<li class="empty">Add a sector (at the bottom of the page) to put these in.</li>`) + unsorted.map((f) => fridgeRow(f, null)).join("")
+  const unsortedShown = fridgeMatches(unsorted);
+  const searching = !!$("#fridge-filter").value.trim();
+  const hideUnsorted = searching && !unsortedShown.length; // like sectors with no match
+  $(".fridge-side").hidden = hideUnsorted;
+  $(".fridge-grid").classList.toggle("solo", hideUnsorted);
+  $("#unsorted-count").textContent = ofCount(unsortedShown.length, unsorted.length);
+  $("#unsorted-list").innerHTML = unsortedShown.length
+    ? (sectors.length ? "" : `<li class="empty">Add a sector (at the bottom of the page) to put these in.</li>`) + unsortedShown.map((f) => fridgeRow(f, null)).join("")
+    : unsorted.length
+    ? `<li class="empty">No matches</li>`
     : `<li class="empty">${sectors.some((x) => x.foods.some(hasStock)) ? "Everything in stock has its sector." : "Nothing in stock. Add a cart in Groceries."}</li>`;
 
   $("#sectors-count").textContent = sectors.length ? `(${sectors.length})` : "";
@@ -2630,13 +2645,17 @@ function renderFridge() {
   prog.classList.toggle("done", placed.length > 0 && ticked === placed.length);
   $("#fridge-reset-checks").hidden = !ticked;
 
+  renderRecentlyOut(fr.recently_out || [], searching);
+
   if (!sectors.length) {
     $("#sector-list").innerHTML = `<p class="empty-note">No sectors yet. Add one for each shelf, drawer or cupboard where you keep food, with the form at the bottom of the page.</p>`;
     return;
   }
-  $("#sector-list").innerHTML = sectors
+  const html = sectors
     .map((sec, i) => {
       const here = sec.foods.filter(hasStock);
+      const shown = fridgeMatches(sec.foods);
+      if (searching && !shown.length) return ""; // the search hides sectors with no match
       const done = here.length && here.every((f) => fridgeChecks.has(checkKey(f, sec)));
       const addable = [
         ["Not in a sector", "", unsorted],
@@ -2650,17 +2669,38 @@ function renderFridge() {
         : "";
       return `<section class="card sector-card${sec.id === state.editingSectorId ? " editing" : ""}${done ? " checked" : ""}" aria-label="${esc(sec.name)}">
         <div class="sector-top">
-          <h3>${esc(sectorName(sec))} <span class="count">(${here.length})</span></h3>
+          <h3>${esc(sectorName(sec))} <span class="count">${ofCount(fridgeMatches(here).length, here.length)}</span></h3>
           <button type="button" class="row-btn" data-sector-move="${sec.id}" data-dir="-1" title="Move up" aria-label="Move ${esc(sec.name)} up"${i === 0 ? " disabled" : ""}>↑</button>
           <button type="button" class="row-btn" data-sector-move="${sec.id}" data-dir="1" title="Move down" aria-label="Move ${esc(sec.name)} down"${i === sectors.length - 1 ? " disabled" : ""}>↓</button>
           <button type="button" class="row-btn icon" data-edit-sector="${sec.id}" title="Rename" aria-label="Rename ${esc(sec.name)}">${PENCIL}</button>
           <button type="button" class="row-btn del" data-del-sector="${sec.id}" title="Delete" aria-label="Delete ${esc(sec.name)}">✕</button>
         </div>
-        <ul class="fridge-foods">${sec.foods.length ? sec.foods.map((f) => fridgeRow(f, sec)).join("") : `<li class="empty">Empty</li>`}</ul>
+        <ul class="fridge-foods">${shown.length ? shown.map((f) => fridgeRow(f, sec)).join("") : `<li class="empty">Empty</li>`}</ul>
         ${add}
       </section>`;
     })
     .join("");
+  $("#sector-list").innerHTML = html || `<p class="empty-note">No sector has a match.</p>`;
+  if (searching) $("#sectors-count").textContent = ofCount(sectors.filter((x) => fridgeMatches(x.foods).length).length, sectors.length);
+}
+
+/** Foods that ran out in the last 30 days, newest first; the search filters them too. */
+function renderRecentlyOut(all, searching) {
+  const rows = fridgeMatches(all);
+  const card = $(".recent-out-card");
+  card.hidden = searching && !rows.length;
+  $("#recent-out-count").textContent = all.length ? ofCount(rows.length, all.length) : "";
+  $("#recent-out-list").innerHTML = rows.length
+    ? rows
+        .map((it) => {
+          const d = daysBetween(it.ran_out_on, todayISO());
+          const when = d === 0 ? "today" : d === 1 ? "yesterday" : `${d} d ago`;
+          const where = it.sector ? ` · goes back to ${it.emoji ? `${esc(it.emoji)} ` : ""}${esc(it.sector)}` : "";
+          return `<li><span>${groupEmoji(it.food_group)}${foodLabel(it)}</span>
+            <small title="${fmtDay(it.ran_out_on)}">ran out ${when}${where}</small></li>`;
+        })
+        .join("")
+    : `<li class="empty">Nothing ran out in the last 30 days.</li>`;
 }
 
 /** Foods in the Fridge whose earliest date is past, once each. */
@@ -2867,6 +2907,7 @@ function siblingLots(row) {
 function wireFridge() {
   $("#sector-form").addEventListener("submit", submitSector);
   $("#sector-cancel").addEventListener("click", resetSectorForm);
+  $("#fridge-filter").addEventListener("input", renderFridge);
   $("#fridge-reset-checks").addEventListener("click", () => {
     fridgeChecks.clear();
     saveFridgeChecks();

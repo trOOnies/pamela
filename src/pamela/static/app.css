@@ -1021,6 +1021,11 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 #view-fridge:not([hidden]) { display: flex; flex-direction: column; gap: var(--gap); }
 .fridge-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: minmax(340px, 420px) minmax(0, 1fr); }
 @media (max-width: 1099px) { .fridge-grid { grid-template-columns: minmax(0, 1fr); } }
+.fridge-grid.solo { grid-template-columns: minmax(0, 1fr); }
+.fridge-side[hidden] { display: none; }
+.recent-out-card[hidden] { display: none; }
+.recent-out-list small { color: var(--text-3); text-align: right; }
+.fridge-search input { width: 100%; max-width: 420px; }
 .fridge-main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
 .sector-form-card .sector-form { max-width: 720px; }
 .fridge-head { flex-wrap: wrap; gap: 8px 14px; }

@@ -384,6 +384,9 @@
     <!-- Fridge ---------------------------------------------------------- -->
     <section id="view-fridge" class="view" hidden>
       <div class="expired-alert" id="fridge-alert" role="alert" hidden></div>
+      <div class="fridge-search">
+        <input type="search" id="fridge-filter" placeholder="Search the Fridge…" aria-label="Search foods in every sector">
+      </div>
       <div class="fridge-grid">
         <section class="card fridge-side" aria-labelledby="unsorted-h">
           <div class="card-head"><h2 id="unsorted-h">Not in a sector <span class="count" id="unsorted-count"></span></h2></div>
@@ -398,6 +401,10 @@
           <div class="sector-list" id="sector-list"></div>
         </section>
       </div>
+      <section class="card recent-out-card" aria-labelledby="recent-out-h">
+        <div class="card-head"><h2 id="recent-out-h">Recently ran out <span class="count" id="recent-out-count"></span></h2></div>
+        <ul class="ranout-list recent-out-list" id="recent-out-list"></ul>
+      </section>
       <section class="card sector-form-card" aria-labelledby="sector-form-h">
         <div class="card-head">
           <h2 id="sector-form-h">🧊 New sector</h2>
@@ -885,10 +892,18 @@
           <p>Your groceries sorted by where you keep them at home, so you can stand in front of
             the fridge and check that Pamela matches what's really there.</p>
           <p>🗂️ <b>Sectors.</b> Add one for each place you keep food: fridge shelves, the door, freezer
-            drawers, the pantry… Give each a name and, if you like, an emoji. Use ↑ and ↓ to put them
-            in the order you walk past them, ✏️ to rename one, ✕ to delete one (its foods just go back to
-            <i>Not in a sector</i>).</p>
+            drawers, the pantry… Give each a name and, if you like, an emoji. Use ✏️ to rename one,
+            ✕ to delete one (its foods just go back to <i>Not in a sector</i>).</p>
+          <p>⬆️ <b>Priority.</b> Use ↑ and ↓ to put the sectors in the order you want food used up:
+            what you log in Day (on its own or in a saved meal) is taken from the first sector that
+            has it, then the next one, and from <i>Not in a sector</i> last.</p>
           <p>🗂️ The <b>New sector</b> form is at the very bottom of the page.</p>
+          <p>🫙 <b>Recently ran out.</b> Above the <b>New sector</b> form: the foods you had in
+            stock in the last 30 days and have none of now, newest first, with the day the last of
+            it went and the sector it goes back to when you buy it again.</p>
+          <p>🔍 <b>Search the Fridge.</b> The box on top keeps, in every sector and in <i>Not in a
+            sector</i>, only the foods whose name or brand has all the words you type (accents don't matter). Sectors with no match are hidden
+            while you search.</p>
           <p>📥 <b>Putting food in.</b> <i>Not in a sector</i> lists everything in stock that has no
             place yet: press <b>Put in…</b> next to it. Or use <b>+ Add a food from your stock</b> at
             the bottom of a sector. <b>Move…</b> moves a food to another sector, and ✕ takes it out of
@@ -898,11 +913,11 @@
             share (<i>300 ml of 1,000</i>). The sector that holds the rest is its <i>main</i> one: new
             purchases of it land there. Moving all of the main sector's share makes the other sector the
             main one. ✕ on a share sends it back to the main sector.</p>
-          <p>🍽️ When you eat some or throw some out, Pamela can't know which share it came from: it takes
-            it from the main sector first, then from the other shares, newest first. If that's not what
-            happened, move it to match.</p>
-          <p>🔁 A food that runs out stays in its main sector, greyed out as <i>none left</i>, so it's
-            back in its place as soon as you buy it again.</p>
+          <p>🍽️ What you log in Day comes out of the sectors in their order (see <b>Priority</b>). When
+            you throw some out, or someone else eats it, it comes out of the main sector first, then
+            from the other shares, newest first. If that's not what happened, move it to match.</p>
+          <p>🔁 A food that runs out leaves its sectors (it shows up in <b>Recently ran out</b>), but
+            Pamela remembers its main sector, so it's back in its place as soon as you buy it again.</p>
           <p>✅ <b>Checking.</b> Tick each food once you've seen it where Pamela says it is. The count at
             the top shows how far you are, and a sector gets a green border when all of it is ticked. Ticks are
             remembered in this browser until you press <b>Start a new check</b>. Something missing or

@@ -805,12 +805,74 @@ def _take_stock(conn: sqlite3.Connection, entry_id: int, values: dict) -> None:
     """(Re)takes what a logged entry ate from Groceries, as far as there is any. An
     entry eating more than is left simply takes what's there; food eaten out takes
     nothing (and gives back what it took, when an entry is changed to eaten out)."""
+    food_id = values["food_id"]
+    _settle_places(conn)
+    places = _places(conn).get(food_id, []) if food_id is not None else []
+    had = _entry_took(conn, entry_id, food_id)  # this entry's share before the change
     conn.execute("DELETE FROM stock_uses WHERE entry_id = ?", (entry_id,))
     need = values["quantity"] or 0
-    if values["food_id"] is None or need <= 0 or values["eaten_out"]:
+    if food_id is None or need <= 0 or values["eaten_out"]:
         return
-    _take_from_lots(conn, entry_id, values["food_id"], values["day"], need)
-    _settle_places(conn)  # what was eaten leaves its place in Fridge
+    _take_from_lots(conn, entry_id, food_id, values["day"], need)
+    # what it eats on top of before leaves the Fridge by sector priority; what it gives
+    # back (eating less now) goes to the food's main place, like a new purchase
+    _eat_from_places(conn, places, _entry_took(conn, entry_id, food_id) - had)
+    _settle_places(conn)
+
+
+def _entry_took(conn: sqlite3.Connection, entry_id: int, food_id: int | None) -> float:
+    """How much of a food an entry takes from Groceries."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(u.quantity), 0) AS q FROM stock_uses u "
+        "JOIN stock_lots l ON l.id = u.lot_id WHERE u.entry_id = ? AND l.food_id = ?",
+        (entry_id, food_id),
+    ).fetchone()
+    return row["q"]
+
+
+def _eat_from_places(conn: sqlite3.Connection, places: list[dict], qty: float) -> None:
+    """Takes ``qty`` eaten of a food out of its places (as they were before eating it),
+    the first sector in the Fridge first and what's in no sector last.
+
+    A main place, or what's in no sector, holds whatever its food's set amounts leave
+    over, so eating from it needs no change; eating from a set amount lowers it."""
+    if qty <= EPS or not places:
+        return
+    pos = {r["id"]: r["position"] for r in conn.execute("SELECT id, position FROM fridge_sectors")}
+    order = sorted(
+        places,
+        key=lambda pl: (
+        pl["sector_id"] is None,
+        pos.get(pl["sector_id"], 0),
+        pl["sector_id"] or 0,
+    ),
+    )
+    left = sum(pl["amount"] for pl in places) - qty  # what's still there once eaten
+    emptied = []
+    for pl in order:
+        take = min(pl["amount"], qty)
+        if take > EPS and pl["id"] is not None and pl["quantity"] is not None:
+            if take >= pl["amount"] - EPS:
+                emptied.append(pl)
+            else:
+                conn.execute(
+                    "UPDATE fridge_places SET quantity = ? WHERE id = ?",
+                    (pl["amount"] - take, pl["id"]),
+                )
+        qty -= take
+        if qty <= EPS:
+            break
+    if not emptied:
+        return
+    # a food eaten up with no main place keeps its oldest one as main, so it goes back
+    # there when bought again (as _settle_places does)
+    keep = None
+    if left <= EPS and not any(pl["id"] is not None and pl["quantity"] is None for pl in places):
+        keep = min(emptied, key=lambda pl: pl["id"])
+        conn.execute("UPDATE fridge_places SET quantity = NULL WHERE id = ?", (keep["id"],))
+    for pl in emptied:
+        if pl is not keep:
+            conn.execute("DELETE FROM fridge_places WHERE id = ?", (pl["id"],))
 
 
 def _take_from_lots(
@@ -1300,8 +1362,9 @@ def _settle_places(conn: sqlite3.Connection) -> None:
 
 
 def _fridge(conn: sqlite3.Connection) -> dict:
-    """Every sector with its foods (also those that ran out, in their main place, so
-    they go back there when bought again), and the stock that isn't in a sector."""
+    """Every sector with the foods that have something there (one that ran out is only
+    remembered in its main place, so it goes back there when bought again), the stock
+    that isn't in a sector, and what ran out lately."""
     _settle_places(conn)
     sectors = conn.execute("SELECT * FROM fridge_sectors ORDER BY position, id").fetchall()
     expiry = {
@@ -1332,15 +1395,60 @@ def _fridge(conn: sqlite3.Connection) -> dict:
     by_sector: dict[int | None, list[dict]] = {s["id"]: [] for s in sectors}
     by_sector[None] = []
     for food_id, places in _places(conn).items():
-        # set amounts that emptied out are left out (settling removes them anyway)
-        shown = [pl for pl in places if pl["quantity"] is None or pl["amount"] > EPS]
+        # only what's really there: a food that ran out keeps its main place (it goes
+        # back there when bought again) but isn't listed in it, nor is an emptied main
+        # place of a food that's still in other sectors
+        shown = [pl for pl in places if pl["amount"] > EPS]
         n = sum(pl["sector_id"] is not None for pl in shown)
         for pl in shown:
             by_sector[pl["sector_id"]].append(row(food_id, pl, n))
     return {
         "sectors": [s | {"foods": by_name(by_sector[s["id"]])} for s in sectors],
         "unsorted": by_name(by_sector[None]),
+        "recently_out": _recently_out(conn, stock, foods, sectors),
     }
+
+
+RECENTLY_OUT_DAYS = 30
+
+
+def _recently_out(
+    conn: sqlite3.Connection, stock: dict[int, float], foods: dict[int, dict], sectors: list
+) -> list[dict]:
+    """Foods with none left whose last bit was eaten or taken out at most
+    ``RECENTLY_OUT_DAYS`` days ago (or, with nothing taken out, that were last bought
+    then), newest first."""
+    since = (dt.date.today() - dt.timedelta(days=RECENTLY_OUT_DAYS)).isoformat()
+    by_id = {s["id"]: s for s in sectors}
+    main = {
+        r["food_id"]: by_id.get(r["sector_id"])
+        for r in conn.execute("SELECT food_id, sector_id FROM fridge_places WHERE quantity IS NULL")
+    }
+    rows = conn.execute(
+        """SELECT l.food_id, MAX(COALESCE(
+                   (SELECT MAX(u.day) FROM stock_uses u WHERE u.lot_id = l.id), c.bought_on
+               )) AS ran_out_on
+           FROM stock_lots l JOIN carts c ON c.id = l.cart_id
+           GROUP BY l.food_id HAVING ran_out_on >= ?""",
+        (since,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        if r["food_id"] in stock:
+            continue  # still has some
+        f, sec = foods[r["food_id"]], main.get(r["food_id"])
+        out.append(
+            {
+                "food_id": r["food_id"],
+                **{k: f[k] for k in ("name", "brand", "unit", "food_group")},
+                "ran_out_on": r["ran_out_on"],
+                "sector": sec["name"] if sec else None,
+                "emoji": sec["emoji"] if sec else "",
+            }
+        )
+    out.sort(key=lambda it: (it["name"].casefold(), it["brand"].casefold()))
+    out.sort(key=lambda it: it["ran_out_on"], reverse=True)
+    return out
 
 
 def _sector_exists(conn: sqlite3.Connection, sector_id: int) -> None:
