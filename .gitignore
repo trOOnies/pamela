@@ -7,6 +7,7 @@ local/
 .claude/
 .idea/
 .ruff_cache/
+node_modules/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
