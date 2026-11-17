@@ -200,6 +200,13 @@ async function request(method, path, body) {
 
 let toastTimer;
 function toast(msg, isError = false) {
+  // The page behind a modal dialog is dimmed and inert: show its errors inside it instead.
+  const slot = isError && $("dialog:modal .dialog-error");
+  if (slot) {
+    slot.textContent = msg;
+    slot.hidden = false;
+    return;
+  }
   const el = $("#toast");
   el.textContent = msg;
   el.classList.toggle("error", isError);
@@ -1207,7 +1214,7 @@ function updatePreview() {
   const chips = $("#portion-chips");
   if (!f) {
     $("#entry-preview").textContent = "";
-    chips.innerHTML = "";
+    chips.replaceChildren();
     return;
   }
   chips.innerHTML = portionOptions(f)
@@ -1867,7 +1874,7 @@ async function toggleFavoriteFood(id) {
   try {
     const saved = await api("PUT", `/foods/${id}/favorite`, { favorite: !f.favorite });
     f.favorite = saved.favorite;
-    state.foods = favoritesFirst([...state.foods].sort((a, b) => b.uses - a.uses || collator.compare(a.name, b.name)));
+    state.foods = favoritesFirst(state.foods.toSorted((a, b) => b.uses - a.uses || collator.compare(a.name, b.name)));
     renderFoods();
     $(`#food-row-${id} [data-fav-food]`)?.focus();
     toast(f.favorite ? `♥ ${f.name} is a favorite` : `${f.name} is no longer a favorite`);
@@ -2278,7 +2285,7 @@ function renderTripTotal() {
   input.classList.toggle("invalid", !!m.d.invalid || m.off > m.subtotal + 1e-9);
   $("#trip-fee").classList.toggle("invalid", m.fee != null && m.fee < 0);
   if (!m.priced && !m.off && m.fee == null) {
-    $("#trip-sum").innerHTML = "";
+    $("#trip-sum").replaceChildren();
     return;
   }
   let html = `<dt>Subtotal</dt><dd>${fmtMoney(m.subtotal)}</dd>`;
@@ -2947,7 +2954,6 @@ function wireFridge() {
 
   $("#move-form").addEventListener("submit", submitMove);
   $("#move-form").addEventListener("input", updateMoveHint);
-  $("#move-cancel").addEventListener("click", () => $("#move-dialog").close());
   $("#move-dialog").addEventListener("close", () => (moving = null));
   $("#move-chips").addEventListener("click", (e) => {
     const c = e.target.closest("[data-move-q]");
@@ -3695,8 +3701,8 @@ function renderHistory(days, baseline) {
   renderWeight();
   lineChart($("#chart-bodyfat"), days, "body_fat_pct", "%", 1);
 
-  $("#history-body").innerHTML = [...days]
-    .reverse()
+  $("#history-body").innerHTML = days
+    .toReversed()
     .map(
       (d) => `<tr class="${d.entry_count || d.active_min || d.has_note || ["steps", "sleep_min", "mood", "weight_kg", "body_fat_pct"].some((k) => d[k] != null) ? "" : "nodata"}">
       <td class="dow">${weekdayShort.format(parseISO(d.day))}</td>
@@ -3747,7 +3753,7 @@ function renderBodyRefs(unit) {
     box.innerHTML = `<p class="hint">📐 Weight references are based on BMI, so they need your height: add it in <a href="#/settings">Settings</a>.</p>`;
     return;
   }
-  const last = [...state.historyDays].reverse().find((d) => d.weight_kg != null);
+  const last = state.historyDays.findLast((d) => d.weight_kg != null);
   const lastBmi = last ? last.weight_kg / h ** 2 : state.profile.last_weight ? state.profile.last_weight.weight_kg / h ** 2 : null;
   const show = (bmi) => (unit === "bmi" ? fmt(bmi, 1) : `${fmt(bmi * h ** 2, 1)} kg`);
   const range = (b) =>
@@ -3982,9 +3988,20 @@ function wireHelpIndex() {
 
 // --- light / dark mode -------------------------------------------------------------
 
+// The theme lives in <meta name="color-scheme">: "light dark" follows the system, "light"
+// or "dark" is the toggle's pick. The CSS maps it to color-scheme, and light-dark() does the rest.
+const schemeMeta = () => $('meta[name="color-scheme"]');
+const systemTheme = () => (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+
 /** The theme on screen: the one picked with the toggle, else the system's. */
 function currentTheme() {
-  return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const picked = schemeMeta().content;
+  return picked === "light" || picked === "dark" ? picked : systemTheme();
+}
+
+function applyTheme(picked) {
+  schemeMeta().content = picked === "light" || picked === "dark" ? picked : "light dark";
+  labelThemeButton(); // everything else, charts included, is drawn with CSS variables
 }
 
 function labelThemeButton() {
@@ -3993,13 +4010,17 @@ function labelThemeButton() {
   $("#theme-btn").setAttribute("aria-label", label);
 }
 
+/** Switches to the other theme. Switching back to the system's one forgets the pick, so
+ * Pamela follows the system again; a pick that the system later matches is kept. */
 function toggleTheme() {
   const next = currentTheme() === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
+  const picked = next === systemTheme() ? null : next;
   try {
-    localStorage.setItem("pamela-theme", next); // only a per-browser preference
+    // only a per-browser preference
+    if (picked) localStorage.setItem("pamela-theme", picked);
+    else localStorage.removeItem("pamela-theme");
   } catch {}
-  labelThemeButton(); // everything else, charts included, is drawn with CSS variables
+  applyTheme(picked);
 }
 
 // --- deleting: one day, or whole kinds of data (Danger Zone) ----------------------
@@ -4173,10 +4194,19 @@ function wire() {
   $("#exit-btn").addEventListener("click", openExitDialog);
   $("#theme-btn").addEventListener("click", toggleTheme);
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => labelThemeButton());
+  // another tab switched the theme
+  addEventListener("storage", (e) => {
+    if (e.key === "pamela-theme" || e.key === null) applyTheme(prefGet("pamela-theme"));
+  });
+  // a dialog's error message goes away once it closes or something in it changes
+  for (const type of ["close", "input"]) {
+    document.addEventListener(type, (e) => {
+      const slot = e.target.closest?.("dialog")?.querySelector(".dialog-error");
+      if (slot) slot.hidden = true;
+    }, true);
+  }
   labelThemeButton();
-  $("#exit-cancel").addEventListener("click", () => $("#exit-dialog").close());
   $("#exit-confirm").addEventListener("click", saveAndClose);
-  $("#confirm-cancel").addEventListener("click", () => $("#confirm-dialog").close());
   $("#confirm-ok").addEventListener("click", () => $("#confirm-dialog").close("ok"));
   wireHelpIndex();
 
@@ -4350,7 +4380,6 @@ function wire() {
     e.preventDefault(); // stay open until the delete is done
     runWipe();
   });
-  $("#wipe-cancel").addEventListener("click", () => $("#wipe-dialog").close());
   $("#comfort-stars").addEventListener("click", (e) => {
     const star = e.target.closest("[data-star]");
     if (!star) return;
@@ -4532,7 +4561,6 @@ function wire() {
     }
   });
   $("#expire-form").addEventListener("submit", submitExpire);
-  $("#expire-cancel").addEventListener("click", () => $("#expire-dialog").close());
 
   // saved meals
   smTable = itemsTable({

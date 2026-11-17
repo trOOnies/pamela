@@ -2,141 +2,59 @@
    Layout targets: 1920px wide (3 columns on the Day view) and ~960px (half screen). */
 
 :root {
-  color-scheme: light;
-  /* light green, with light yellow as the second color */
-  --bg: #e7f0dc;
-  --surface: #fbfdf8;
-  --surface-2: #e2edd5;
-  --border: #cad9ba;
-  --text: #13200f;
-  --text-2: #475844;
-  --text-3: #6f7f69;
-  --accent: #2f7d32;
-  --accent-text: #ffffff;
-  --accent-soft: #d9eecf;
-  --accent-2: #8a6d00;
-  --accent-2-line: #d9bf45;
-  --accent-2-soft: #fbf3c8;
-  --danger: #c0392b;
-  --warn: #b26a00;
-  --done: #e3b100;      /* a fridge sector with every item ticked */
-  --fav: #d6336c;       /* the favorite heart */
-  --track: #d8e5ca;
+  /* light, dark: follows the system unless the toggle picked one (see below) */
+  color-scheme: light dark;
+  /* light-dark(light, dark): light green with light yellow as the second color;
+     deep green with a muted dark yellow */
+  --bg: light-dark(#e7f0dc, #0e140c);
+  --surface: light-dark(#fbfdf8, #151d12);
+  --surface-2: light-dark(#e2edd5, #1e2919);
+  --border: light-dark(#cad9ba, #2d3b27);
+  --text: light-dark(#13200f, #ecf3e6);
+  --text-2: light-dark(#475844, #b8c6b0);
+  --text-3: light-dark(#6f7f69, #88977f);
+  --accent: light-dark(#2f7d32, #6fbf62);
+  --accent-text: light-dark(#ffffff, #0c1a0a);
+  --accent-soft: light-dark(#d9eecf, #213a1c);
+  --accent-2: light-dark(#8a6d00, #e2c75a);
+  --accent-2-line: light-dark(#d9bf45, #8d7a26);
+  --accent-2-soft: light-dark(#fbf3c8, #332d12);
+  --danger: light-dark(#c0392b, #e66767);
+  --warn: light-dark(#b26a00, #e0a030);
+  --done: light-dark(#e3b100, #f2c94c);      /* a fridge sector with every item ticked */
+  --fav: light-dark(#d6336c, #f06595);      /* the favorite heart */
+  --track: light-dark(#d8e5ca, #263321);
   /* macro identity colors (categorical slots 1-4, always shown with a text label) */
-  --c-kcal: #2a78d6;
-  --c-protein: #eb6834;
-  --c-carbs: #1baf7a;
-  --c-fat: #eda100;
-  --c-fiber: #6250d6;
-  --c-steps: #0e8f9c;
-  --c-sleep: #5b6ee1;
-  --c-weight: #b0459a;
-  --c-bodyfat: #6b8a1c;
+  --c-kcal: light-dark(#2a78d6, #3987e5);
+  --c-protein: light-dark(#eb6834, #d95926);
+  --c-carbs: light-dark(#1baf7a, #199e70);
+  --c-fat: light-dark(#eda100, #c98500);
+  --c-fiber: light-dark(#6250d6, #9085e9);
+  --c-steps: light-dark(#0e8f9c, #2bb3bf);
+  --c-sleep: light-dark(#5b6ee1, #7f8ef0);
+  --c-weight: light-dark(#b0459a, #df7ac4);
+  --c-bodyfat: light-dark(#6b8a1c, #a3c54b);
   /* diet tags: text on a soft fill, never color alone (always labeled) */
-  --t-pescatarian: #1b6496; --t-pescatarian-bg: #dcebf6;
-  --t-ovolactovegetarian: #5c7012; --t-ovolactovegetarian-bg: #eaf0d2;
-  --t-vegetarian: #23753a; --t-vegetarian-bg: #def2e3;
-  --t-vegan: #0b6e66; --t-vegan-bg: #d4efec;
-  --t-kosher: #2556c4; --t-kosher-bg: #e0e9fb;
-  --t-lactose_free: #6a3fc8; --t-lactose_free-bg: #ece5fa;
-  --t-peanut_free: #95480f; --t-peanut_free-bg: #f8e5d4;
-  --t-tacc_free: #806000; --t-tacc_free-bg: #f6ebc4;
-  --t-calorie_free: #4f5b66; --t-calorie_free-bg: #e6eaee;
+  --t-pescatarian: light-dark(#1b6496, #8cc4ef); --t-pescatarian-bg: light-dark(#dcebf6, #142b3d);
+  --t-ovolactovegetarian: light-dark(#5c7012, #c2d77a); --t-ovolactovegetarian-bg: light-dark(#eaf0d2, #262e10);
+  --t-vegetarian: light-dark(#23753a, #84d69c); --t-vegetarian-bg: light-dark(#def2e3, #173323);
+  --t-vegan: light-dark(#0b6e66, #6fd3c8); --t-vegan-bg: light-dark(#d4efec, #11302d);
+  --t-kosher: light-dark(#2556c4, #9fb9f6); --t-kosher-bg: light-dark(#e0e9fb, #1a2744);
+  --t-lactose_free: light-dark(#6a3fc8, #c4a9f6); --t-lactose_free-bg: light-dark(#ece5fa, #2a2044);
+  --t-peanut_free: light-dark(#95480f, #f0b07a); --t-peanut_free-bg: light-dark(#f8e5d4, #3a2616);
+  --t-tacc_free: light-dark(#806000, #e8c95f); --t-tacc_free-bg: light-dark(#f6ebc4, #342b0e);
+  --t-calorie_free: light-dark(#4f5b66, #b8c3cd); --t-calorie_free-bg: light-dark(#e6eaee, #262c32);
   /* mood scale, awful -> great */
-  --m-1: #d64545; --m-2: #e07a2e; --m-3: #8f8e86; --m-4: #5ea83a; --m-5: #1a9f6e;
-  --shadow: 0 1px 2px rgb(0 0 0 / .06);
+  --m-1: light-dark(#d64545, #e66767); --m-2: light-dark(#e07a2e, #e8924f); --m-3: light-dark(#8f8e86, #a3a29a); --m-4: light-dark(#5ea83a, #7cc157); --m-5: light-dark(#1a9f6e, #34bf8a);
+  --shadow: 0 1px 2px light-dark(rgb(0 0 0 / .06), transparent);
   --radius: 10px;
   --gap: 16px;
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
 }
 
-/* Dark: follows the system unless the toggle picked a theme (html[data-theme]). */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    /* deep green, with a muted dark yellow as the second color */
-    --bg: #0e140c;
-    --surface: #151d12;
-    --surface-2: #1e2919;
-    --border: #2d3b27;
-    --text: #ecf3e6;
-    --text-2: #b8c6b0;
-    --text-3: #88977f;
-    --accent: #6fbf62;
-    --accent-text: #0c1a0a;
-    --accent-soft: #213a1c;
-    --accent-2: #e2c75a;
-    --accent-2-line: #8d7a26;
-    --accent-2-soft: #332d12;
-    --danger: #e66767;
-    --warn: #e0a030;
-    --done: #f2c94c;
-    --fav: #f06595;
-    --track: #263321;
-    --c-kcal: #3987e5;
-    --c-protein: #d95926;
-    --c-carbs: #199e70;
-    --c-fat: #c98500;
-    --c-fiber: #9085e9;
-    --c-steps: #2bb3bf;
-    --c-sleep: #7f8ef0;
-    --c-weight: #df7ac4;
-    --c-bodyfat: #a3c54b;
-    --t-pescatarian: #8cc4ef; --t-pescatarian-bg: #142b3d;
-    --t-ovolactovegetarian: #c2d77a; --t-ovolactovegetarian-bg: #262e10;
-    --t-vegetarian: #84d69c; --t-vegetarian-bg: #173323;
-    --t-vegan: #6fd3c8; --t-vegan-bg: #11302d;
-    --t-kosher: #9fb9f6; --t-kosher-bg: #1a2744;
-    --t-lactose_free: #c4a9f6; --t-lactose_free-bg: #2a2044;
-    --t-peanut_free: #f0b07a; --t-peanut_free-bg: #3a2616;
-    --t-tacc_free: #e8c95f; --t-tacc_free-bg: #342b0e;
-    --t-calorie_free: #b8c3cd; --t-calorie_free-bg: #262c32;
-    --m-1: #e66767; --m-2: #e8924f; --m-3: #a3a29a; --m-4: #7cc157; --m-5: #34bf8a;
-    --shadow: none;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  /* deep green, with a muted dark yellow as the second color */
-  --bg: #0e140c;
-  --surface: #151d12;
-  --surface-2: #1e2919;
-  --border: #2d3b27;
-  --text: #ecf3e6;
-  --text-2: #b8c6b0;
-  --text-3: #88977f;
-  --accent: #6fbf62;
-  --accent-text: #0c1a0a;
-  --accent-soft: #213a1c;
-  --accent-2: #e2c75a;
-  --accent-2-line: #8d7a26;
-  --accent-2-soft: #332d12;
-  --danger: #e66767;
-  --warn: #e0a030;
-  --done: #f2c94c;
-  --fav: #f06595;
-  --track: #263321;
-  --c-kcal: #3987e5;
-  --c-protein: #d95926;
-  --c-carbs: #199e70;
-  --c-fat: #c98500;
-  --c-fiber: #9085e9;
-  --c-steps: #2bb3bf;
-  --c-sleep: #7f8ef0;
-  --c-weight: #df7ac4;
-  --c-bodyfat: #a3c54b;
-  --t-pescatarian: #8cc4ef; --t-pescatarian-bg: #142b3d;
-  --t-ovolactovegetarian: #c2d77a; --t-ovolactovegetarian-bg: #262e10;
-  --t-vegetarian: #84d69c; --t-vegetarian-bg: #173323;
-  --t-vegan: #6fd3c8; --t-vegan-bg: #11302d;
-  --t-kosher: #9fb9f6; --t-kosher-bg: #1a2744;
-  --t-lactose_free: #c4a9f6; --t-lactose_free-bg: #2a2044;
-  --t-peanut_free: #f0b07a; --t-peanut_free-bg: #3a2616;
-  --t-tacc_free: #e8c95f; --t-tacc_free-bg: #342b0e;
-  --t-calorie_free: #b8c3cd; --t-calorie_free-bg: #262c32;
-  --m-1: #e66767; --m-2: #e8924f; --m-3: #a3a29a; --m-4: #7cc157; --m-5: #34bf8a;
-  --shadow: none;
-}
+/* The theme toggle's pick, from <meta name="color-scheme"> ("light dark" = the system's). */
+:root:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
+:root:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -865,11 +783,11 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .theme-btn:hover { color: var(--accent-2); border-color: var(--accent-2-line); }
 /* the sun shows in light mode, the moon in dark mode */
 .theme-btn .moon { display: none; }
-:root[data-theme="dark"] .theme-btn .sun { display: none; }
-:root[data-theme="dark"] .theme-btn .moon { display: block; }
+:root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-btn .sun { display: none; }
+:root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-btn .moon { display: block; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .theme-btn .sun { display: none; }
-  :root:not([data-theme="light"]) .theme-btn .moon { display: block; }
+  :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .theme-btn .sun { display: none; }
+  :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .theme-btn .moon { display: block; }
 }
 /* --- the logo: a sun hat (static/pamela.svg) ----------------------------------- */
 .brand { display: inline-flex; align-items: center; gap: 6px; }

@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Pamela</title>
   <link rel="icon" href="/static/pamela.svg" type="image/svg+xml">
-  <script>try { const t = localStorage.getItem("pamela-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
+  <script>try { const t = localStorage.getItem("pamela-theme"); if (t === "light" || t === "dark") document.querySelector('meta[name="color-scheme"]').content = t; } catch {}</script>
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/app.js"></script>
 </head>
@@ -662,7 +663,8 @@
             <li><b>Help</b>: this page. Press <kbd>?</kbd> to come back any time.</li>
           </ul>
           <p>☀️ <b>Light or dark?</b> The sun / moon button next to Exit switches between the two.
-            Pamela starts out matching your system's setting, and remembers your choice in this browser.</p>
+            Pamela starts out matching your system's setting, and remembers your choice in this browser.
+            Switch back to your system's setting and it follows the system again.</p>
           <p>When you're done, press <b>🚪 Exit</b> in the top right corner to close Pamela properly.</p>
         </section>
 
@@ -1041,19 +1043,20 @@
     <p>Made with Claude Code</p>
   </footer>
 
-  <dialog id="exit-dialog" class="exit-dialog" aria-labelledby="exit-h">
+  <dialog id="exit-dialog" class="exit-dialog" aria-labelledby="exit-h" closedby="any">
     <h2 id="exit-h">🚪 Save &amp; close Pamela?</h2>
     <p>Everything you've logged is saved. Pamela will finish any save still in progress,
       then stop its server. To open it again later, run <code>make serve</code>.</p>
     <p class="exit-warn" id="exit-warn" hidden></p>
+    <p class="hint error dialog-error" role="alert" hidden></p>
     <div class="dialog-actions">
-      <button type="button" class="btn ghost" id="exit-cancel" autofocus>Cancel</button>
+      <button type="button" class="btn ghost" id="exit-cancel" commandfor="exit-dialog" command="close" autofocus>Cancel</button>
       <button type="button" class="btn primary" id="exit-confirm">Save &amp; close</button>
     </div>
   </dialog>
 
-  <dialog id="wipe-dialog" class="exit-dialog wipe-dialog" aria-labelledby="wipe-h">
-    <form method="dialog" id="wipe-dialog-form">
+  <dialog id="wipe-dialog" class="exit-dialog wipe-dialog" aria-labelledby="wipe-h" closedby="any">
+    <form id="wipe-dialog-form">
       <h2 id="wipe-h">🗑️ Delete for good?</h2>
       <p>This deletes, with no way back:</p>
       <ul class="wipe-sum" id="wipe-sum"></ul>
@@ -1062,15 +1065,16 @@
         Your settings stay.</p>
       <label class="field"><span>Type <b id="wipe-phrase">delete</b> to confirm</span>
         <input type="text" id="wipe-input" autocomplete="off" spellcheck="false"></label>
+      <p class="hint error dialog-error" role="alert" hidden></p>
       <div class="dialog-actions">
-        <button type="button" class="btn ghost" id="wipe-cancel" autofocus>Cancel</button>
+        <button type="button" class="btn ghost" id="wipe-cancel" commandfor="wipe-dialog" command="close" autofocus>Cancel</button>
         <button type="submit" class="btn danger" id="wipe-confirm" disabled>Delete</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="expire-dialog" class="exit-dialog lot-dialog" aria-labelledby="expire-h">
-    <form method="dialog" id="expire-form" novalidate>
+    <form id="expire-form" novalidate>
       <h2 id="expire-h">➖ Take out of stock</h2>
       <p id="expire-what"></p>
       <fieldset class="take-out-kind">
@@ -1084,15 +1088,16 @@
         <label class="field"><span>When</span><input type="date" name="day" required></label>
       </div>
       <p class="hint">It's taken out of your stock and doesn't count toward your macros. You can undo it under <i>Taken out</i>.</p>
+      <p class="hint error dialog-error" role="alert" hidden></p>
       <div class="dialog-actions">
-        <button type="button" class="btn ghost" id="expire-cancel">Cancel</button>
+        <button type="button" class="btn ghost" id="expire-cancel" commandfor="expire-dialog" command="close">Cancel</button>
         <button type="submit" class="btn primary">Take out of stock</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="move-dialog" class="exit-dialog lot-dialog" aria-labelledby="move-h">
-    <form method="dialog" id="move-form" novalidate>
+    <form id="move-form" novalidate>
       <h2 id="move-h">↔️ Move</h2>
       <p id="move-what"></p>
       <div class="dialog-fields">
@@ -1102,18 +1107,19 @@
       </div>
       <div class="chips" id="move-chips" role="group" aria-label="Amount"></div>
       <p class="hint" id="move-hint"></p>
+      <p class="hint error dialog-error" role="alert" hidden></p>
       <div class="dialog-actions">
-        <button type="button" class="btn ghost" id="move-cancel">Cancel</button>
+        <button type="button" class="btn ghost" id="move-cancel" commandfor="move-dialog" command="close">Cancel</button>
         <button type="submit" class="btn primary">Move</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="confirm-dialog" class="exit-dialog" aria-labelledby="confirm-h" aria-describedby="confirm-body">
+  <dialog id="confirm-dialog" class="exit-dialog" aria-labelledby="confirm-h" aria-describedby="confirm-body" closedby="any">
     <h2 id="confirm-h"></h2>
     <div id="confirm-body"></div>
     <div class="dialog-actions">
-      <button type="button" class="btn ghost" id="confirm-cancel" autofocus>Cancel</button>
+      <button type="button" class="btn ghost" id="confirm-cancel" commandfor="confirm-dialog" command="close" autofocus>Cancel</button>
       <button type="button" class="btn danger" id="confirm-ok"></button>
     </div>
   </dialog>

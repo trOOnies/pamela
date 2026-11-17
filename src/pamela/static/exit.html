@@ -6,40 +6,27 @@
   <title>See you soon · Pamela</title>
   <!-- Everything is inline: the server stops right after sending this page. -->
   <link rel="icon" href="data:image/svg+xml,{{logo_url}}">
+  <meta name="color-scheme" content="light dark">
   <script>
     try {
       const t = localStorage.getItem("pamela-theme");
-      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      if (t === "light" || t === "dark") document.querySelector('meta[name="color-scheme"]').content = t;
     } catch {}
   </script>
   <style>
+    /* light-dark(light, dark); the theme toggle's pick comes in <meta name="color-scheme"> */
     :root {
-      color-scheme: light;
-      --bg: #e7f0dc; --surface: #fbfdf8; --surface-2: #e2edd5; --border: #cad9ba;
-      --text: #13200f; --text-2: #475844; --text-3: #6f7f69;
-      --accent: #2f7d32; --accent-soft: #d9eecf;
-      --accent-2: #8a6d00; --accent-2-line: #d9bf45; --accent-2-soft: #fbf3c8;
-      --sun: #f4d44d; --radius: 14px;
+      color-scheme: light dark;
+      --bg: light-dark(#e7f0dc, #0e140c); --surface: light-dark(#fbfdf8, #151d12);
+      --surface-2: light-dark(#e2edd5, #1e2919); --border: light-dark(#cad9ba, #2d3b27);
+      --text: light-dark(#13200f, #ecf3e6); --text-2: light-dark(#475844, #b8c6b0); --text-3: light-dark(#6f7f69, #88977f);
+      --accent: light-dark(#2f7d32, #6fbf62); --accent-soft: light-dark(#d9eecf, #213a1c);
+      --accent-2: light-dark(#8a6d00, #e2c75a); --accent-2-line: light-dark(#d9bf45, #8d7a26); --accent-2-soft: light-dark(#fbf3c8, #332d12);
+      --sun: light-dark(#f4d44d, #e2c75a); --radius: 14px;
       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
     }
-    @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) {
-        color-scheme: dark;
-        --bg: #0e140c; --surface: #151d12; --surface-2: #1e2919; --border: #2d3b27;
-        --text: #ecf3e6; --text-2: #b8c6b0; --text-3: #88977f;
-        --accent: #6fbf62; --accent-soft: #213a1c;
-        --accent-2: #e2c75a; --accent-2-line: #8d7a26; --accent-2-soft: #332d12;
-        --sun: #e2c75a;
-      }
-    }
-    :root[data-theme="dark"] {
-      color-scheme: dark;
-      --bg: #0e140c; --surface: #151d12; --surface-2: #1e2919; --border: #2d3b27;
-      --text: #ecf3e6; --text-2: #b8c6b0; --text-3: #88977f;
-      --accent: #6fbf62; --accent-soft: #213a1c;
-      --accent-2: #e2c75a; --accent-2-line: #8d7a26; --accent-2-soft: #332d12;
-      --sun: #e2c75a;
-    }
+    :root:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
+    :root:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
     * { box-sizing: border-box; }
     body {
       margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
