@@ -365,6 +365,9 @@ class SavedMealItem(Macros):
     food_group: str = ""
     kcal_missing: bool = Field(False, description="The food has no kcal yet (counted as 0)")
     in_stock: float = Field(0, description="What's left of the food in Groceries")
+    stocked: bool = Field(
+        False, description="The food was ever bought in Groceries, so what's left of it is tracked"
+    )
     missing: float = Field(0, description="How much more of it the meal needs than is left")
     is_meta: bool = Field(False, description="A meta food: its macros are typical values")
     options: list[Food] = Field(
@@ -908,7 +911,7 @@ WIPE_TARGETS = {
     "fridge": ("Fridge sectors", "Every sector in Fridge. Foods and groceries stay"),
     "groceries": (
         "Groceries",
-        "Every cart and expiry in Groceries. Logged days stay as they are",
+        "Every cart, and all your stock with it. Logged days stay as they are",
     ),
     "reminders": ("Reminders", "Every reminder to eat a food or a meal"),
     "foods": (

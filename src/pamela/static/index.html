@@ -17,10 +17,23 @@
       <a href="#/" data-nav="day">Day</a>
       <a href="#/foods" data-nav="foods">Foods</a>
       <a href="#/meals" data-nav="meals">Meals</a>
-      <a href="#/groceries" data-nav="groceries">Groceries</a>
-      <a href="#/fridge" data-nav="fridge">Fridge</a>
+      <div class="nav-group" data-nav-group="stock">
+        <span class="nav-trigger" tabindex="0" aria-controls="nav-stock">Stock <span class="caret" aria-hidden="true">▾</span></span>
+        <ul class="nav-menu" id="nav-stock" aria-label="Stock">
+          <li><a href="#/fridge" data-nav="fridge">🧊 Fridge</a></li>
+          <li><a href="#/stock" data-nav="stock">📦 Stock</a></li>
+          <li><a href="#/carts" data-nav="carts">🛒 Carts</a></li>
+        </ul>
+      </div>
       <a href="#/history" data-nav="history">History</a>
-      <a href="#/settings" data-nav="settings">Settings</a>
+      <div class="nav-group" data-nav-group="settings">
+        <span class="nav-trigger" tabindex="0" aria-controls="nav-settings">Settings <span class="caret" aria-hidden="true">▾</span></span>
+        <ul class="nav-menu" id="nav-settings" aria-label="Settings">
+          <li><a href="#/targets" data-nav="targets">🎯 Targets</a></li>
+          <li><a href="#/settings" data-nav="global">🧍 Global</a></li>
+        </ul>
+      </div>
+      <a href="/docs" target="_blank" rel="noopener" title="Pamela's API, in a new browser tab">API<span class="sr"> (opens in a new tab)</span></a>
       <a href="#/help" data-nav="help" title="Help ( ? )">Help</a>
     </nav>
     <div class="daynav" id="daynav">
@@ -62,7 +75,7 @@
             <span>Meal</span>
             <select name="meal" id="entry-meal"></select>
           </label>
-          <label class="not-quick field check eaten-out" title="Eaten at a restaurant, at a friend's…: it's logged as usual, but not taken from Groceries">
+          <label class="not-quick field check eaten-out" title="Eaten at a restaurant, at a friend's…: it's logged as usual, but not taken from your stock">
             <input type="checkbox" name="eaten_out" id="entry-out"><span>🍽️ Eaten out</span></label>
 
           <div class="catalog-only field food-field">
@@ -109,6 +122,7 @@
             <tbody id="draft-body"></tbody>
             <tfoot id="draft-foot"></tfoot>
           </table>
+          <div class="draft-warn" id="draft-warn" role="status" hidden></div>
           <div class="draft-actions">
             <div class="combo draft-add">
               <input type="search" id="draft-search" placeholder="+ Add a food to this draft…"
@@ -294,96 +308,95 @@
       </section>
     </section>
 
-    <!-- Groceries ------------------------------------------------------- -->
-    <section id="view-groceries" class="view groceries-grid" hidden>
-      <div class="groc-left">
-        <section class="card trip-card" aria-labelledby="trip-h">
-          <div class="card-head">
-            <h2 id="trip-h">🛒 New cart</h2>
-            <button type="button" class="btn ghost" id="cart-cancel" hidden>Cancel edit</button>
-          </div>
-          <form id="trip-form" class="trip-form" autocomplete="off" novalidate>
-            <div class="trip-fields">
-              <label class="field"><span>Bought on</span><input type="date" name="bought_on" id="trip-day" required></label>
-              <label class="field grow"><span>Store <small>(optional)</small></span>
-                <input type="text" name="store" maxlength="100" list="store-options" placeholder="e.g. Corner shop"></label>
-              <datalist id="store-options"></datalist>
-              <label class="field check gift-check" title="Nothing in it was paid for: no prices are needed"><input type="checkbox" name="gift" id="trip-gift"><span>🎁 It was a gift</span></label>
+    <!-- Stock: what is at home ------------------------------------------- -->
+    <section id="view-stock" class="view stock-grid" hidden>
+      <div class="expired-alert" id="groc-alert" role="alert" hidden></div>
+      <div class="tiles" id="groc-tiles"></div>
+      <section class="card stock-card" aria-labelledby="stock-h">
+        <div class="card-head">
+          <h2 id="stock-h">In stock <span class="count" id="stock-count"></span></h2>
+          <div class="filters">
+            <div class="seg" role="radiogroup" aria-label="Order">
+              <label><input type="radio" name="stock-sort" value="expiry" checked><span>Expires first</span></label>
+              <label><input type="radio" name="stock-sort" value="name"><span>A–Z</span></label>
             </div>
-            <div class="table-wrap">
-              <table class="draft-table trip-items">
-                <thead><tr><th>Food</th><th class="n">Amount</th><th>Expires <small>(optional)</small></th><th class="n">Price ($)</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
-                <tbody id="trip-body"></tbody>
+            <input type="search" id="stock-filter" placeholder="Filter…" aria-label="Filter groceries">
+          </div>
+        </div>
+        <div id="stock-groups" class="stock-groups"></div>
+      </section>
+      <div class="groc-side">
+        <section class="card" aria-labelledby="ranout-h">
+          <div class="card-head"><h2 id="ranout-h">Ran out <span class="count" id="ranout-count"></span></h2></div>
+          <ul class="ranout-list" id="ranout-list"></ul>
+        </section>
+        <section class="card" aria-labelledby="groc-exp-h">
+          <div class="card-head"><h2 id="groc-exp-h">Taken out <small>(last 30 days)</small></h2></div>
+          <ul class="groc-history" id="groc-expired"></ul>
+        </section>
+      </div>
+    </section>
+
+    <!-- Carts: one per trip to the shops ------------------------------------ -->
+    <section id="view-carts" class="view carts-grid" hidden>
+      <section class="card trip-card" aria-labelledby="trip-h">
+        <div class="card-head">
+          <h2 id="trip-h">🛒 New cart</h2>
+          <button type="button" class="btn ghost" id="cart-cancel" hidden>Cancel edit</button>
+        </div>
+        <form id="trip-form" class="trip-form" autocomplete="off" novalidate>
+          <div class="trip-fields">
+            <label class="field"><span>Bought on</span><input type="date" name="bought_on" id="trip-day" required></label>
+            <label class="field grow"><span>Store <small>(optional)</small></span>
+              <input type="text" name="store" maxlength="100" list="store-options" placeholder="e.g. Corner shop"></label>
+            <datalist id="store-options"></datalist>
+            <label class="field check gift-check" title="Nothing in it was paid for: no prices are needed"><input type="checkbox" name="gift" id="trip-gift"><span>🎁 It was a gift</span></label>
+          </div>
+          <div class="table-wrap">
+            <table class="draft-table trip-items">
+              <thead><tr><th>Food</th><th class="n">Amount</th><th>Expires <small>(optional)</small></th><th class="n">Price ($)</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+              <tbody id="trip-body"></tbody>
+            </table>
+          </div>
+          <div class="combo">
+            <input type="search" id="trip-search" placeholder="+ Add a food you bought…"
+                   role="combobox" aria-expanded="false" aria-controls="trip-suggest"
+                   aria-autocomplete="list" aria-label="Add a food you bought">
+            <ul id="trip-suggest" class="suggest" role="listbox" hidden></ul>
+          </div>
+          <div class="extras-block">
+            <h3 id="extras-h">Other items <small>(not food: they only count towards the total)</small></h3>
+            <div class="table-wrap" id="extras-wrap" hidden>
+              <table class="draft-table trip-items extra-items" aria-labelledby="extras-h">
+                <thead><tr><th>Item</th><th class="n">Amount</th><th class="n">Price ($)</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
+                <tbody id="extra-body"></tbody>
               </table>
             </div>
-            <div class="combo">
-              <input type="search" id="trip-search" placeholder="+ Add a food you bought…"
-                     role="combobox" aria-expanded="false" aria-controls="trip-suggest"
-                     aria-autocomplete="list" aria-label="Add a food you bought">
-              <ul id="trip-suggest" class="suggest" role="listbox" hidden></ul>
-            </div>
-            <div class="extras-block">
-              <h3 id="extras-h">Other items <small>(not food: they only count towards the total)</small></h3>
-              <div class="table-wrap" id="extras-wrap" hidden>
-                <table class="draft-table trip-items extra-items" aria-labelledby="extras-h">
-                  <thead><tr><th>Item</th><th class="n">Amount</th><th class="n">Price ($)</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
-                  <tbody id="extra-body"></tbody>
-                </table>
-              </div>
-              <button type="button" class="btn ghost extra-add" id="extra-add">+ Add an item that isn't food</button>
-            </div>
-            <div class="trip-money">
-              <label class="field discount-field"><span>Discount <small>(amount or %)</small></span>
-                <input type="text" id="trip-discount" name="discount" inputmode="decimal" maxlength="12" placeholder="e.g. $2.50 or 10%"
-                       title="Taken off the subtotal: type an amount ($2.50) or a percentage (10%)"></label>
-              <label class="field fee-field"><span>Delivery fee <small>($, optional)</small></span>
-                <input type="number" id="trip-fee" name="delivery_fee" min="0" step="any" inputmode="decimal" placeholder="–"
-                       title="Added to the total, after the discount"></label>
-              <dl class="trip-sum" id="trip-sum" aria-live="polite"></dl>
-            </div>
-            <p class="gift-note" id="trip-gift-note" hidden>🎁 A gift: it costs nothing, so there are no prices, discount or delivery fee.</p>
-            <p class="hint">One cart per trip to the shops. Amounts are in each food's unit; foods with a
-              package size also take a number of packs. Price is what that item cost in total.</p>
-            <div class="trip-actions">
-              <button class="btn primary" type="submit" id="trip-submit">Add cart</button>
-              <span class="trip-total" id="trip-total" aria-live="polite"></span>
-              <button type="button" class="btn danger-outline" id="cart-delete" hidden>Delete cart</button>
-            </div>
-          </form>
-        </section>
-        <section class="card carts-card" aria-labelledby="carts-h">
-          <div class="card-head"><h2 id="carts-h">Carts <span class="count" id="carts-count"></span></h2></div>
-          <div class="cart-list" id="cart-list"></div>
-        </section>
-      </div>
-
-      <div class="groceries-main">
-        <div class="expired-alert" id="groc-alert" role="alert" hidden></div>
-        <div class="tiles" id="groc-tiles"></div>
-        <section class="card stock-card" aria-labelledby="stock-h">
-          <div class="card-head">
-            <h2 id="stock-h">In stock <span class="count" id="stock-count"></span></h2>
-            <div class="filters">
-              <div class="seg" role="radiogroup" aria-label="Order">
-                <label><input type="radio" name="stock-sort" value="expiry" checked><span>Expires first</span></label>
-                <label><input type="radio" name="stock-sort" value="name"><span>A–Z</span></label>
-              </div>
-              <input type="search" id="stock-filter" placeholder="Filter…" aria-label="Filter groceries">
-            </div>
+            <button type="button" class="btn ghost extra-add" id="extra-add">+ Add an item that isn't food</button>
           </div>
-          <div id="stock-groups" class="stock-groups"></div>
-        </section>
-        <div class="groc-side">
-          <section class="card" aria-labelledby="ranout-h">
-            <div class="card-head"><h2 id="ranout-h">Ran out <span class="count" id="ranout-count"></span></h2></div>
-            <ul class="ranout-list" id="ranout-list"></ul>
-          </section>
-          <section class="card" aria-labelledby="groc-exp-h">
-            <div class="card-head"><h2 id="groc-exp-h">Taken out <small>(last 30 days)</small></h2></div>
-            <ul class="groc-history" id="groc-expired"></ul>
-          </section>
-        </div>
-      </div>
+          <div class="trip-money">
+            <label class="field discount-field"><span>Discount <small>(amount or %)</small></span>
+              <input type="text" id="trip-discount" name="discount" inputmode="decimal" maxlength="12" placeholder="e.g. $2.50 or 10%"
+                     title="Taken off the subtotal: type an amount ($2.50) or a percentage (10%)"></label>
+            <label class="field fee-field"><span>Delivery fee <small>($, optional)</small></span>
+              <input type="number" id="trip-fee" name="delivery_fee" min="0" step="any" inputmode="decimal" placeholder="–"
+                     title="Added to the total, after the discount"></label>
+            <dl class="trip-sum" id="trip-sum" aria-live="polite"></dl>
+          </div>
+          <p class="gift-note" id="trip-gift-note" hidden>🎁 A gift: it costs nothing, so there are no prices, discount or delivery fee.</p>
+          <p class="hint">One cart per trip to the shops. Amounts are in each food's unit; foods with a
+            package size also take a number of packs. Price is what that item cost in total.</p>
+          <div class="trip-actions">
+            <button class="btn primary" type="submit" id="trip-submit">Add cart</button>
+            <span class="trip-total" id="trip-total" aria-live="polite"></span>
+            <button type="button" class="btn danger-outline" id="cart-delete" hidden>Delete cart</button>
+          </div>
+        </form>
+      </section>
+      <section class="card carts-card" aria-labelledby="carts-h">
+        <div class="card-head"><h2 id="carts-h">Carts <span class="count" id="carts-count"></span></h2></div>
+        <div class="cart-list" id="cart-list"></div>
+      </section>
     </section>
 
     <!-- Fridge ---------------------------------------------------------- -->
@@ -507,37 +520,8 @@
       </section>
     </section>
 
-    <!-- Settings -------------------------------------------------------- -->
-    <section id="view-settings" class="view settings-grid" hidden>
-      <section class="card" aria-labelledby="profile-h">
-        <div class="card-head"><h2 id="profile-h">Profile</h2></div>
-        <form id="profile-form" class="profile-form" autocomplete="off">
-          <label class="field gender-field"><span>Gender</span><select name="gender" id="profile-gender"></select></label>
-          <label class="field"><span>Height</span>
-            <span class="with-unit"><input type="number" name="height_cm" min="50" max="280" step="0.1" inputmode="decimal"><span class="unit">cm</span></span></label>
-          <button class="btn primary" type="submit">Save profile</button>
-        </form>
-        <dl class="profile-stats" id="profile-stats"></dl>
-        <form id="refs-form" class="refs-form" autocomplete="off" novalidate>
-          <h3>Weight references <small>(BMI)</small></h3>
-          <p class="hint" id="refs-status"></p>
-          <div class="refs-grid" id="refs-inputs"></div>
-          <p class="hint refs-error" id="refs-error" aria-live="polite"></p>
-          <div class="refs-actions">
-            <span class="hint">Fill with defaults:</span>
-            <button type="button" class="chip" data-refs-preset="male">Male</button>
-            <button type="button" class="chip" data-refs-preset="female">Female</button>
-            <button type="button" class="chip" data-refs-preset="other">Other</button>
-          </div>
-          <div class="refs-actions">
-            <button class="btn primary" type="submit" id="refs-save">Save references</button>
-            <button class="btn ghost" type="button" id="refs-reset">Use my gender's defaults</button>
-          </div>
-        </form>
-        <p class="hint at-explain">Log your weight and body fat in the Day tab's check-in. Calorie
-          estimates use the latest weight logged on or before each day.</p>
-      </section>
-
+    <!-- Settings: Targets ------------------------------------------------ -->
+    <section id="view-targets" class="view settings-grid" hidden>
       <section class="card targets-card" aria-labelledby="targets-h">
         <div class="card-head">
           <h2 id="targets-h">Daily targets</h2>
@@ -645,6 +629,38 @@
           </table>
         </div>
       </section>
+    </section>
+
+    <!-- Settings: Global (profile, Danger Zone) -------------------------- -->
+    <section id="view-global" class="view settings-grid" hidden>
+      <section class="card" aria-labelledby="profile-h">
+        <div class="card-head"><h2 id="profile-h">Profile</h2></div>
+        <form id="profile-form" class="profile-form" autocomplete="off">
+          <label class="field gender-field"><span>Gender</span><select name="gender" id="profile-gender"></select></label>
+          <label class="field"><span>Height</span>
+            <span class="with-unit"><input type="number" name="height_cm" min="50" max="280" step="0.1" inputmode="decimal"><span class="unit">cm</span></span></label>
+          <button class="btn primary" type="submit">Save profile</button>
+        </form>
+        <dl class="profile-stats" id="profile-stats"></dl>
+        <form id="refs-form" class="refs-form" autocomplete="off" novalidate>
+          <h3>Weight references <small>(BMI)</small></h3>
+          <p class="hint" id="refs-status"></p>
+          <div class="refs-grid" id="refs-inputs"></div>
+          <p class="hint refs-error" id="refs-error" aria-live="polite"></p>
+          <div class="refs-actions">
+            <span class="hint">Fill with defaults:</span>
+            <button type="button" class="chip" data-refs-preset="male">Male</button>
+            <button type="button" class="chip" data-refs-preset="female">Female</button>
+            <button type="button" class="chip" data-refs-preset="other">Other</button>
+          </div>
+          <div class="refs-actions">
+            <button class="btn primary" type="submit" id="refs-save">Save references</button>
+            <button class="btn ghost" type="button" id="refs-reset">Use my gender's defaults</button>
+          </div>
+        </form>
+        <p class="hint at-explain">Log your weight and body fat in the Day tab's check-in. Calorie
+          estimates use the latest weight logged on or before each day.</p>
+      </section>
 
       <section class="card danger-zone" aria-labelledby="danger-h">
         <div class="card-head"><h2 id="danger-h">⚠️ Danger Zone</h2></div>
@@ -679,7 +695,7 @@
             </ol></li>
           <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
           <li><a href="#/help" data-jump="help-meals">⭐ Meals</a></li>
-          <li><a href="#/help" data-jump="help-groceries">🛒 Groceries</a></li>
+          <li><a href="#/help" data-jump="help-groceries">🛒 Stock and Carts</a></li>
           <li><a href="#/help" data-jump="help-fridge">🧊 Fridge</a></li>
           <li><a href="#/help" data-jump="help-history">📈 History</a></li>
           <li><a href="#/help" data-jump="help-settings-tab">⚙️ Settings</a></li>
@@ -708,16 +724,22 @@
             nothing is uploaded. The only time it goes online is when you look up a barcode, and
             then only the barcode itself is sent.</p>
           <p>💾 <b>No save button needed.</b> Everything you add or change is saved the moment you do it.</p>
-          <p>🗺️ <b>Finding your way.</b> The tabs at the top are the parts of the app:</p>
+          <p>🗺️ <b>Finding your way.</b> The tabs at the top are the parts of the app. <b>Stock ▾</b>
+            and <b>Settings ▾</b> open a menu with a few tabs when you point at them:</p>
           <ul class="help-tour">
             <li><b>Day</b>: your diary for one day. This is where you'll spend most of your time.</li>
             <li><b>Foods</b>: your own list of foods and their nutrition.</li>
-            <li><b>Groceries</b>: what you have at home, what you bought and what expired or others ate.</li>
-            <li><b>Fridge</b>: your groceries sorted by where you keep them at home.</li>
             <li><b>Meals</b>: combos you eat often, ready to log in one go, with their recipes.</li>
+            <li><b>Stock ▾</b>: your groceries. <b>Fridge</b> sorts them by where you keep them at home,
+              <b>Stock</b> shows what you have, what ran out and what expired or others ate, and
+              <b>Carts</b> holds what you bought, one cart per trip to the shops.</li>
             <li><b>History</b>: charts and totals over 7, 30 or 90 days.</li>
-            <li><b>Settings</b>: your targets, profile and exercise types.</li>
-            <li><b>Help</b>: this page. Press <kbd>?</kbd> to come back any time.</li>
+            <li><b>Settings ▾</b>: <b>Targets</b> (with exercise types and reminders) and <b>Global</b>
+              (your profile and the Danger Zone).</li>
+            <li><b>API</b>: opens Pamela's API, with every request it understands, in a new browser tab.
+              Handy if you want to script something; you don't need it to use Pamela.</li>
+            <li><b>Help</b>: these pages. Press <kbd>?</kbd> to come back any time. Pick a page in
+              <i>Contents</i>, or go page by page with the buttons at the bottom.</li>
           </ul>
           <p>☀️ <b>Light or dark?</b> The sun / moon button next to Exit switches between the two.
             Pamela starts out matching your system's setting, and remembers your choice in this browser.
@@ -739,7 +761,13 @@
             <li>Type how much you had and press <kbd>Enter</kbd>. The line under the form shows what you're adding.</li>
           </ol>
           <p>🥄 Had only part of it? If the food has a serving or package size, tap
-            <i>1 serving</i>, <i>⅙ pack</i>, <i>⅓ pack</i>, <i>½ pack</i> and so on. You can always type any amount.</p>
+            <i>1 serving</i>, <i>⅙ pack</i>, <i>⅓ pack</i>, <i>½ pack</i> and so on. You can always type any amount.
+            Finished it? <i>🛒 All that's left</i> fills in exactly what's left of it in your stock.</p>
+          <p>⚠️ <b>More than you have?</b> If the amount is more than what's left of the food in your
+            stock, the line under the form turns amber, and logging it asks first. You can still log it
+            (your stock isn't always up to date): Pamela takes what's there and doesn't count the rest.
+            Saved meals do the same for each of their foods, adding up a food that's listed twice.
+            Foods you never bought in Carts aren't checked.</p>
           <p>⏰ <b>Reminders.</b> A food or meal you asked to be reminded of (in Settings) shows above
             the form on the days it's due. <b>Log it</b> fills in the form; once it's logged that day,
             the reminder goes away until next time.</p>
@@ -747,13 +775,15 @@
             the list, and the Foods tab opens with it filled in.</p>
           <p>🍽️ <b>Eaten out?</b> At a restaurant or at a friend's, the food didn't come from home.
             Tick <b>Eaten out</b> and whatever you log (a food or a saved meal) counts toward your
-            day as usual, but isn't taken from Groceries nor compared with it. Those entries show
+            day as usual, but isn't taken from your stock nor compared with it. Those entries show
             <i>🍽️ out</i> in the log. The tick stays while you log more, and clears on another day.</p>
 
           <h3 id="help-day-saved">⭐ Saved meals</h3>
           <p>Switch to <b>Saved meal</b> and pick one. Its foods show up as a <i>draft</i>:
             change amounts, remove things, add extras. Nothing is logged until you press <b>Log</b>,
             and the saved meal itself stays exactly as it was.</p>
+          <p>🛒 Finishing a food with this meal? <i>All that's left</i>, under its amount, sets it to
+            exactly what's left of it in your stock (minus what the draft's other rows of it use).</p>
 
           <h3 id="help-day-quick">⚡ Quick add</h3>
           <p>For one-offs, like a restaurant dish: type a name and the calories and macros you know.</p>
@@ -795,7 +825,7 @@
           <h3 id="help-day-clear">🗑️ Clearing a day</h3>
           <p><b>Clear this day</b>, below the notes, deletes everything logged on the day you're
             looking at: its food, activities, check-in and note, as if it had never been filled in.
-            What its food took from Groceries goes back. You're asked first, and it can't be undone.
+            What its food took from your stock goes back. You're asked first, and it can't be undone.
             Your foods and saved meals stay.</p>
 
           <h3 id="help-day-summary">📊 Summary</h3>
@@ -882,7 +912,7 @@
           <p>🛒 <b>Can I make it?</b> Each card compares the meal with your groceries: ✓ next to the
             foods you have enough of, ⚠ next to the ones you're short of, and a line saying either
             <i>You have everything to make it</i> or what's <i>Missing</i> and how much. <b>+ Buy
-            missing</b> puts what's missing in the cart in Groceries (in whole packs when the food has
+            missing</b> puts what's missing in the cart in Carts (in whole packs when the food has
             a package size). Tick <i>Only what I can make now</i> to see just the meals you can cook
             with what's at home.</p>
           <p>🔀 <b>Any brand.</b> Add a meta food (like <i>mozzarella cheese</i>) to a meal when any
@@ -894,9 +924,11 @@
         </section>
 
         <section class="card help-card" id="help-groceries" aria-labelledby="help-groceries-h">
-          <h2 id="help-groceries-h">🛒 Groceries</h2>
-          <p>What you have at home, in <b>carts</b>: one per trip to the shops. Back from the
-            shops? Under <b>New cart</b>, set the day and the store, add each food you bought (from
+          <h2 id="help-groceries-h">🛒 Stock and Carts</h2>
+          <p>Your groceries: what you have at home, in <b>carts</b>, one per trip to the shops. Both
+            tabs are in the <b>Stock ▾</b> menu: <b>Carts</b> is where you add and edit carts, and
+            <b>Stock</b> shows what's left, what ran out and what was taken out. Back from the
+            shops? In Carts, under <b>New cart</b>, set the day and the store, add each food you bought (from
             your Foods), and press <b>Add cart</b>. For each food you can give the amount (or the
             number of packs, if the food has a package size), its expiry date and what it cost. Only
             the amount is needed.</p>
@@ -939,13 +971,13 @@
             <i>Taken out</i>, where <b>Undo</b> puts it back. Neither counts toward your
             macros: to count something you ate, log it in the Day tab.</p>
           <p>🔁 <b>Ran out</b> lists foods you've finished, with <b>+ Buy again</b> to put them in
-            the cart you're filling in.</p>
+            the cart you're filling in, in Carts.</p>
           <p>🔎 In the Day tab, the food search and the line under the form show how much of a food
             is left.</p>
           <p>📍 Under each food in <i>In stock</i>, where it is in the Fridge tab: its sector, or each
             sector with its share, or <i>not in a Fridge sector</i>. Click it to open Fridge.</p>
           <p>⚠️ <b>Past their date.</b> When something in stock has passed its expiry date, a red warning
-            on top of Groceries and Fridge names it. Click a name to jump to its row here, then
+            on top of Stock and Fridge names it. Click a name to jump to its row here, then
             press <b>Take out</b> if it went off, or fix the date in its cart if it's still fine.</p>
           <p>📦 A food with a package size also shows how many packs are left. Less than a tenth of a
             pack shows as <i>&lt; 0.1 pack</i>: if that looks wrong, check the amount in its cart, which
@@ -986,7 +1018,7 @@
           <p>✅ <b>Checking.</b> Tick each food once you've seen it where Pamela says it is. The count at
             the top shows how far you are, and a sector gets a green border when all of it is ticked. Ticks are
             remembered in this browser until you press <b>Start a new check</b>. Something missing or
-            gone off? Fix it in Groceries (<b>Take out</b>) or by logging what you ate.</p>
+            gone off? Fix it in Stock (<b>Take out</b>) or by logging what you ate.</p>
         </section>
 
 
@@ -1019,6 +1051,8 @@
 
         <section class="card help-card" id="help-settings-tab" aria-labelledby="help-settings-tab-h">
           <h2 id="help-settings-tab-h">⚙️ Settings</h2>
+          <p>The <b>Settings ▾</b> menu holds two tabs: Targets (daily targets, exercise types and
+            reminders) and Global (profile, weight references and the Danger Zone).</p>
           <p>🎯 <b>Daily targets</b>: press the ✏️ pencil to change one. Use a <i>single value</i>
             for every day, or <i>custom periods</i> if your goal changed over time. Each day uses
             the target from its own period, so old days keep their old goals. Going back to a single
@@ -1042,7 +1076,7 @@
             that day (eaten out too), the reminder is gone until next time. A reminder for a meta
             food is ticked off by any of its foods; one for a food, also when it's part of a logged
             meal. A reminder goes when its food or meal is deleted.</p>
-          <p>⚠️ <b>Danger Zone</b>, at the bottom: tick what to delete for good (food log,
+          <p>⚠️ <b>Danger Zone</b>, in Global: tick what to delete for good (food log,
             activities, check-ins, day notes, meals, fridge sectors, groceries, reminders, food catalog), or <i>Select all</i>, and
             press <b>Delete</b>. To confirm, type <b>delete</b> (or <b>delete all</b> when everything is
             ticked). Deleting the food catalog keeps the values of days you logged, but empties

@@ -39,7 +39,10 @@ included. Ctrl+C in the terminal still works too.
   at 3.5 MET), minus the steps that logged on-foot activities already account for (their
   type's steps per minute x minutes), so a logged walk isn't counted twice. History does the same.
   Meals named Breakfast, Lunch, Dinner and Snack show 🌅 ☀️ 🌙 🍪.
-  Foods with a serving or package size offer quick portions (*1 serving*, *½ pack*…).
+  Foods with a serving or package size offer quick portions (*1 serving*, *½ pack*…), and a
+  food in stock offers *All that's left*. Logging more of a food than is left in stock (on its
+  own or in a saved meal, where each food also offers *All that's left*) shows an amber warning and asks first; it's still allowed, since
+  the stock isn't always up to date.
   *Saved meal* mode loads a saved meal as an editable draft that is only logged when you
   press *Log*. The *Check-in* card holds daily steps, sleep, body weight (kg), body fat (%)
   and mood (with feelings); *Notes* holds a few optional words on how the day went.
@@ -55,7 +58,9 @@ included. Ctrl+C in the terminal still works too.
   sent), and the form is filled in for you to review. Foods are saved with their barcode.
   Foods you log often are listed first. Editing a food updates every log entry of it, on
   any day; deleting a food leaves its entries with their last values.
-- **Groceries**: your stock at home, in carts (one per trip to the shops). A cart has a day,
+- **Stock** menu (*Fridge*, *Stock* and *Carts* tabs): your groceries. *Carts* holds what
+  you bought, one cart per trip to the shops; *Stock* shows what's left (*In stock*), what
+  ran out and what was taken out, with the tiles on top. A cart has a day,
   an optional store, and per food the amount or number of packs, an optional expiry date and
   price. A cart can also hold other items that aren't food (name, amount, unit, price):
   they only count towards its total, never in Foods or the stock. A discount (an amount
@@ -69,30 +74,33 @@ included. Ctrl+C in the terminal still works too.
   take it out, with an undo. Expiry dates turn amber three days ahead and red once past;
   *Ran out* lists finished foods with *Buy again*, and tiles sum up what's expiring, what was
   spent and what was thrown out in the last 30 days. *In stock* shows where each food is in
-  Fridge. Foods past their date get a red warning on top of Groceries and Fridge, linking to
+  Fridge. Foods past their date get a red warning on top of Stock and Fridge, linking to
   their row in *In stock*.
 - **Fridge**: sectors that mirror where you keep food at home (shelves, door, freezer
-  drawers, pantry…), in your own order. Put each food from Groceries in a sector, all of it or
+  drawers, pantry…), in your own order. Put each food in stock in a sector, all of it or
   part: a food can be split over several sectors, each with its share. Its *main* sector holds
   the rest, and new purchases land there; what's eaten or thrown out comes from the main sector
   first. A food that runs out stays in its main sector (greyed out) and is back in place when
   bought again. Tick foods as you check them against the real fridge (ticks are kept in the
   browser until *Start a new check*). The form for new sectors is at the bottom.
 - **Meals** (saved meals): fixed mixes of catalog foods (or *☆ save* a meal from the Day tab),
-  each with an optional recipe as free text. Each meal says whether Groceries hold enough of
+  each with an optional recipe as free text. Each meal says whether your stock holds enough of
   every food, and what's missing and how much; *+ Buy missing* puts that in the cart, and
   *Only what I can make now* filters the list.
 - **History**: daily kcal, protein, steps and sleep charts against your targets, body weight
   and body fat line charts, averages, and a per-day table with mood and notes (click a day
   to open it). Each chart has its own color.
-- **Settings**: your profile (gender, default *Prefer not to say*, and height in cm, used
+- **Settings** menu (*Targets* tab, with exercise types and reminders too, and *Global*, with
+  the profile, weight references and the Danger Zone): your profile (gender, default *Prefer not to say*, and height in cm, used
   for BMI), daily targets (kcal, macros, steps, sleep), each either one value for all
   history or custom periods ("from this date on"), so past days keep the target they had.
   Going back to a single value resets the periods after a confirmation. Targets are positive
   whole numbers; sleep is at most 24 h. Also the exercise types (about 75 built in, with MET
   values and, for those done on foot, steps per minute), editable.
+- **API**: opens the interactive API docs (`/docs`) in a new browser tab.
 - **Help**: how each tab works, keyboard shortcuts, and your current settings from
-  `info/config.toml` (targets and meals), and a note that Pamela gives no health advice.
+  `info/config.toml` (targets and meals), and a note that Pamela gives no health advice,
+  one page per section (all at `#/help`), with a contents list and previous / next buttons.
   Press `?` to open it.
 
 ## Folders

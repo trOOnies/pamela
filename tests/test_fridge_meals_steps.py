@@ -284,12 +284,14 @@ def test_meal_recipe_and_what_is_in_stock(client, oats):
     assert sm["recipe"] == "Simmer 5 min.\nStir."
     assert sm["can_make"] is False
     assert [(it["in_stock"], it["missing"]) for it in sm["items"]] == [(0, 60), (0, 250)]
+    assert [it["stocked"] for it in sm["items"]] == [False, False]  # never bought: not tracked
 
     buy(client, oats["id"], 500)
     buy(client, milk["id"], 100)
     sm = client.get(f"/api/saved-meals/{sm['id']}").json()
     assert sm["can_make"] is False
     assert [(it["in_stock"], it["missing"]) for it in sm["items"]] == [(500, 0), (100, 150)]
+    assert [it["stocked"] for it in sm["items"]] == [True, True]
 
     buy(client, milk["id"], 1000)
     sm = client.get(f"/api/saved-meals/{sm['id']}").json()

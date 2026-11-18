@@ -12,7 +12,9 @@ def test_index_and_static_served(client):
     r = client.get("/")
     assert r.status_code == 200
     assert "<title>Pamela</title>" in r.text
-    for view in ("day", "foods", "meals", "history", "settings", "help"):
+    views = ("day", "foods", "meals", "fridge", "stock", "carts", "history", "targets", "global",
+             "help")
+    for view in views:
         assert f'id="view-{view}"' in r.text
     js = client.get("/static/app.js")
     assert js.status_code == 200

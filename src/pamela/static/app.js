@@ -1,6 +1,7 @@
 // Pamela frontend - vanilla JS, no build step.
-// Views are routed by URL hash: #/ (today), #/day/YYYY-MM-DD, #/foods, #/groceries, #/meals, #/history,
-// #/settings, #/help
+// Views are routed by URL hash: #/ (today), #/day/YYYY-MM-DD, #/foods, #/meals, #/fridge, #/stock,
+// #/carts, #/history, #/targets, #/settings (Global), #/help.
+// Fridge, Stock and Carts are under the Stock menu; Targets and Global under Settings.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -346,12 +347,24 @@ function buildVocabControls() {
 
 // --- routing -----------------------------------------------------------------
 
-const VIEWS = ["day", "foods", "groceries", "fridge", "meals", "history", "settings", "help"];
+const VIEWS = ["day", "foods", "stock", "carts", "fridge", "meals", "history", "targets", "global", "help"];
+// The hash of a view, where it isn't the view's own name.
+const VIEW_HASH = { global: "settings" };
+// #/groceries: Stock and Carts were one tab. Exercise types and reminders are in Targets.
+const HASH_VIEW = { settings: "global", groceries: "stock", exercise: "targets", reminders: "targets" };
+const GROCERY_VIEWS = ["stock", "carts"];
+const SETTINGS_VIEWS = ["targets", "global"];
+const VIEW_TITLE = { stock: "Stock", carts: "Carts", targets: "Targets", global: "Settings" };
+
+/** Opens a tab (from code: links use the hash). */
+function showView(view) {
+  location.hash = `#/${VIEW_HASH[view] ?? view}`;
+}
 
 function route() {
   flushNote(); // the textarea still holds the previous day's note
   const parts = location.hash.replace(/^#\/?/, "").split("/");
-  let view = parts[0] || "day";
+  let view = HASH_VIEW[parts[0]] ?? (parts[0] || "day");
   if (!VIEWS.includes(view)) view = "day";
   state.view = view;
   // #/foods/<id> and #/meals/<id> open the tab at that row (the Day tab's 🔗 links)
@@ -375,6 +388,8 @@ function route() {
     if (a.dataset.nav === view) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
+  // a menu's button shows it holds the open tab
+  for (const g of $$("[data-nav-group]")) g.classList.toggle("current", !!$(`[data-nav="${view}"]`, g));
   document.body.dataset.view = view; // the CSS hides the day navigation off the Day tab
   render();
 }
@@ -383,15 +398,21 @@ function render() {
   if (!state.config || !state.vocab) return; // init() routes once both are in
   if (state.view === "day") return loadDay();
   if (state.view === "foods") return loadFoods();
-  if (state.view === "groceries") return loadGroceries();
+  if (GROCERY_VIEWS.includes(state.view)) return loadGroceries();
   if (state.view === "fridge") return loadFridge();
   if (state.view === "meals") return loadMealsView();
   if (state.view === "history") return loadHistory();
-  if (state.view === "settings") return loadSettings();
+  if (SETTINGS_VIEWS.includes(state.view)) return loadSettings();
   if (state.view === "help") {
     markHelpIndex();
     return Promise.all([loadTargets(), loadProfile()]).then(renderHelp, showError);
   }
+}
+
+/** The Stock and Settings menus open on hover (or keyboard focus), in CSS. Picking a tab
+ * lets go of the focus, so the menu closes once the pointer leaves it. */
+function wireNavMenus() {
+  for (const menu of $$(".nav-menu")) menu.addEventListener("click", (e) => e.target.closest("a")?.blur());
 }
 
 function goDay(iso) {
@@ -552,8 +573,8 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
 function stockMeta(f) {
   if (f.in_stock == null) return "";
   return f.in_stock > 1e-6
-    ? `<span class="stock-meta" title="Left in Groceries"> · 🛒 ${fmtQty(f.in_stock)} ${esc(f.unit)}</span>`
-    : `<span class="stock-meta none" title="None left in Groceries"> · 🛒 none</span>`;
+    ? `<span class="stock-meta" title="Left in stock"> · 🛒 ${fmtQty(f.in_stock)} ${esc(f.unit)}</span>`
+    : `<span class="stock-meta none" title="None left in stock"> · 🛒 none</span>`;
 }
 
 // --- editable item tables (saved meal draft and editor) ---------------------------
@@ -566,13 +587,13 @@ function perUnit(f) {
 }
 /** A food as an item: macros are kept per 1 unit so any amount can be recomputed. */
 function itemFromFood(f, quantity) {
-  return { food_id: f.id, name: f.name, brand: f.brand, unit: f.unit, is_meta: !!f.is_meta, per: perUnit(f), quantity: quantity ?? f.serving_qty ?? f.basis_qty };
+  return { food_id: f.id, name: f.name, brand: f.brand, unit: f.unit, is_meta: !!f.is_meta, per: perUnit(f), quantity: quantity ?? f.serving_qty ?? f.basis_qty, stock: f.in_stock ?? null };
 }
 /** A saved meal item (macros already scaled to its quantity) as an item. */
 function itemFromSaved(it) {
   const per = { kcal: it.kcal / it.quantity };
   for (const m of MACROS) per[m.key] = it[m.key] / it.quantity;
-  return { food_id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, is_meta: !!it.is_meta, per, quantity: it.quantity };
+  return { food_id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, is_meta: !!it.is_meta, per, quantity: it.quantity, stock: it.stocked ? it.in_stock : null };
 }
 /** A saved meal item about to be logged. A meta food needs one of its foods picked
  * first (``pick``): until then it has no food_id and shows its typical values. */
@@ -582,16 +603,17 @@ function itemToLog(it) {
   item.pick = { id: it.food_id, name: it.name, options: it.options, typical: item.per };
   item.food_id = null;
   item.brand = "";
+  item.stock = null;
   if (it.options.length === 1) pickOption(item, it.options[0]);
   return item;
 }
 /** Logs ``f`` in place of the item's meta food (they share the unit). */
 function pickOption(item, f) {
   if (!f) {
-    Object.assign(item, { food_id: null, name: item.pick.name, brand: "", per: item.pick.typical });
+    Object.assign(item, { food_id: null, name: item.pick.name, brand: "", per: item.pick.typical, stock: null });
     return;
   }
-  Object.assign(item, { food_id: f.id, name: f.name, brand: f.brand, per: perUnit(f) });
+  Object.assign(item, { food_id: f.id, name: f.name, brand: f.brand, per: perUnit(f), stock: f.in_stock ?? null });
 }
 /** The name cell of an item: a picker for a meta food being logged. */
 function itemNameCell(it, i) {
@@ -628,7 +650,8 @@ function itemsTotals(items) {
   return t;
 }
 
-function itemsTable({ tbody, tfoot, getItems, fiber, empty, onChange }) {
+/** ``qtyExtra(it, i)``, if given, adds HTML under an item's amount (e.g. a button). */
+function itemsTable({ tbody, tfoot, getItems, fiber, empty, onChange, qtyExtra }) {
   const keys = ["kcal", ...MACROS.filter((m) => fiber || m.key !== "fiber_g").map((m) => m.key)];
   const cells = (o) => keys.map((k) => `<td class="n" data-k="${k}">${fmt(o[k], k === "kcal" ? 0 : 1)}</td>`).join("");
   const cols = keys.length + 3;
@@ -644,7 +667,7 @@ function itemsTable({ tbody, tfoot, getItems, fiber, empty, onChange }) {
           .map(
             (it, i) => `<tr data-i="${i}"${it.pick && !it.food_id ? ` class="unpicked" title="Typical values, until you pick which ${esc(it.pick.name)}"` : ""}>
           <td>${itemNameCell(it, i)}</td>
-          <td class="n"><span class="with-unit qty-cell"><input class="qty-input" type="number" min="0" step="any" value="${it.quantity}" data-qty-i="${i}" aria-label="Amount of ${esc(it.name)}"><span class="unit">${esc(it.unit)}</span></span></td>
+          <td class="n"><span class="with-unit qty-cell"><input class="qty-input" type="number" min="0" step="any" value="${it.quantity}" data-qty-i="${i}" aria-label="Amount of ${esc(it.name)}"><span class="unit">${esc(it.unit)}</span></span>${qtyExtra?.(it, i) ?? ""}</td>
           ${cells(itemMacros(it))}
           <td class="act"><button type="button" class="row-btn del" data-del-i="${i}" title="Remove" aria-label="Remove ${esc(it.name)}">✕</button></td>
         </tr>`
@@ -809,12 +832,12 @@ function renderLog() {
       let amount = e.quantity != null ? `${fmtQty(e.quantity)} ${esc(e.unit)}` : "";
       if (e.from_stock > 1e-6) {
         const all = e.from_stock >= e.quantity - 1e-6;
-        const t = all ? "Taken from Groceries" : `${fmtQty(e.from_stock)} ${e.unit} of it taken from Groceries`;
+        const t = all ? "Taken from your stock" : `${fmtQty(e.from_stock)} ${e.unit} of it taken from your stock`;
         amount = `<span class="from-stock${all ? "" : " part"}" title="${esc(t)}" aria-label="${esc(t)}">🛒</span> ${amount}`;
       }
       const qtyAttrs = e.food_id != null ? ` class="n qty" data-edit-qty="${e.id}" title="Click to change amount"` : ' class="n"';
       html += `<tr data-entry="${e.id}">
-        <td>${esc(e.name)}${entryLink(e)}${e.eaten_out ? '<span class="out-tag" title="Eaten out: not taken from Groceries">🍽️ out</span>' : ""}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
+        <td>${esc(e.name)}${entryLink(e)}${e.eaten_out ? '<span class="out-tag" title="Eaten out: not taken from your stock">🍽️ out</span>' : ""}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
         <td${qtyAttrs}>${amount}</td>
         ${macroCells(e)}
         <td class="act"><button type="button" class="row-btn del" data-del-entry="${e.id}" title="Delete" aria-label="Delete ${esc(e.name)}">✕</button></td>
@@ -1226,28 +1249,81 @@ function updatePreview() {
     chips.replaceChildren();
     return;
   }
-  chips.innerHTML = portionOptions(f)
-    .map(([label, q]) => `<button type="button" class="chip" data-portion="${q}" aria-pressed="${qty != null && Math.abs(qty - q) < 1e-6}">${label} <small>${fmtQty(q)} ${esc(f.unit)}</small></button>`)
-    .join("");
-  // what's left in Groceries (only for foods bought there, and only today's stock)
+  const left = stockLeft(f);
+  const chip = (label, q, data) =>
+    `<button type="button" class="chip" ${data}="${q}" aria-pressed="${qty != null && Math.abs(qty - q) < 1e-6}">${label} <small>${fmtQty(q)} ${esc(f.unit)}</small></button>`;
+  chips.innerHTML =
+    portionOptions(f).map(([label, q]) => chip(label, q, "data-portion")).join("") +
+    (left > 1e-6 ? chip("🛒 All that's left", left, "data-portion-all") : "");
+  // what's left in stock (only for foods bought in Groceries)
   let stock = "";
-  if (eatenOut()) stock = " · 🍽️ eaten out: not taken from Groceries";
-  else if (f.in_stock != null) {
-    const left = Math.max(f.in_stock, 0);
-    if (left <= 1e-6) stock = " · 🛒 none left in Groceries";
-    else if (qty && qty > left + 1e-6) stock = ` · 🛒 only ${fmtQty(left)} ${f.unit} in Groceries`;
-    else stock = ` · 🛒 ${fmtQty(left)} ${f.unit} in Groceries`;
+  if (eatenOut()) stock = " · 🍽️ eaten out: not taken from your stock";
+  else if (left != null) {
+    if (qty && qty > left + 1e-6) stock = ` · <span class="stock-warn">⚠️ ${left <= 1e-6 ? "none left in stock" : `only ${fmtQty(left)} ${esc(f.unit)} left in stock`}: ${fmtQty(qty - left)} ${esc(f.unit)} more than you have</span>`;
+    else if (left <= 1e-6) stock = " · 🛒 none left in stock";
+    else stock = ` · 🛒 ${fmtQty(left)} ${esc(f.unit)} in stock`;
   }
   if (!qty) {
-    $("#entry-preview").textContent =
-      (f.kcal == null
+    $("#entry-preview").innerHTML =
+      esc(f.kcal == null
         ? `${f.name}: no kcal entered yet (counted as 0), per ${fmtQty(f.basis_qty)} ${f.unit}`
         : `${f.name}: ${fmt(f.kcal)} kcal per ${fmtQty(f.basis_qty)} ${f.unit}`) + stock;
     return;
   }
   const k = qty / f.basis_qty;
-  $("#entry-preview").textContent =
+  $("#entry-preview").innerHTML =
     (f.kcal == null ? "kcal unknown (counted as 0) · " : `≈ ${fmt(f.kcal * k)} kcal · `) + MACROS.map((m) => `${m.short} ${fmt(f[m.key] * k, 1)}`).join(" · ") + stock;
+}
+
+/** What's left in stock of a food, or null when it was never bought (nothing to track). */
+function stockLeft(f) {
+  return f.in_stock == null ? null : Math.max(f.in_stock, 0);
+}
+
+/** The foods that ``items`` ({food_id, name, unit, quantity, stock}) eat more of than is
+ * left in stock, added up per food (a food listed twice shares what's left). Nothing for
+ * food eaten out, nor for foods never bought. */
+function stockShortfalls(items) {
+  if (eatenOut()) return [];
+  const byFood = new Map();
+  for (const it of items) {
+    if (it.food_id == null || it.stock == null || !(it.quantity > 0)) continue;
+    const s = byFood.get(it.food_id) ?? { name: it.name, brand: it.brand, unit: it.unit, have: Math.max(it.stock, 0), need: 0 };
+    s.need += it.quantity;
+    byFood.set(it.food_id, s);
+  }
+  return [...byFood.values()].filter((s) => s.need > s.have + 1e-6);
+}
+
+/** What's left in stock for draft item ``i``: the food's stock minus what the draft's other
+ * rows of it use. Null when not tracked (never bought, eaten out, a meta food not picked). */
+function draftLeft(i) {
+  const items = state.draft?.items ?? [];
+  const it = items[i];
+  if (!it || eatenOut() || it.food_id == null || it.stock == null) return null;
+  const others = items.reduce((a, x, j) => a + (j !== i && x.food_id === it.food_id && x.quantity > 0 ? x.quantity : 0), 0);
+  return Math.max(it.stock - others, 0);
+}
+
+/** "Garbanzos (Check): 260 g, but only 130 g left" lines, as HTML. */
+function shortfallList(short) {
+  return `<ul class="short-list">${short
+    .map((s) => `<li><b>${esc(s.name)}</b>${s.brand ? ` <small>${esc(s.brand)}</small>` : ""}: ${fmtQty(s.need)} ${esc(s.unit)}, but ${s.have <= 1e-6 ? "none is left" : `only ${fmtQty(s.have)} ${esc(s.unit)} ${s.have === 1 ? "is" : "are"} left`}</li>`)
+    .join("")}</ul>`;
+}
+
+/** Asks before logging more than is left in stock. It's allowed (stock isn't always up to
+ * date), but it's likely a typo, a missing cart or something that ought to be eaten out. */
+function confirmShortfalls(short) {
+  if (!short.length) return Promise.resolve(true);
+  return confirmDialog({
+    title: "🛒 More than you have in stock?",
+    body: `<p>This logs more than is left in your stock:</p>${shortfallList(short)}
+      <p>Pamela takes what's there and doesn't count the rest anywhere. If you bought more, add the
+      cart in <b>Carts</b> first; if you ate somewhere else, tick <b>🍽️ Eaten out</b>.</p>`,
+    ok: "Log anyway",
+    danger: false,
+  });
 }
 
 function selectFood(food) {
@@ -1292,7 +1368,12 @@ async function submitEntry(ev) {
       $("#entry-qty").focus();
       return;
     }
-    body = { ...body, food_id: state.selectedFood.id, quantity: qty, eaten_out: eatenOut() };
+    const f = state.selectedFood;
+    if (!(await confirmShortfalls(stockShortfalls([{ food_id: f.id, name: f.name, brand: f.brand, unit: f.unit, quantity: qty, stock: f.in_stock ?? null }])))) {
+      $("#entry-qty").focus();
+      return;
+    }
+    body = { ...body, food_id: f.id, quantity: qty, eaten_out: eatenOut() };
   } else {
     if (!v.name.trim()) {
       toast("Give the entry a name", true);
@@ -1394,6 +1475,10 @@ function updateDraftCommit() {
   const btn = $("#draft-commit");
   btn.textContent = `Log ${n} ${n === 1 ? "food" : "foods"} to ${$("#entry-meal").value} · ${fmtDay(state.day)}${eatenOut() ? " · 🍽️ eaten out" : ""}`;
   btn.disabled = !n;
+  const short = stockShortfalls(state.draft.items);
+  const warn = $("#draft-warn");
+  warn.hidden = !short.length;
+  warn.innerHTML = short.length ? `⚠️ More than you have in stock:${shortfallList(short)}` : "";
 }
 
 function discardDraft() {
@@ -1422,6 +1507,7 @@ async function commitDraft() {
     $(`#draft-body [data-pick-i="${unpicked}"]`)?.focus();
     return;
   }
+  if (!(await confirmShortfalls(stockShortfalls(d.items)))) return;
   const meal = $("#entry-meal").value;
   try {
     await api("POST", "/entries/batch", {
@@ -1433,7 +1519,7 @@ async function commitDraft() {
     });
     toast(`Logged “${d.name}” to ${meal}`);
     discardDraft();
-    await loadDay();
+    await Promise.all([loadDay(), loadSavedMeals()]); // what's left of their foods changed
   } catch (err) {
     showError(err);
   }
@@ -1958,7 +2044,7 @@ function foodLabel(f) {
 }
 
 async function loadGroceries() {
-  document.title = "Groceries · Pamela";
+  document.title = `${VIEW_TITLE[state.view] ?? "Stock"} · Pamela`;
   const day = $("#trip-day");
   day.max = todayISO();
   if (!day.value || (!state.editingCartId && day.value > todayISO())) day.value = todayISO();
@@ -2070,7 +2156,7 @@ function renderStock(items) {
         <td class="n">${fmtStock(it.in_stock, it)}</td>
         <td>${expiryBadge(it.next_expiry)}</td>
         <td></td>
-        <td class="act"><button type="button" class="row-btn add-to" data-buy-again="${it.food_id}" title="Add it to the cart on the left">+ Buy</button></td>
+        <td class="act"><button type="button" class="row-btn add-to" data-buy-again="${it.food_id}" title="Add it to the cart in Carts">+ Buy</button></td>
       </tr>`;
       const lots = it.lots
         .map(
@@ -2439,7 +2525,7 @@ async function editCart(id) {
   $("#cart-delete").hidden = false;
   renderTrip();
   renderCarts();
-  $(".trip-card").scrollIntoView({ block: "nearest" });
+  openCartForm();
   $("#trip-day").focus();
 }
 
@@ -2507,7 +2593,14 @@ function buyAgain(foodId) {
   const it = state.groceries.items.find((x) => x.food_id === foodId);
   if (!it) return;
   addTripItem({ id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, package_qty: it.package_qty }, it.last_quantity);
-  $(".trip-card").scrollIntoView({ block: "nearest" });
+  toast(`${it.name} added to the cart in Carts`);
+  openCartForm();
+}
+
+/** Shows the cart form: it's in the Carts tab, while Stock links to it too. */
+function openCartForm() {
+  if (state.view !== "carts") showView("carts");
+  requestAnimationFrame(() => $(".trip-card").scrollIntoView({ block: "nearest" }));
 }
 
 // taking out: expired, or eaten by someone else ------------------------------------------
@@ -2625,9 +2718,9 @@ function fridgeRow(f, sector) {
     ? `${fmtStock(f.quantity, f)}${split ? ` <span class="ff-of">of ${fmtQty(f.in_stock)}</span>` : ""}`
     : "none left";
   const expired = has && expiryClass(f.next_expiry) === "past";
-  return `<li class="${has ? "" : "out"}${ticked ? " ticked" : ""}"${has ? "" : ` title="None left in Groceries: it comes back here when you buy it again"`}>
+  return `<li class="${has ? "" : "out"}${ticked ? " ticked" : ""}"${has ? "" : ` title="None left in stock: it comes back here when you buy it again"`}>
     <span class="ff-tick">${tick}</span>
-    <span class="ff-name">${expired ? `<button type="button" class="link-btn exp-flag" data-goto-stock="${f.food_id}" title="Past its date: open it in Groceries">⚠️</button> ` : ""}${groupEmoji(f.food_group)}${foodLabel(f)}${main}</span>
+    <span class="ff-name">${expired ? `<button type="button" class="link-btn exp-flag" data-goto-stock="${f.food_id}" title="Past its date: open it in Stock">⚠️</button> ` : ""}${groupEmoji(f.food_group)}${foodLabel(f)}${main}</span>
     <span class="ff-left">${left}</span>
     <span class="ff-meta"><span>${has && f.next_expiry ? expiryBadge(f.next_expiry) : ""}</span><span class="ff-btns">${moveBtn}${out}</span></span></li>`;
 }
@@ -2654,7 +2747,7 @@ function renderFridge() {
     ? (sectors.length ? "" : `<li class="empty">Add a sector (at the bottom of the page) to put these in.</li>`) + unsortedShown.map((f) => fridgeRow(f, null)).join("")
     : unsorted.length
     ? `<li class="empty">No matches</li>`
-    : `<li class="empty">${sectors.some((x) => x.foods.some(hasStock)) ? "Everything in stock has its sector." : "Nothing in stock. Add a cart in Groceries."}</li>`;
+    : `<li class="empty">${sectors.some((x) => x.foods.some(hasStock)) ? "Everything in stock has its sector." : "Nothing in stock. Add a cart in Carts, under the Stock menu."}</li>`;
 
   $("#sectors-count").textContent = sectors.length ? `(${sectors.length})` : "";
   const placed = sectors.flatMap((x) => x.foods.filter(hasStock).map((f) => checkKey(f, x)));
@@ -2776,7 +2869,7 @@ async function deleteSector(id) {
   if (!sec) return;
   const ok = await confirmDialog({
     title: "🗑️ Delete this sector?",
-    body: `<p><b>${esc(sectorName(sec))}</b> leaves the Fridge tab. ${sec.foods.length ? "What's in it goes back to each food's main sector, or to <i>Not in a sector</i>; " : ""}nothing leaves Foods or Groceries.</p>`,
+    body: `<p><b>${esc(sectorName(sec))}</b> leaves the Fridge tab. ${sec.foods.length ? "What's in it goes back to each food's main sector, or to <i>Not in a sector</i>; " : ""}nothing leaves Foods or your stock.</p>`,
     ok: "Delete sector",
   });
   if (!ok) return;
@@ -2877,8 +2970,8 @@ async function submitMove(ev) {
 
 // expired -------------------------------------------------------------------------------
 
-/** The red warning on top of Groceries and Fridge: foods in stock past their date, each
- * a link to its row in Groceries' In stock. */
+/** The red warning on top of Stock and Fridge: foods in stock past their date, each
+ * a link to its row in In stock. */
 function renderExpiredAlert(el, foods) {
   el.hidden = !foods.length;
   if (!foods.length) return (el.innerHTML = "");
@@ -2888,16 +2981,16 @@ function renderExpiredAlert(el, foods) {
     foods
       .map((f) => {
         const d = daysBetween(f.expires_on, todayISO());
-        return `<button type="button" class="link-btn" data-goto-stock="${f.food_id}" title="Open it in Groceries, In stock">${esc(f.name)}</button> <small>(${d === 0 ? "today" : `${d} d ago`})</small>`;
+        return `<button type="button" class="link-btn" data-goto-stock="${f.food_id}" title="Open it in Stock, In stock">${esc(f.name)}</button> <small>(${d === 0 ? "today" : `${d} d ago`})</small>`;
       })
       .join(", ") +
-    `. <small>Click one to see it in Groceries: take out what went off with <b>Take out</b>, or fix the date in its cart.</small>`;
+    `. <small>Click one to see it in Stock: take out what went off with <b>Take out</b>, or fix the date in its cart.</small>`;
 }
 
-/** Shows a food's row in Groceries' In stock, opening Groceries first when needed. */
+/** Shows a food's row in In stock, opening the Stock tab first when needed. */
 function gotoStock(foodId) {
   state.focusFood = foodId;
-  if (state.view !== "groceries") location.hash = "#/groceries";
+  if (state.view !== "stock") showView("stock");
   else focusStockRow();
 }
 function focusStockRow() {
@@ -3044,7 +3137,7 @@ function renderSavedMeals() {
         ${sm.recipe ? `<details class="sm-recipe"><summary>📝 Recipe</summary><p>${esc(sm.recipe)}</p></details>` : ""}
         <div class="sm-actions">
           <button type="button" class="btn" data-use-sm="${sm.id}" title="Open today with this meal as a draft">Use today</button>
-          ${sm.can_make ? "" : `<button type="button" class="row-btn add-to" data-buy-sm="${sm.id}" title="Put what's missing in the cart in Groceries">+ Buy missing</button>`}
+          ${sm.can_make ? "" : `<button type="button" class="row-btn add-to" data-buy-sm="${sm.id}" title="Put what's missing in the cart in Carts">+ Buy missing</button>`}
           <button type="button" class="row-btn icon" data-edit-sm="${sm.id}" title="Edit" aria-label="Edit ${esc(sm.name)}">${PENCIL}</button>
           <button type="button" class="row-btn del" data-del-sm="${sm.id}" aria-label="Delete ${esc(sm.name)}">✕</button>
         </div>
@@ -3069,7 +3162,7 @@ function goToMeal(id) {
 }
 
 /** Adds what a meal is short of to the cart being filled in, in whole packs when the
- * food has a package size, and opens Groceries. */
+ * food has a package size, and opens Carts. */
 function buyMissing(id) {
   const sm = state.savedMeals.find((x) => x.id === id);
   if (!sm) return;
@@ -3084,7 +3177,7 @@ function buyMissing(id) {
   }
   const skipped = short.length - can.length;
   toast(`${can.length} food${can.length === 1 ? "" : "s"} added to the cart${skipped ? ` (${skipped} meta food${skipped === 1 ? " has" : "s have"} no foods to buy yet)` : ""}`);
-  location.hash = "#/groceries";
+  showView("carts");
 }
 
 function resetSmForm() {
@@ -3290,7 +3383,7 @@ async function submitProfile(ev) {
 }
 
 async function loadSettings() {
-  document.title = "Settings · Pamela";
+  document.title = `${VIEW_TITLE[state.view] ?? "Settings"} · Pamela`;
   try {
     await Promise.all([
       loadActivityTypes(),
@@ -4177,47 +4270,72 @@ function renderHelp() {
     <p>Change them in <a href="#/settings">Settings</a>.</p>`;
 }
 
-// --- help index ----------------------------------------------------------------
+// --- help pages ----------------------------------------------------------------
 
-/** Index links scroll within the Help tab (a plain #anchor would change the route),
- * and the section being read is marked in the index. */
+/** Help is one page per section (#/help throughout): the index and the pager below each
+ * page switch between them. A subsection link opens its page and scrolls to it, and the
+ * subsection being read is marked in the index. */
 let markHelpIndex = () => {};
 
 function wireHelpIndex() {
+  const pages = $$(".help-content > .help-card");
   const links = $$(".help-index a[data-jump]");
-  $(".help-index").addEventListener("click", (e) => {
-    const a = e.target.closest("a[data-jump]");
-    if (!a) return;
-    e.preventDefault();
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // A section near the end can't scroll up to the top, so the scroll position alone
-    // would mark a later entry: keep the clicked one marked until the jump has landed.
-    jumping = true;
-    setCurrent(a.dataset.jump);
-    clearTimeout(jumpTimer);
-    jumpTimer = setTimeout(() => (jumping = false), 1500); // in case no scrollend comes
-    document.getElementById(a.dataset.jump).scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-  });
-  let jumping = false, jumpTimer;
-  addEventListener("scrollend", () => (jumping = false));
+  const pageOf = (id) => document.getElementById(id)?.closest(".help-card");
+  const pager = document.createElement("nav");
+  pager.className = "help-pager";
+  pager.setAttribute("aria-label", "Help pages");
+  $(".help-content").append(pager);
+  const title = (page) => page.querySelector("h2").textContent.trim();
+  let current = pages[0];
+
   const setCurrent = (id) => {
     for (const a of links) {
       if (a.dataset.jump === id) a.setAttribute("aria-current", "location");
       else a.removeAttribute("aria-current");
     }
   };
-  const ids = links.map((a) => a.dataset.jump);
-  const targets = ids.map((id) => document.getElementById(id));
+  /** Shows ``page``; ``at`` is the id to scroll to (none: the top of the page). */
+  const show = (page, at) => {
+    current = page;
+    for (const p of pages) p.hidden = p !== page;
+    const i = pages.indexOf(page);
+    const prev = pages[i - 1], next = pages[i + 1];
+    pager.innerHTML = `
+      ${prev ? `<button type="button" class="btn ghost" data-help-page="${prev.id}">← ${esc(title(prev))}</button>` : "<span></span>"}
+      <span class="help-page-n">${i + 1} / ${pages.length}</span>
+      ${next ? `<button type="button" class="btn ghost" data-help-page="${next.id}">${esc(title(next))} →</button>` : "<span></span>"}`;
+    setCurrent(at ?? page.id);
+    jumping = true;
+    clearTimeout(jumpTimer);
+    jumpTimer = setTimeout(() => (jumping = false), 1500); // in case no scrollend comes
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (at && at !== page.id) document.getElementById(at).scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    else scrollTo({ top: 0 });
+  };
+  $(".help-index").addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-jump]");
+    if (!a) return;
+    e.preventDefault(); // a plain #anchor would change the route
+    show(pageOf(a.dataset.jump), a.dataset.jump);
+  });
+  pager.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-help-page]");
+    if (b) show(document.getElementById(b.dataset.helpPage));
+  });
+  let jumping = false, jumpTimer;
+  addEventListener("scrollend", () => (jumping = false));
   const mark = () => {
     if (state.view !== "help" || jumping) return;
-    // The last section whose top has scrolled past the upper third of the window.
+    // The page, or the last of its subsections whose top has scrolled past the upper
+    // third of the window.
     const line = innerHeight / 3;
-    let current = ids[0];
-    for (const [i, el] of targets.entries()) if (el.getBoundingClientRect().top <= line) current = ids[i];
-    if (scrollY > 0 && innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = ids.at(-1);
-    setCurrent(current);
+    let at = current.id;
+    for (const h of $$("h3[id]", current)) if (h.getBoundingClientRect().top <= line) at = h.id;
+    if (!links.some((a) => a.dataset.jump === at)) at = current.id;
+    setCurrent(at);
   };
   addEventListener("scroll", mark, { passive: true });
+  show(current);
   markHelpIndex = () => requestAnimationFrame(mark); // also on a direct load of #/help
 }
 
@@ -4444,6 +4562,7 @@ function wire() {
   $("#exit-confirm").addEventListener("click", saveAndClose);
   $("#confirm-ok").addEventListener("click", () => $("#confirm-dialog").close("ok"));
   wireHelpIndex();
+  wireNavMenus();
 
   // top bar
   $("#prev-day").addEventListener("click", () => goDay(addDays(state.day, -1)));
@@ -4491,9 +4610,12 @@ function wire() {
     canSubmit: () => !!state.selectedFood,
   });
   $("#portion-chips").addEventListener("click", (e) => {
-    const chip = e.target.closest("[data-portion]");
+    const chip = e.target.closest("[data-portion], [data-portion-all]");
     if (!chip) return;
-    $("#entry-qty").value = Math.round(Number(chip.dataset.portion) * 100) / 100;
+    // all that's left is taken exactly (rounding it could leave a crumb in stock, or ask for more)
+    $("#entry-qty").value = "portionAll" in chip.dataset
+      ? Number(Number(chip.dataset.portionAll).toPrecision(12))
+      : Math.round(Number(chip.dataset.portion) * 100) / 100;
     updatePreview();
     $("#entry-qty").focus();
   });
@@ -4506,10 +4628,30 @@ function wire() {
     fiber: true,
     empty: "No foods left in this draft. Add one below, or discard it.",
     onChange: updateDraftCommit,
+    qtyExtra: (it, i) =>
+      draftLeft(i) > 1e-6
+        ? `<button type="button" class="row-btn all-left" data-all-left="${i}" title="Finish it: use all that's left of it in stock">🛒 All that's left</button>`
+        : "",
   });
-  $("#saved-pick").addEventListener("change", (e) => {
+  $("#draft-body").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-all-left]");
+    if (!b) return;
+    const i = Number(b.dataset.allLeft);
+    const left = draftLeft(i);
+    if (!(left > 1e-6)) return;
+    state.draft.items[i].quantity = Number(left.toPrecision(12)); // exact: no crumb left in stock
+    draftTable.render();
+    updateDraftCommit();
+    $(`#draft-body [data-qty-i="${i}"]`)?.focus();
+  });
+  $("#saved-pick").addEventListener("change", async (e) => {
     const sm = state.savedMeals.find((x) => String(x.id) === e.target.value);
-    if (sm) startDraft(sm);
+    if (!sm) return;
+    // fresh from the server: what's left of its foods may have changed since it was loaded
+    const fresh = await api("GET", `/saved-meals/${sm.id}`).catch(() => sm);
+    if (e.target.value !== String(sm.id)) return; // another one was picked meanwhile
+    state.savedMeals = state.savedMeals.map((x) => (x.id === sm.id ? fresh : x));
+    startDraft(fresh);
   });
   foodCombo({
     input: $("#draft-search"),
@@ -4780,7 +4922,7 @@ function wire() {
   $("#cart-delete").addEventListener("click", () => deleteCart(state.editingCartId));
   $("#stock-filter").addEventListener("input", () => renderGroceries());
   for (const r of $$('input[name="stock-sort"]')) r.addEventListener("change", () => renderGroceries());
-  $("#view-groceries").addEventListener("click", (e) => {
+  const onGroceriesClick = (e) => {
     const t = e.target.closest("[data-buy-again], [data-expire-lot], [data-copy-cart], [data-edit-cart], [data-del-cart], [data-undo-expired], [data-more-carts]");
     if (!t) return;
     const d = t.dataset;
@@ -4794,7 +4936,8 @@ function wire() {
       state.cartsShown += CARTS_PAGE;
       renderCarts();
     }
-  });
+  };
+  for (const v of GROCERY_VIEWS) $(`#view-${v}`).addEventListener("click", onGroceriesClick);
   $("#expire-form").addEventListener("submit", submitExpire);
 
   // saved meals

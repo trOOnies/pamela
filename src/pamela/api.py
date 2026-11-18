@@ -567,6 +567,11 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
             options.setdefault(f["meta_id"], []).append(f)
     for meta_id, opts in options.items():
         stock[meta_id] = sum(stock.get(f["id"], 0) for f in opts)
+    # foods ever bought: only for those is what's left in Groceries known
+    bought = {r["food_id"] for r in conn.execute("SELECT DISTINCT food_id FROM stock_lots")}
+    for meta_id, opts in options.items():
+        if any(f["id"] in bought for f in opts):
+            bought.add(meta_id)
     out = []
     for m in meals:
         rows = by_meal[m["id"]]
@@ -584,6 +589,7 @@ def _saved_meals(conn: sqlite3.Connection, saved_meal_id: int | None = None) -> 
                 | {
                     "kcal_missing": it["kcal"] is None,
                     "in_stock": stock.get(it["food_id"], 0),
+                    "stocked": it["food_id"] in bought,
                     "missing": missing if missing > EPS else 0,
                     "options": options.get(it["food_id"], []) if it["is_meta"] else [],
                 }
