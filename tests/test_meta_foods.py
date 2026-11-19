@@ -60,6 +60,19 @@ def test_a_food_is_one_of_a_meta_food_in_the_same_unit(client, oats):
     assert client.get(f"/api/foods/{dia['id']}").json()["meta_id"] is None
 
 
+def test_a_food_is_in_its_meta_foods_group(client):
+    m = meta(client, food_group="dairy")
+    dia = food(client, "Mozzarella Dia", meta_id=m["id"], food_group="sweets")
+    assert dia["food_group"] == "dairy"  # the meta food's, whatever was sent
+    assert put(client, dia, food_group="sweets").json()["food_group"] == "dairy"
+    # changing the meta food's group moves its foods along
+    assert put(client, m, food_group="prepared").status_code == 200
+    assert client.get(f"/api/foods/{dia['id']}").json()["food_group"] == "prepared"
+    # unlinked, it keeps the group and can change it again
+    unlinked = put(client, client.get(f"/api/foods/{dia['id']}").json(), meta_id=None, food_group="sweets")
+    assert unlinked.json()["food_group"] == "sweets"
+
+
 def test_meta_food_cant_be_logged_or_bought(client):
     m = meta(client)
     r = client.post("/api/entries", json={"day": TODAY, "meal": "Lunch", "food_id": m["id"],

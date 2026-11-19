@@ -621,6 +621,12 @@ MIGRATIONS: list[str] = [
     CREATE INDEX entry_places_entry ON entry_places (entry_id);
     CREATE INDEX entry_places_food ON entry_places (food_id);
     """,
+    # A food that is one of a meta food is in the meta food's group.
+    """
+    UPDATE foods SET food_group = (SELECT m.food_group FROM foods m WHERE m.id = foods.meta_id)
+    WHERE meta_id IS NOT NULL
+      AND food_group != (SELECT m.food_group FROM foods m WHERE m.id = foods.meta_id);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

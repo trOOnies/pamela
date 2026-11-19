@@ -76,6 +76,19 @@ def test_product_to_draft():
     assert not d["peanut_free"]  # allergens say peanuts
 
 
+def test_product_to_draft_is_per_serving_when_it_can_be():
+    nutr = OFF_PRODUCT["nutriments"] | {
+        "energy-kcal_serving": 115, "proteins_serving": 2.25, "carbohydrates_serving": 24,
+        "fat_serving": 0.9,
+    }
+    d = barcode.product_to_draft(EAN, OFF_PRODUCT | {"nutriments": nutr})
+    assert (d["basis_qty"], d["serving_qty"]) == (30, 30)
+    assert (d["kcal"], d["protein_g"], d["carbs_g"], d["fat_g"]) == (115, 2.25, 24, 0.9)
+    # no serving size: per 100 g, whatever per-serving values there are
+    d = barcode.product_to_draft(EAN, OFF_PRODUCT | {"nutriments": nutr, "serving_quantity": None})
+    assert (d["basis_qty"], d["protein_g"]) == (100, 7.5)
+
+
 def test_barcode_lookup_sources(client, monkeypatch):
     calls = []
 

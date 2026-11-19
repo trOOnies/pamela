@@ -425,11 +425,20 @@ def _meta_check(conn: sqlite3.Connection, food: FoodIn, food_id: int | None = No
             )
 
 
+def _with_meta_group(conn: sqlite3.Connection, data: dict) -> dict:
+    """A food that is one of a meta food is in the meta food's group: it changes only
+    with the meta food's."""
+    if data.get("meta_id") is not None:
+        meta = conn.execute("SELECT food_group FROM foods WHERE id = ?", (data["meta_id"],)).fetchone()
+        data["food_group"] = meta["food_group"]
+    return data
+
+
 @router.post("/foods", response_model=Food, status_code=status.HTTP_201_CREATED)
 def create_food(food: FoodIn, conn: Conn) -> dict:
     _ean_conflict(conn, food)
     _meta_check(conn, food)
-    data = food.model_dump()
+    data = _with_meta_group(conn, food.model_dump())
     cols = ", ".join(data)
     marks = ", ".join("?" * len(data))
     cur = conn.execute(f"INSERT INTO foods ({cols}) VALUES ({marks})", tuple(data.values()))
@@ -469,12 +478,19 @@ def update_food(food_id: int, food: FoodIn, conn: Conn) -> dict:
     _food_row(conn, food_id)
     _ean_conflict(conn, food, food_id)
     _meta_check(conn, food, food_id)
-    data = food.model_dump()
+    data = _with_meta_group(conn, food.model_dump())
     sets = ", ".join(f"{k} = ?" for k in data)
     conn.execute(
         f"UPDATE foods SET {sets}, updated_at = datetime('now') WHERE id = ?",
         (*data.values(), food_id),
     )
+    if food.is_meta:
+        # its foods are always in its group
+        conn.execute(
+            "UPDATE foods SET food_group = ?, updated_at = datetime('now') "
+            "WHERE meta_id = ? AND food_group != ?",
+            (food.food_group, food_id, food.food_group),
+        )
     _refresh_entries(conn, food_id)
     return _food_row(conn, food_id)
 

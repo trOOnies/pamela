@@ -49,6 +49,8 @@ const state = {
   bodyRefs: null, // GET /body-references
   historyDays: null,
   editingFoodId: null,
+  metaFill: null,       // what picking a meta food filled into the new food form
+  offDraft: false,      // the new food form was filled from Open Food Facts (per serving)
   editingActivityId: null,
   selectedFood: null,   // food chosen in the entry form
   draft: null,          // saved meal being prepared for logging: { id, name, items }
@@ -1676,6 +1678,7 @@ async function loadFoods() {
     const [foods, brands] = await Promise.all([api("GET", "/foods?limit=1000"), api("GET", "/brands")]);
     state.foods = foods;
     fillMetaSelect();
+    updateMetaLock(); // the meta food picked in the form may have a new group
     $("#brand-options").innerHTML = brands.map((b) => `<option value="${esc(b)}">`).join("");
     renderFoods();
     if (state.focusRow != null) goToFood(state.focusRow);
@@ -1793,6 +1796,60 @@ function fillMetaSelect() {
   sel.value = metas.some((f) => String(f.id) === prev) ? prev : "";
 }
 
+// What a new food takes from the meta food picked under "One of". The user can still
+// change these; the group and unit always follow the meta food.
+const META_FILL = ["basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "b12_ug", "serving_qty", "abv_pct"];
+
+/** The meta food picked under "One of", if the form is for a food (not a meta food). */
+function pickedMeta() {
+  const el = $("#food-form").elements;
+  if (el.is_meta.checked || !el.meta_id.value) return null;
+  return state.foods.find((f) => String(f.id) === el.meta_id.value) ?? null;
+}
+
+/** A food that is one of a meta food is in its group and unit: they're shown, locked,
+ * and change only with the meta food's. */
+function updateMetaLock() {
+  const el = $("#food-form").elements;
+  const m = pickedMeta();
+  el.food_group.disabled = !!m;
+  el.unit.readOnly = !!m;
+  if (m) {
+    el.food_group.value = m.food_group ?? "";
+    el.unit.value = m.unit;
+  }
+  $("#food-meta-hint").innerHTML = m
+    ? `Group and unit come from 🔀 <b>${esc(m.name)}</b>: to change them, edit it.`
+    : "";
+  updateFoodFormKind();
+}
+
+/** Picking a meta food for a new food fills in the meta food's values (and diet), so
+ * only what differs needs typing. A field already typed in is left alone, unless it
+ * still holds what the previous meta food filled in. */
+function fillFromMeta() {
+  const el = $("#food-form").elements;
+  const m = pickedMeta();
+  const prev = state.metaFill ?? {};
+  state.metaFill = null;
+  if (m && !state.editingFoodId) {
+    const fill = {};
+    for (const k of META_FILL) {
+      const cur = el[k].value;
+      if (cur !== "" && cur !== el[k].defaultValue && cur !== prev[k]) continue;
+      el[k].value = fill[k] = m[k] == null ? "" : String(m[k]);
+    }
+    for (const t of state.vocab.diet_tags) {
+      if (el[t.key].checked !== (prev[t.key] ?? el[t.key].defaultChecked)) continue;
+      el[t.key].checked = fill[t.key] = !!m[t.key];
+    }
+    state.metaFill = fill;
+  }
+  updateMetaLock();
+  updateKcalHint();
+  updateAbvHint();
+}
+
 // Sortable catalog columns: the value to sort by, and whether it's text. The first
 // click sorts text A→Z and numbers high→low.
 const FOOD_SORT = {
@@ -1889,7 +1946,10 @@ function resetFoodForm() {
   const form = $("#food-form");
   form.reset();
   state.editingFoodId = null;
+  state.metaFill = null;
+  state.offDraft = false;
   fillMetaSelect();
+  updateMetaLock();
   $("#food-form-h").textContent = "New food item";
   $("#food-submit").textContent = "Save food";
   $("#food-cancel").hidden = true;
@@ -1906,14 +1966,16 @@ function fillFoodForm(f) {
   for (const k of FOOD_FIELDS) el[k].value = f[k] ?? "";
   el.is_meta.checked = !!f.is_meta;
   for (const t of state.vocab.diet_tags) el[t.key].checked = !!f[t.key];
+  state.metaFill = null;
+  updateMetaLock();
   updateKcalHint();
-  updateFoodFormKind();
 }
 
 function editFood(id) {
   const f = state.foods.find((x) => x.id === id);
   if (!f) return;
   state.editingFoodId = id;
+  state.offDraft = false;
   fillFoodForm(f);
   $("#food-form-h").textContent = f.is_meta ? "Edit meta food" : "Edit food";
   setFoodSaved(null);
@@ -1973,9 +2035,14 @@ async function lookupBarcode() {
       }
       const keepName = $("#food-form").elements.name.value.trim();
       fillFoodForm({ ...r.draft, name: r.draft.name || keepName });
+      state.offDraft = true;
       const link = `https://world.openfoodfacts.org/product/${encodeURIComponent(r.ean)}`;
+      const d = r.draft;
+      const per = d.basis_qty !== 100 && !state.editingFoodId
+        ? ` They're per serving (${fmtQty(d.basis_qty)} ${esc(d.unit)}), as on the label: saving converts them to per 100 ${esc(d.unit)}.`
+        : "";
       setEanStatus(
-        `Found on <a href="${link}" target="_blank" rel="noopener">Open Food Facts</a>. Check the values against the label (they can be incomplete), then save.`,
+        `Found on <a href="${link}" target="_blank" rel="noopener">Open Food Facts</a>. Check the values against the label (they can be incomplete), then save.${per}`,
         "ok"
       );
       $("#food-form").elements.name.focus();
@@ -1987,6 +2054,19 @@ async function lookupBarcode() {
     if (err.status === 502) setEanStatus(`${esc(err.message)}. You can still enter the values by hand.`, "error");
     else setEanStatus(esc(err.message), "error");
   }
+}
+
+/** A new food from Open Food Facts is shown per serving, as on the label, and saved
+ * per 100 g / 100 ml like the rest of the catalog. */
+function toPer100(body) {
+  const b = body.basis_qty;
+  if (!["g", "ml"].includes(body.unit.toLowerCase()) || !(b > 0) || b === 100) return;
+  const k = 100 / b;
+  const scale = (v) => (v == null ? v : Math.round(v * k * 100) / 100);
+  body.basis_qty = 100;
+  body.kcal = scale(body.kcal);
+  body.b12_ug = scale(body.b12_ug);
+  for (const m of MACROS) body[m.key] = scale(body[m.key]);
 }
 
 async function submitFood(ev) {
@@ -2003,17 +2083,19 @@ async function submitFood(ev) {
     b12_ug: num(v.b12_ug), // empty = not known yet, unlike 0
     serving_qty: num(v.serving_qty) || null,
     package_qty: num(v.package_qty) || null,
-    food_group: v.food_group,
+    food_group: form.elements.food_group.value,
     is_meta: form.elements.is_meta.checked,
     meta_id: num(v.meta_id) || null,
   };
   if (body.is_meta) Object.assign(body, { brand: "", ean: null, package_qty: null, meta_id: null });
   for (const m of MACROS) body[m.key] = num(v[m.key]) ?? 0;
   for (const t of state.vocab.diet_tags) body[t.key] = form.elements[t.key].checked;
-  if (v.food_group === ALCOHOLIC) {
+  if (body.food_group === ALCOHOLIC) {
     // the rest comes from the alcohol content (the backend works it out)
     Object.assign(body, { basis_qty: 100, unit: "ml", kcal: null, serving_qty: null, abv_pct: num(v.abv_pct), b12_ug: null });
     for (const m of MACROS) body[m.key] = 0;
+  } else if (state.offDraft && !state.editingFoodId) {
+    toPer100(body);
   }
   try {
     const editing = state.editingFoodId;
@@ -2527,7 +2609,6 @@ async function submitTrip(ev) {
     resetCartForm();
     await loadGroceries();
     flashCart(cart.id);
-    if (!editing) $("#trip-search").focus();
   } catch (err) {
     showError(err);
   }
@@ -4919,7 +5000,8 @@ function wire() {
     }
   });
   $("#food-cancel").addEventListener("click", resetFoodForm);
-  $("#food-is-meta").addEventListener("change", updateFoodFormKind);
+  $("#food-is-meta").addEventListener("change", updateMetaLock);
+  $("#food-meta").addEventListener("change", fillFromMeta);
   $("#foods-filter").addEventListener("input", renderFoods);
   $("#group-filter").addEventListener("change", renderFoods);
   $("#ean-status").addEventListener("click", (e) => {

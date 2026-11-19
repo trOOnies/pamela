@@ -82,16 +82,33 @@ def _has_tag(tags: list[str], *needles: str) -> bool:
     return any(any(n in t for n in needles) for t in tags)
 
 
-def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
-    """Food fields (per 100 g/ml) prefilled from an Open Food Facts product.
+_ENERGY = ("energy-kcal", "energy")
+_MACROS = ("proteins", "carbohydrates", "fat", "fiber")
 
-    Diet tags are only set when the product says so (labels or ingredient
+
+def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
+    """Food fields prefilled from an Open Food Facts product.
+
+    The values are per serving when the product has them (as on the label, where
+    they're easiest to check), else per 100 g/ml; the form converts them to per
+    100 g/ml when the food is saved. Diet tags are only set when the product says so (labels or ingredient
     analysis) and its allergens don't contradict it; the user reviews the
     result before saving it."""
     n = product.get("nutriments") or {}
-    kcal = _num(n.get("energy-kcal_100g"))
-    if kcal is None and (kj := _num(n.get("energy_100g"))) is not None:
-        kcal = kj / 4.184  # energy_100g is in kJ
+    # alcohol_100g is the alcohol content in % vol; under 0.5 % counts as alcohol-free
+    abv = _num(n.get("alcohol_100g"))
+    alcoholic = abv is not None and abv >= 0.5
+
+    serving = _num(product.get("serving_quantity")) or None
+    per_serving = (
+        serving is not None
+        and not alcoholic  # entered by alcohol content, per 100 ml
+        and any(_num(n.get(f"{k}_serving")) is not None for k in _ENERGY + _MACROS)
+    )
+    per = "_serving" if per_serving else "_100g"
+    kcal = _num(n.get(f"energy-kcal{per}"))
+    if kcal is None and (kj := _num(n.get(f"energy{per}"))) is not None:
+        kcal = kj / 4.184  # energy is in kJ
 
     units = {
         str(product.get(k) or "").lower()
@@ -103,10 +120,6 @@ def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
     analysis = [str(t).lower() for t in product.get("ingredients_analysis_tags") or []]
     allergens = [str(t).lower() for t in product.get("allergens_tags") or []]
 
-    # alcohol_100g is the alcohol content in % vol; under 0.5 % counts as alcohol-free
-    abv = _num(n.get("alcohol_100g"))
-    alcoholic = abv is not None and abv >= 0.5
-
     vegan = "en:vegan" in labels or "en:vegan" in analysis
     vegetarian = vegan or "en:vegetarian" in labels or "en:vegetarian" in analysis
 
@@ -117,14 +130,14 @@ def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
         "ean": code,
         "name": (product.get("product_name") or product.get("generic_name") or "").strip(),
         "brand": (product.get("brands") or "").split(",")[0].strip(),
-        "basis_qty": 100,
+        "basis_qty": serving if per_serving else 100,
         "unit": unit,
         "kcal": None if kcal is None else r(kcal),  # missing = unknown, not 0
-        "protein_g": r(_num(n.get("proteins_100g"))),
-        "carbs_g": r(_num(n.get("carbohydrates_100g"))),
-        "fat_g": r(_num(n.get("fat_100g"))),
-        "fiber_g": r(_num(n.get("fiber_100g"))),
-        "serving_qty": _num(product.get("serving_quantity")) or None,
+        "protein_g": r(_num(n.get(f"proteins{per}"))),
+        "carbs_g": r(_num(n.get(f"carbohydrates{per}"))),
+        "fat_g": r(_num(n.get(f"fat{per}"))),
+        "fiber_g": r(_num(n.get(f"fiber{per}"))),
+        "serving_qty": serving,
         "package_qty": _num(product.get("product_quantity")) or None,
         "food_group": "alcoholic" if alcoholic else "",
         "abv_pct": abv if alcoholic else None,
