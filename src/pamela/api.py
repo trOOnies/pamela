@@ -1285,7 +1285,35 @@ def read_groceries(
     for ev in expired:
         f = foods[ev["food_id"]]
         ev.update(name=f["name"], brand=f["brand"], unit=f["unit"], food_group=f["food_group"])
-    return {"items": items, "carts": _carts(conn), "expired": expired}
+    return {
+        "items": items,
+        "nutrition": _stock_nutrition(conn, items),
+        "carts": _carts(conn),
+        "expired": expired,
+    }
+
+
+_STOCK_NUTRIENTS = ("kcal", "protein_g", "carbs_g", "fat_g", "fiber_g")
+
+
+def _stock_nutrition(conn: sqlite3.Connection, items: list[dict]) -> dict:
+    """Totals of what's left in stock, from each food's values per basis amount."""
+    left = {it["food_id"]: it["in_stock"] for it in items if it["in_stock"] > EPS}
+    out: dict = dict.fromkeys(_STOCK_NUTRIENTS, 0.0) | {"kcal_missing": 0}
+    if not left:
+        return out
+    marks = ",".join("?" * len(left))
+    rows = conn.execute(
+        f"SELECT id, basis_qty, {', '.join(_STOCK_NUTRIENTS)} FROM foods WHERE id IN ({marks})",
+        list(left),
+    )
+    for f in rows:
+        k = left[f["id"]] / f["basis_qty"]
+        if f["kcal"] is None:
+            out["kcal_missing"] += 1
+        for n in _STOCK_NUTRIENTS:
+            out[n] += (f[n] or 0) * k
+    return out
 
 
 def _fill_shortfalls(conn: sqlite3.Connection, food_id: int, since: str) -> None:

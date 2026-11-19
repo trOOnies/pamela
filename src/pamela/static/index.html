@@ -327,6 +327,10 @@
         <div id="stock-groups" class="stock-groups"></div>
       </section>
       <div class="groc-side">
+        <section class="card balance-card" aria-labelledby="balance-h">
+          <div class="card-head"><h2 id="balance-h">Stock balance</h2></div>
+          <div id="stock-balance" class="stock-balance"></div>
+        </section>
         <section class="card" aria-labelledby="ranout-h">
           <div class="card-head"><h2 id="ranout-h">Ran out <span class="count" id="ranout-count"></span></h2></div>
           <ul class="ranout-list" id="ranout-list"></ul>
@@ -970,6 +974,13 @@
             turn <span class="exp-demo soon">amber</span> three days before and
             <span class="exp-demo past">red</span> once they've passed. Sort by what expires first, or
             A–Z.</p>
+          <p>⚖️ <b>Stock balance</b> adds up everything you have left, using each food's values: the
+            calories in stock and how many days they'd last at your kcal target. The energy bar shows
+            how those calories split between protein, carbs and fat, with ticks where your targets
+            would split them. Each macro says how many days it would last at its own target, and its
+            gauge whether it keeps pace with the calories: in the middle it's balanced, to the left
+            it would run out first (<i>short</i>), to the right some would be left over
+            (<i>plenty</i>).</p>
           <p>➖ <b>Something expired, or someone else ate it?</b> Press <b>Take out</b> on it,
             pick 🗑️ <i>Thrown out</i> or 👥 <i>Eaten by someone else</i>, and say how much went (all
             that's left, unless you change it) and when. It leaves your stock and shows under

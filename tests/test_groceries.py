@@ -311,7 +311,9 @@ def test_wipe_groceries_and_foods(client, oats):
     buy(client, oats["id"], 500)
     r = client.post("/api/wipe", json={"what": ["foods"]})
     assert r.json()["counts"]["groceries"] == 1  # the cart left empty
-    assert client.get("/api/groceries").json() == {"items": [], "carts": [], "expired": []}
+    g = client.get("/api/groceries").json()
+    assert (g["items"], g["carts"], g["expired"]) == ([], [], [])
+    assert g["nutrition"]["kcal"] == 0
 
 
 def test_deleting_a_food_drops_carts_left_empty(client, oats):
@@ -510,3 +512,22 @@ def test_late_purchase_skips_eaten_out(client, oats):
     entry = next(x for x in entries if x["id"] == out["id"])
     assert entry["from_stock"] == 0
     assert stock(client)[oats["id"]]["in_stock"] == 500
+
+
+def test_stock_nutrition(client, oats):
+    """What's left in stock adds up, and foods with no kcal are counted."""
+    assert client.get("/api/groceries").json()["nutrition"] == {
+        "kcal": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "fiber_g": 0, "kcal_missing": 0
+    }
+    buy(client, oats["id"], 500)
+    eat(client, oats["id"], 100)
+    r = client.post(
+        "/api/foods", json={"name": "Mystery", "basis_qty": 1, "unit": "u", "protein_g": 2}
+    )
+    assert r.status_code == 201, r.text
+    buy(client, r.json()["id"], 3)
+    n = client.get("/api/groceries").json()["nutrition"]
+    assert n["kcal"] == pytest.approx(380 * 4)
+    assert n["protein_g"] == pytest.approx(13 * 4 + 2 * 3)
+    assert n["fiber_g"] == pytest.approx(40)
+    assert n["kcal_missing"] == 1

@@ -428,12 +428,15 @@ input.invalid { border-color: var(--danger); }
 .food-group + .food-group { margin-top: 18px; }
 .food-group h3 { margin: 0 0 4px; font-size: 1rem; }
 .food-group h3 .count { color: var(--text-3); font-weight: 400; font-size: .85rem; }
-.foods-table { table-layout: fixed; min-width: 690px; }
-.foods-table col.c-brand { width: 20%; }
+/* the fixed columns take ~550px: the minimum width and Brand's share leave Name room */
+.foods-table { table-layout: fixed; min-width: 760px; }
+.foods-table col.c-brand { width: 16%; }
 .foods-table col.c-per { width: 82px; }
 .foods-table col.c-n { width: 52px; }
 .foods-table col.c-act { width: 106px; }
 .foods-table td { overflow-wrap: anywhere; }
+/* pills never spill into Brand: in a narrow Name column they wrap inside it */
+.foods-table td .tag, .foods-table td .meta-pill { max-width: 100%; white-space: normal; }
 .foods-groups.hide-tags .tags { display: none; }
 .sort-btn {
   border: 0; padding: 0; background: none; font: inherit; color: inherit; text-transform: inherit;
@@ -843,6 +846,10 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .carts-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: minmax(600px, 760px) minmax(0, 1fr); }
 @media (max-width: 1299px) {
   .stock-grid, .carts-grid { grid-template-columns: minmax(0, 1fr); }
+  /* one column: Stock balance comes right before In stock, the rest after it */
+  .stock-grid > .groc-side { display: contents; }
+  .stock-grid > .expired-alert, .stock-grid > .tiles { order: -2; }
+  .stock-grid .balance-card { order: -1; }
 }
 
 .trip-form { display: flex; flex-direction: column; gap: 12px; }
@@ -923,6 +930,26 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .trip-total { color: var(--text-2); font-size: .9rem; font-variant-numeric: tabular-nums; }
 .trip-actions #cart-delete { margin-left: auto; }
 .trip-used { display: block; font-size: .75rem; }
+/* Stock balance: the whole stock as one gauge */
+.stock-balance .sum-kcal .sub { margin-bottom: 0; }
+.stock-balance .hint { margin: 8px 0 0; }
+.stock-balance .split { margin-top: 14px; }
+.stock-balance .sum-macros { margin-top: 14px; }
+.stock-balance .split .mini-label { margin: 0 0 4px; }
+.split-bar { position: relative; display: flex; height: 12px; border-radius: 4px; overflow: hidden; background: var(--track); }
+.split-bar > span { height: 100%; }
+.split-bar > i { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: .75; }
+.split-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: .85rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.split-legend b { font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 5px; }
+.split-legend b::before { content: ""; width: 9px; height: 9px; border-radius: 3px; background: var(--c); }
+/* the balance gauge: the middle is "keeps pace with the calories"; it fills toward
+   the left when a macro runs out first, toward the right when some is left over */
+.bal-meter { position: relative; height: 8px; border-radius: 4px; background: var(--track); }
+.bal-meter::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text-2); border-radius: 1px; }
+.bal-meter > span { position: absolute; top: 0; height: 100%; min-width: 3px; border-radius: 4px; background: var(--c); }
+.bal-meter.short > span { background: var(--warn); }
+.bal-word.short { color: var(--warn); font-weight: 600; }
+.bal-key { display: flex; justify-content: space-between; font-size: .78rem; color: var(--text-3); }
 .groc-side { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
 .cart-list { display: flex; flex-direction: column; gap: 10px; }
 .cart { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }

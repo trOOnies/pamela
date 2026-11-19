@@ -665,8 +665,20 @@ class Expiry(BaseModel):
     kind: TakenOutKind = "expired"
 
 
+class StockNutrition(BaseModel):
+    """What everything left in stock adds up to."""
+
+    kcal: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    fiber_g: float
+    kcal_missing: int = Field(description="Foods in stock with no kcal entered (counted as 0)")
+
+
 class Groceries(BaseModel):
     items: list[StockItem]
+    nutrition: StockNutrition
     carts: list[Cart] = Field(description="Newest first")
     expired: list[Expiry] = Field(
         description="What was taken out lately (expired or eaten by others), newest first"

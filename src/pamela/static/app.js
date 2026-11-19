@@ -2245,6 +2245,7 @@ function renderGroceries() {
     inStock.filter((it) => expiryClass(it.next_expiry) === "past").map((it) => ({ food_id: it.food_id, name: it.name, brand: it.brand, expires_on: it.next_expiry }))
   );
   renderStock(inStock);
+  renderStockBalance(g.nutrition);
   renderCarts();
 
   $("#ranout-count").textContent = ranOut.length ? `(${ranOut.length})` : "";
@@ -2329,6 +2330,98 @@ function renderStock(items) {
     </section>`
     )
     .join("");
+}
+
+// kcal per gram of each energy macro, for how the stock's calories split between them
+const ENERGY = [
+  { key: "protein_g", kcal: 4 },
+  { key: "carbs_g", kcal: 4 },
+  { key: "fat_g", kcal: 9 },
+];
+
+/** Shares of energy from protein, carbs and fat in ``o`` (null when there's none). */
+function energySplit(o) {
+  const e = ENERGY.map((m) => (o[m.key] || 0) * m.kcal);
+  const sum = e.reduce((a, b) => a + b, 0);
+  return sum > 0 ? e.map((x) => x / sum) : null;
+}
+
+/** Days a total lasts at a daily target ("–" without one). */
+const fmtDays = (d) => (d == null ? "–" : d >= 100 ? fmt(d) : fmt(d, 1));
+
+/** The whole stock as one gauge, like Day's summary: its calories and days of food,
+ * the protein / carbs / fat energy split against the targets', and each macro's days
+ * of food against the calories' (short, balanced, plenty). */
+function renderStockBalance(n) {
+  const box = $("#stock-balance");
+  if (!n.kcal && !ENERGY.some((m) => n[m.key]) && !n.fiber_g) {
+    box.innerHTML = `<p class="empty-note">Nothing in stock yet.</p>`;
+    return;
+  }
+  const today = todayISO();
+  const t = Object.fromEntries((state.targets ?? []).map((x) => [x.key, targetOn(x.periods, today)]));
+  const days = (key) => (t[key] ? n[key] / t[key] : null);
+  const kcalDays = n.kcal > 0 ? days("kcal") : null;
+
+  const split = energySplit(n);
+  const goal = energySplit(t);
+  let splitHtml = "";
+  if (split) {
+    const macros = ENERGY.map((e) => MACROS.find((m) => m.key === e.key));
+    const segs = split.map((p, i) => `<span style="width:${p * 100}%;background:${macros[i].color}"></span>`).join("");
+    let ticks = "";
+    if (goal) {
+      let at = 0;
+      for (const p of goal.slice(0, -1)) {
+        at += p;
+        ticks += `<i style="left:${at * 100}%"></i>`;
+      }
+    }
+    const pct = (p) => `${Math.round(p * 100)}%`;
+    const legend = macros
+      .map((m, i) => `<span style="--c:${m.color}"><b>${m.label}</b> ${pct(split[i])}${goal ? ` <small>of ${pct(goal[i])}</small>` : ""}</span>`)
+      .join("");
+    splitHtml = `<div class="split">
+      <div class="mini-label">Energy from${goal ? ` <small>(ticks: your targets)</small>` : ""}</div>
+      <div class="split-bar" role="img" aria-label="Energy: ${macros.map((m, i) => `${m.label} ${pct(split[i])}`).join(", ")}">${segs}${ticks}</div>
+      <div class="split-legend">${legend}</div>
+    </div>`;
+  }
+
+  const rows = MACROS.map((m) => {
+    const d = days(m.key);
+    let gauge = "";
+    let word = "";
+    if (d != null && kcalDays) {
+      const ratio = d / kcalDays;
+      const pos = Math.max(-1, Math.min(1, Math.log2(ratio))); // half … double the calories' days
+      const bal = ratio < 0.8 ? "short" : ratio > 1.25 ? "plenty" : "balanced";
+      word = ` · <span class="bal-word ${bal}">${bal}</span>`;
+      const from = 50 + Math.min(0, pos) * 50;
+      gauge = `<div class="bal-meter ${bal}" role="meter" aria-label="${m.label} against calories" aria-valuemin="0.5" aria-valuemax="2" aria-valuenow="${ratio.toFixed(2)}"
+        title="${fmtDays(d)} days of ${m.label.toLowerCase()} for ${fmtDays(kcalDays)} days of calories"><span style="left:${from}%;width:${Math.abs(pos) * 50}%"></span></div>`;
+    }
+    return `
+      <div class="macro-row" style="--c:${m.color}">
+        <div class="lbl"><b>${m.label}</b>
+          <span class="val">${fmt(n[m.key])} g${d != null ? ` · ${fmtDays(d)} days` : ""}${word}</span></div>
+        ${gauge}
+      </div>`;
+  }).join("");
+
+  const sub = kcalDays != null ? `≈ ${fmtDays(kcalDays)} days at ${fmt(t.kcal)} kcal a day` : "no kcal target set";
+  const missing = n.kcal_missing
+    ? `<p class="hint"><span class="warn-kcal">⚠</span> ${n.kcal_missing === 1 ? "1 food has" : `${n.kcal_missing} foods have`} no kcal entered: counted as 0</p>`
+    : "";
+  box.innerHTML = `
+    <div class="sum-kcal">
+      <div class="big">${fmt(n.kcal)} <small>kcal in stock</small></div>
+      <div class="sub">${sub}</div>
+    </div>
+    ${missing}
+    ${splitHtml}
+    <div class="sum-macros">${rows}</div>
+    ${kcalDays ? `<p class="hint bal-key"><span>◀ runs out first</span><span>balanced</span><span>left over ▶</span></p>` : ""}`;
 }
 
 const CARTS_PAGE = 8;
