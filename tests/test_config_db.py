@@ -247,3 +247,37 @@ def test_migration_21_keeps_each_meals_usual_meal(tmp_path, monkeypatch):
         {"name": "Oats", "default_meals": '["Breakfast"]'},
         {"name": "Anytime", "default_meals": "[]"},
     ]
+
+
+def test_entries_from_a_saved_meal_become_meal_logs(tmp_path):
+    """Migration 26 groups entries already logged from a saved meal by day and meal."""
+    path = tmp_path / "old.sqlite3"
+    conn = db.connect(path)
+    for i, script in enumerate(db.MIGRATIONS[:25], start=1):
+        conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {i};\nCOMMIT;")
+    conn.execute("INSERT INTO saved_meals (id, name) VALUES (1, 'Porridge')")
+    rows = [
+        ("2026-01-01", "Breakfast", 1), ("2026-01-01", "Breakfast", 1),
+        ("2026-01-01", "Lunch", 1), ("2026-01-02", "Breakfast", 1),
+        ("2026-01-01", "Breakfast", None),
+    ]
+    conn.executemany(
+        "INSERT INTO food_entries (day, meal, name, saved_meal_id) VALUES (?, ?, 'x', ?)", rows
+    )
+    conn.commit()
+    conn.close()
+
+    assert db.migrate(path) == len(db.MIGRATIONS)
+    conn = db.connect(path)
+    logs = conn.execute("SELECT * FROM meal_logs ORDER BY day, meal").fetchall()
+    assert [(r["day"], r["meal"], r["name"]) for r in logs] == [
+        ("2026-01-01", "Breakfast", "Porridge"),
+        ("2026-01-01", "Lunch", "Porridge"),
+        ("2026-01-02", "Breakfast", "Porridge"),
+    ]
+    got = [r["meal_log_id"] for r in conn.execute("SELECT * FROM food_entries ORDER BY id")]
+    assert got == [logs[0]["id"], logs[0]["id"], logs[1]["id"], logs[2]["id"], None]
+    # deleting a log deletes its entries
+    conn.execute("DELETE FROM meal_logs WHERE id = ?", (logs[0]["id"],))
+    assert conn.execute("SELECT COUNT(*) AS n FROM food_entries").fetchone()["n"] == 3
+    conn.close()

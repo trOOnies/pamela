@@ -782,6 +782,10 @@
           <p>Switch to <b>Saved meal</b> and pick one. Its foods show up as a <i>draft</i>:
             change amounts, remove things, add extras. Nothing is logged until you press <b>Log</b>,
             and the saved meal itself stays exactly as it was.</p>
+          <p>Once logged, it shows in the log as one group: ⭐ its name, how many foods, and their
+            totals, with its foods under it. <b>▾</b> folds them away, and <b>✕</b> on the group
+            deletes the whole meal at once (after asking), putting back what it took from your
+            stock. You can still change or delete its foods one by one.</p>
           <p>🛒 Finishing a food with this meal? <i>All that's left</i>, under its amount, sets it to
             exactly what's left of it in your stock (minus what the draft's other rows of it use).</p>
 
@@ -792,8 +796,8 @@
           <p>Click an amount to change it (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels).
             <b>+ add</b> logs straight into that meal, <b>☆ save</b> keeps its foods as a saved meal,
             and <b>✕</b> deletes a row.</p>
-          <p>🔗 next to a row opens where it came from: the meal in the Meals tab if you logged it
-            from one, otherwise the food in the Foods tab. Quick adds have no link.</p>
+          <p>🔗 next to a row opens where it came from: the food in the Foods tab, or, on a logged
+            meal's group, the meal in the Meals tab. Quick adds have no link.</p>
 
           <h3 id="help-day-checkin">💭 Check-in</h3>
           <p>👟 Steps, 😴 hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>),
@@ -997,7 +1001,7 @@
           <p>🗂️ The <b>New sector</b> form is at the very bottom of the page.</p>
           <p>🫙 <b>Recently ran out.</b> Above the <b>New sector</b> form: the foods you had in
             stock in the last 30 days and have none of now, newest first, with the day the last of
-            it went and the sector it goes back to when you buy it again.</p>
+            it went and the sector the last of it was eaten from.</p>
           <p>🔍 <b>Search the Fridge.</b> The box on top keeps, in every sector and in <i>Not in a
             sector</i>, only the foods whose name or brand has all the words you type (accents don't matter). Sectors with no match are hidden
             while you search.</p>
@@ -1007,17 +1011,19 @@
             one.</p>
           <p>✂️ <b>One food, many sectors.</b> When you move or put in a food, say how much (all of it,
             half, one pack or any amount). Move part of it and it's in both sectors, each showing its
-            share (<i>300 ml of 1,000</i>). The sector that holds the rest is its <i>main</i> one: new
-            purchases of it land there. Moving all of the main sector's share makes the other sector the
-            main one. ✕ on a share sends it back to the main sector.</p>
-          <p>🍽️ What you log in Day comes out of the sectors in their order (see <b>Priority</b>). When
-            you throw some out, or someone else eats it, it comes out of the main sector first, then
-            from the other shares, newest first. If that's not what happened, move it to match.</p>
-          <p>🔁 A food that runs out leaves its sectors (it shows up in <b>Recently ran out</b>), but
-            Pamela remembers its main sector, so it's back in its place as soon as you buy it again.</p>
+            share (<i>300 ml of 1,000</i>). ✕ on a share sends it to <i>Not in a sector</i>.</p>
+          <p>🛒 <b>Buying more.</b> Food you buy lands in <i>Not in a sector</i>, even if some of it
+            is already in a sector: Pamela doesn't know where you put the new pack until you tell it.</p>
+          <p>🍽️ What you log in Day comes out of the sectors in their order (see <b>Priority</b>).
+            Delete that entry, or lower its amount, and it goes back to the sectors it came from.
+            When you throw some out, or someone else eats it, it comes out of <i>Not in a sector</i>
+            first, then from the shares, newest first. If that's not what happened, move it to match.</p>
+          <p>🔁 A food that runs out leaves its sectors (it shows up in <b>Recently ran out</b>).</p>
           <p>✅ <b>Checking.</b> Tick each food once you've seen it where Pamela says it is. The count at
             the top shows how far you are, and a sector gets a green border when all of it is ticked. Ticks are
-            remembered in this browser until you press <b>Start a new check</b>. Something missing or
+            remembered in this browser until you press <b>Start a new check</b>. When the amount of a
+            ticked food in its sector changes (you ate some, threw some out, moved it), its tick goes,
+            so you check it again. Something missing or
             gone off? Fix it in Stock (<b>Take out</b>) or by logging what you ate.</p>
         </section>
 

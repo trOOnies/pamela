@@ -557,6 +557,70 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE foods ADD COLUMN b12_ug REAL CHECK (b12_ug >= 0);
     """,
+    # 26: each time a saved meal is logged, its entries are grouped under one meal log,
+    # so the Day tab shows (and deletes) the meal as a whole. The log keeps the meal's
+    # name as it was, so it outlives the saved meal being renamed or deleted. Deleting
+    # the log deletes its entries. Entries already logged from a meal are grouped by
+    # day, meal and saved meal.
+    """
+    CREATE TABLE meal_logs (
+        id            INTEGER PRIMARY KEY,
+        day           TEXT    NOT NULL,         -- YYYY-MM-DD
+        meal          TEXT    NOT NULL,
+        saved_meal_id INTEGER REFERENCES saved_meals (id) ON DELETE SET NULL,
+        name          TEXT    NOT NULL,
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX meal_logs_day ON meal_logs (day);
+    ALTER TABLE food_entries ADD COLUMN meal_log_id INTEGER
+        REFERENCES meal_logs (id) ON DELETE CASCADE;
+    CREATE INDEX food_entries_meal_log ON food_entries (meal_log_id);
+    INSERT INTO meal_logs (day, meal, saved_meal_id, name, created_at)
+    SELECT e.day, e.meal, e.saved_meal_id, sm.name, MIN(e.created_at)
+      FROM food_entries e JOIN saved_meals sm ON sm.id = e.saved_meal_id
+     GROUP BY e.day, e.meal, e.saved_meal_id;
+    UPDATE food_entries SET meal_log_id = (
+        SELECT l.id FROM meal_logs l WHERE l.day = food_entries.day
+           AND l.meal = food_entries.meal AND l.saved_meal_id = food_entries.saved_meal_id)
+     WHERE saved_meal_id IS NOT NULL;
+    """,
+    # 27: no more main places: every place holds a set amount, so food bought lands in no
+    # sector until it's put away. A main place keeps what it held (the stock not set
+    # aside elsewhere); an emptied one, only remembered for the next purchase, goes.
+    # Entries remember which sectors they ate from (entry_places), so deleting one, or
+    # eating less, puts the food back there; older entries give it back to no sector.
+    """
+    CREATE TABLE fridge_places_new (
+        id          INTEGER PRIMARY KEY,
+        food_id     INTEGER NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+        sector_id   INTEGER NOT NULL REFERENCES fridge_sectors (id) ON DELETE CASCADE,
+        quantity    REAL    NOT NULL CHECK (quantity > 0),   -- in the food's unit
+        UNIQUE (food_id, sector_id)
+    );
+    INSERT INTO fridge_places_new (id, food_id, sector_id, quantity)
+    SELECT id, food_id, sector_id, q FROM (
+        SELECT p.id, p.food_id, p.sector_id, COALESCE(p.quantity, MAX(0,
+                   COALESCE((SELECT SUM(MAX(l.quantity - COALESCE(
+                       (SELECT SUM(u.quantity) FROM stock_uses u WHERE u.lot_id = l.id), 0), 0))
+                    FROM stock_lots l WHERE l.food_id = p.food_id), 0)
+                 - COALESCE((SELECT SUM(o.quantity) FROM fridge_places o
+                    WHERE o.food_id = p.food_id AND o.quantity IS NOT NULL), 0))) AS q
+        FROM fridge_places p
+    ) WHERE q > 1e-6;
+    DROP TABLE fridge_places;
+    ALTER TABLE fridge_places_new RENAME TO fridge_places;
+    CREATE INDEX fridge_places_sector ON fridge_places (sector_id);
+
+    CREATE TABLE entry_places (
+        id          INTEGER PRIMARY KEY,
+        entry_id    INTEGER NOT NULL REFERENCES food_entries (id) ON DELETE CASCADE,
+        food_id     INTEGER NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+        sector_id   INTEGER NOT NULL REFERENCES fridge_sectors (id) ON DELETE CASCADE,
+        quantity    REAL    NOT NULL CHECK (quantity > 0)
+    );
+    CREATE INDEX entry_places_entry ON entry_places (entry_id);
+    CREATE INDEX entry_places_food ON entry_places (food_id);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

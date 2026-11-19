@@ -858,9 +858,18 @@ def _entry_values(entry: EntryIn, conn: sqlite3.Connection, config: AppConfig) -
 
 _ENTRY_SELECT = """
     SELECT e.*, COALESCE((SELECT SUM(quantity) FROM stock_uses WHERE entry_id = e.id), 0)
-           AS from_stock, sm.name AS saved_meal_name
+           AS from_stock, sm.name AS saved_meal_name, ml.name AS meal_log_name
     FROM food_entries e LEFT JOIN saved_meals sm ON sm.id = e.saved_meal_id
+    LEFT JOIN meal_logs ml ON ml.id = e.meal_log_id
 """
+
+
+def _drop_empty_meal_logs(conn: sqlite3.Connection) -> None:
+    """A meal log whose entries were all deleted (or moved out of it) goes too."""
+    conn.execute(
+        "DELETE FROM meal_logs WHERE id NOT IN "
+        "(SELECT meal_log_id FROM food_entries WHERE meal_log_id IS NOT NULL)"
+    )
 
 
 def _entry_row(conn: sqlite3.Connection, entry_id: int) -> dict:
@@ -888,12 +897,14 @@ def create_entry(entry: EntryIn, conn: Conn, config: Config) -> dict:
 
 @router.post("/entries/batch", response_model=list[Entry], status_code=status.HTTP_201_CREATED)
 def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict]:
-    """Log several foods into one meal, all or nothing."""
+    """Log several foods into one meal, all or nothing. Logged from a saved meal, they
+    are grouped under a new meal log, which the Day tab shows (and deletes) as one."""
     sm_id = batch.saved_meal_id
-    if sm_id is not None and not conn.execute(
-        "SELECT 1 FROM saved_meals WHERE id = ?", (sm_id,)
-    ).fetchone():
-        raise HTTPException(UNPROCESSABLE, "saved meal not found")
+    sm = None
+    if sm_id is not None:
+        sm = conn.execute("SELECT name FROM saved_meals WHERE id = ?", (sm_id,)).fetchone()
+        if sm is None:
+            raise HTTPException(UNPROCESSABLE, "saved meal not found")
     ids = [
         _insert_entry(
             conn,
@@ -908,28 +919,50 @@ def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict
         )
         for it in batch.items
     ]
-    if sm_id is not None:
+    if sm is not None:
+        log_id = conn.execute(
+            "INSERT INTO meal_logs (day, meal, saved_meal_id, name) VALUES (?, ?, ?, ?)",
+            (batch.day.isoformat(), batch.meal, sm_id, sm["name"]),
+        ).lastrowid
         conn.executemany(
-            "UPDATE food_entries SET saved_meal_id = ? WHERE id = ?", [(sm_id, i) for i in ids]
+            "UPDATE food_entries SET saved_meal_id = ?, meal_log_id = ? WHERE id = ?",
+            [(sm_id, log_id, i) for i in ids],
         )
     return [_entry_row(conn, i) for i in ids]
 
 
 @router.put("/entries/{entry_id}", response_model=Entry)
 def update_entry(entry_id: int, entry: EntryIn, conn: Conn, config: Config) -> dict:
-    _entry_row(conn, entry_id)
+    """Moved to another day or meal, an entry leaves the meal log it was part of."""
+    old = _entry_row(conn, entry_id)
     values = _entry_values(entry, conn, config)
+    if (values["day"], values["meal"]) != (old["day"], old["meal"]):
+        values["meal_log_id"] = None
     sets = ", ".join(f"{k} = ?" for k in values)
     conn.execute(f"UPDATE food_entries SET {sets} WHERE id = ?", (*values.values(), entry_id))
     _take_stock(conn, entry_id, values)
+    _drop_empty_meal_logs(conn)
     return _entry_row(conn, entry_id)
 
 
 @router.delete("/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_entry(entry_id: int, conn: Conn) -> Response:
-    """What the entry took from Groceries goes back there."""
+    """What the entry took from Groceries goes back there, and to the Fridge's sectors
+    it came from."""
+    _give_back_entries(conn, "id = ?", (entry_id,))
     if conn.execute("DELETE FROM food_entries WHERE id = ?", (entry_id,)).rowcount == 0:
         raise _not_found("entry")
+    _drop_empty_meal_logs(conn)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/meal-logs/{meal_log_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_meal_log(meal_log_id: int, conn: Conn) -> Response:
+    """A saved meal as it was logged on a day, with all of its entries. What they took
+    from Groceries goes back there, and to the Fridge's sectors they came from."""
+    _give_back_entries(conn, "meal_log_id = ?", (meal_log_id,))
+    if conn.execute("DELETE FROM meal_logs WHERE id = ?", (meal_log_id,)).rowcount == 0:
+        raise _not_found("meal log")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -953,19 +986,25 @@ def _open_lots(conn: sqlite3.Connection, food_id: int, day: str) -> list[dict]:
 def _take_stock(conn: sqlite3.Connection, entry_id: int, values: dict) -> None:
     """(Re)takes what a logged entry ate from Groceries, as far as there is any. An
     entry eating more than is left simply takes what's there; food eaten out takes
-    nothing (and gives back what it took, when an entry is changed to eaten out)."""
+    nothing (and gives back what it took, when an entry is changed to eaten out).
+
+    What it eats on top of before leaves the Fridge by sector priority; what it gives
+    back (eating less now) goes back to the sectors it came from."""
     food_id = values["food_id"]
     _settle_places(conn)
+    # changed to another food: what it took of the old one goes back where it was
+    _give_back(conn, "entry_id = ? AND food_id IS NOT ?", (entry_id, food_id))
     places = _places(conn).get(food_id, []) if food_id is not None else []
     had = _entry_took(conn, entry_id, food_id)  # this entry's share before the change
     conn.execute("DELETE FROM stock_uses WHERE entry_id = ?", (entry_id,))
     need = values["quantity"] or 0
-    if food_id is None or need <= 0 or values["eaten_out"]:
-        return
-    _take_from_lots(conn, entry_id, food_id, values["day"], need)
-    # what it eats on top of before leaves the Fridge by sector priority; what it gives
-    # back (eating less now) goes to the food's main place, like a new purchase
-    _eat_from_places(conn, places, _entry_took(conn, entry_id, food_id) - had)
+    if food_id is not None and need > 0 and not values["eaten_out"]:
+        _take_from_lots(conn, entry_id, food_id, values["day"], need)
+    change = _entry_took(conn, entry_id, food_id) - had
+    if change > EPS:
+        _eat_from_places(conn, entry_id, places, change)
+    elif change < -EPS:
+        _give_back_part(conn, entry_id, had, -change)
     _settle_places(conn)
 
 
@@ -979,49 +1018,82 @@ def _entry_took(conn: sqlite3.Connection, entry_id: int, food_id: int | None) ->
     return row["q"]
 
 
-def _eat_from_places(conn: sqlite3.Connection, places: list[dict], qty: float) -> None:
+def _eat_from_places(
+    conn: sqlite3.Connection, entry_id: int, places: list[dict], qty: float
+) -> None:
     """Takes ``qty`` eaten of a food out of its places (as they were before eating it),
-    the first sector in the Fridge first and what's in no sector last.
-
-    A main place, or what's in no sector, holds whatever its food's set amounts leave
-    over, so eating from it needs no change; eating from a set amount lowers it."""
+    the first sector in the Fridge first and what's in no sector last, and has the entry
+    remember how much it took from each sector."""
     if qty <= EPS or not places:
         return
     pos = {r["id"]: r["position"] for r in conn.execute("SELECT id, position FROM fridge_sectors")}
     order = sorted(
-        places,
-        key=lambda pl: (
-        pl["sector_id"] is None,
-        pos.get(pl["sector_id"], 0),
-        pl["sector_id"] or 0,
-    ),
+        (pl for pl in places if pl["id"] is not None),
+        key=lambda pl: (pos.get(pl["sector_id"], 0), pl["sector_id"]),
     )
-    left = sum(pl["amount"] for pl in places) - qty  # what's still there once eaten
-    emptied = []
     for pl in order:
         take = min(pl["amount"], qty)
-        if take > EPS and pl["id"] is not None and pl["quantity"] is not None:
-            if take >= pl["amount"] - EPS:
-                emptied.append(pl)
-            else:
-                conn.execute(
-                    "UPDATE fridge_places SET quantity = ? WHERE id = ?",
-                    (pl["amount"] - take, pl["id"]),
-                )
+        if take <= EPS:
+            continue
+        _take_from_place(conn, pl, take)
+        conn.execute(
+            "INSERT INTO entry_places (entry_id, food_id, sector_id, quantity) VALUES (?, ?, ?, ?)",
+            (entry_id, pl["food_id"], pl["sector_id"], take),
+        )
         qty -= take
         if qty <= EPS:
             break
-    if not emptied:
-        return
-    # a food eaten up with no main place keeps its oldest one as main, so it goes back
-    # there when bought again (as _settle_places does)
-    keep = None
-    if left <= EPS and not any(pl["id"] is not None and pl["quantity"] is None for pl in places):
-        keep = min(emptied, key=lambda pl: pl["id"])
-        conn.execute("UPDATE fridge_places SET quantity = NULL WHERE id = ?", (keep["id"],))
-    for pl in emptied:
-        if pl is not keep:
-            conn.execute("DELETE FROM fridge_places WHERE id = ?", (pl["id"],))
+
+
+def _add_to_place(conn: sqlite3.Connection, food_id: int, sector_id: int, qty: float) -> None:
+    conn.execute(
+        """INSERT INTO fridge_places (food_id, sector_id, quantity) VALUES (?, ?, ?)
+           ON CONFLICT (food_id, sector_id) DO UPDATE SET quantity = quantity + ?""",
+        (food_id, sector_id, qty, qty),
+    )
+
+
+def _give_back(conn: sqlite3.Connection, where: str, params: tuple) -> None:
+    """Puts back in their sectors all that the entry_places matching ``where`` took (the
+    entries are being deleted, or no longer eat that food)."""
+    rows = conn.execute(
+        f"SELECT food_id, sector_id, SUM(quantity) AS q FROM entry_places WHERE {where} "
+        "GROUP BY food_id, sector_id",
+        params,
+    ).fetchall()
+    for r in rows:
+        _add_to_place(conn, r["food_id"], r["sector_id"], r["q"])
+    conn.execute(f"DELETE FROM entry_places WHERE {where}", params)
+
+
+def _give_back_entries(conn: sqlite3.Connection, where: str, params: tuple = ()) -> None:
+    """Before deleting the entries matching ``where``: what they took from the Fridge's
+    sectors goes back there (the rest of what they ate goes back to no sector)."""
+    _give_back(
+        conn, f"entry_id IN (SELECT id FROM food_entries WHERE {where})", params
+    )
+
+
+def _give_back_part(conn: sqlite3.Connection, entry_id: int, had: float, qty: float) -> None:
+    """An entry that took ``had`` now eats ``qty`` less: the reverse of eating it. What it
+    took from no sector goes back first (it was eaten last), then the sectors, the last
+    one it ate from first."""
+    rows = conn.execute(
+        "SELECT * FROM entry_places WHERE entry_id = ? ORDER BY id DESC", (entry_id,)
+    ).fetchall()
+    qty -= max(0.0, had - sum(r["quantity"] for r in rows))
+    for r in rows:
+        if qty <= EPS:
+            break
+        back = min(r["quantity"], qty)
+        _add_to_place(conn, r["food_id"], r["sector_id"], back)
+        if back >= r["quantity"] - EPS:
+            conn.execute("DELETE FROM entry_places WHERE id = ?", (r["id"],))
+        else:
+            conn.execute(
+                "UPDATE entry_places SET quantity = ? WHERE id = ?", (r["quantity"] - back, r["id"])
+            )
+        qty -= back
 
 
 def _take_from_lots(
@@ -1156,7 +1228,6 @@ def read_groceries(
                 "name": sectors[pl["sector_id"]]["name"],
                 "emoji": sectors[pl["sector_id"]]["emoji"],
                 "quantity": pl["amount"],
-                "main": pl["quantity"] is None,
             }
             for pl in places
             if pl["sector_id"] is not None and pl["amount"] > EPS
@@ -1459,14 +1530,17 @@ def delete_activity_type(type_id: int, conn: Conn) -> Response:
 
 # --- fridge ------------------------------------------------------------------
 #
-# A food's places: at most one main place (quantity NULL), which holds whatever isn't
-# elsewhere, and other places with a set amount each. When there's less left than the
-# set amounts add up to (it was eaten or thrown out), the newest places give way first.
+# A food's places: a set amount in each sector it's in. Whatever stock isn't in one is
+# in no sector, which is where food bought goes until it's put away. Eating takes from
+# the sectors by priority (and entries remember from which, to put it back if they're
+# deleted); throwing out takes from no sector first, then from the newest places.
 
 
 def _places(conn: sqlite3.Connection) -> dict[int, list[dict]]:
     """Every food's places, oldest first, with how much is in each (``amount``), and a
-    last place ``None`` (no sector) holding what's left over when there's no main one."""
+    last place ``None`` (no sector) holding the stock that isn't in one. When there's
+    less stock than its places hold, what's in no sector is gone first, then the newest
+    places."""
     stock = _stock_left(conn)
     rows = conn.execute("SELECT * FROM fridge_places ORDER BY id").fetchall()
     by_food: dict[int, list[dict]] = {}
@@ -1478,42 +1552,33 @@ def _places(conn: sqlite3.Connection) -> dict[int, list[dict]]:
     for food_id, places in by_food.items():
         left = stock.get(food_id, 0)
         for pl in places:
-            if pl["quantity"] is not None:
-                pl["amount"] = min(pl["quantity"], left)
-                left -= pl["amount"]
-        main = next((pl for pl in places if pl["quantity"] is None), None)
-        if main is not None:
-            main["amount"] = left
-        elif left > EPS:
-            places.append({"id": None, "sector_id": None, "quantity": None, "amount": left})
+            pl["amount"] = min(pl["quantity"], left)
+            left -= pl["amount"]
+        if left > EPS:
+            none = {"id": None, "food_id": food_id, "sector_id": None, "quantity": None}
+            places.append(none | {"amount": left})
         out[food_id] = places
     return out
 
 
 def _settle_places(conn: sqlite3.Connection) -> None:
-    """Brings set amounts down to what's really there, so food bought later goes to the
-    main place instead of refilling them. A food whose places all emptied keeps its
-    oldest one as its main place, so it goes back there when bought again."""
+    """Brings places down to what's really there (after food was thrown out, or a cart
+    changed), and drops the empty ones."""
     for places in _places(conn).values():
-        has_main = any(pl["quantity"] is None and pl["id"] is not None for pl in places)
         for pl in places:
-            if pl["id"] is None or pl["quantity"] is None or pl["amount"] >= pl["quantity"] - EPS:
+            if pl["id"] is None or pl["amount"] >= pl["quantity"] - EPS:
                 continue
             if pl["amount"] > EPS:
                 conn.execute(
                     "UPDATE fridge_places SET quantity = ? WHERE id = ?", (pl["amount"], pl["id"])
                 )
-            elif not has_main:
-                conn.execute("UPDATE fridge_places SET quantity = NULL WHERE id = ?", (pl["id"],))
-                has_main = True
             else:
                 conn.execute("DELETE FROM fridge_places WHERE id = ?", (pl["id"],))
 
 
 def _fridge(conn: sqlite3.Connection) -> dict:
-    """Every sector with the foods that have something there (one that ran out is only
-    remembered in its main place, so it goes back there when bought again), the stock
-    that isn't in a sector, and what ran out lately."""
+    """Every sector with the foods that have something there, the stock that isn't in a
+    sector (where food bought goes), and what ran out lately."""
     _settle_places(conn)
     sectors = conn.execute("SELECT * FROM fridge_sectors ORDER BY position, id").fetchall()
     expiry = {
@@ -1532,7 +1597,6 @@ def _fridge(conn: sqlite3.Connection) -> dict:
             "food_id": food_id,
             **{k: f[k] for k in ("name", "brand", "unit", "package_qty", "food_group")},
             "quantity": pl["amount"],
-            "main": pl["quantity"] is None and pl["sector_id"] is not None,
             "places": n,
             "in_stock": stock.get(food_id, 0),
             "next_expiry": expiry.get(food_id),
@@ -1544,9 +1608,6 @@ def _fridge(conn: sqlite3.Connection) -> dict:
     by_sector: dict[int | None, list[dict]] = {s["id"]: [] for s in sectors}
     by_sector[None] = []
     for food_id, places in _places(conn).items():
-        # only what's really there: a food that ran out keeps its main place (it goes
-        # back there when bought again) but isn't listed in it, nor is an emptied main
-        # place of a food that's still in other sectors
         shown = [pl for pl in places if pl["amount"] > EPS]
         n = sum(pl["sector_id"] is not None for pl in shown)
         for pl in shown:
@@ -1569,10 +1630,10 @@ def _recently_out(
     then), newest first."""
     since = (dt.date.today() - dt.timedelta(days=RECENTLY_OUT_DAYS)).isoformat()
     by_id = {s["id"]: s for s in sectors}
-    main = {
-        r["food_id"]: by_id.get(r["sector_id"])
-        for r in conn.execute("SELECT food_id, sector_id FROM fridge_places WHERE quantity IS NULL")
-    }
+    # the sector the last of it was eaten from, if any
+    last_in: dict[int, dict] = {}
+    for r in conn.execute("SELECT food_id, sector_id FROM entry_places ORDER BY id DESC"):
+        last_in.setdefault(r["food_id"], by_id[r["sector_id"]])
     rows = conn.execute(
         """SELECT l.food_id, MAX(COALESCE(
                    (SELECT MAX(u.day) FROM stock_uses u WHERE u.lot_id = l.id), c.bought_on
@@ -1585,7 +1646,7 @@ def _recently_out(
     for r in rows:
         if r["food_id"] in stock:
             continue  # still has some
-        f, sec = foods[r["food_id"]], main.get(r["food_id"])
+        f, sec = foods[r["food_id"]], last_in.get(r["food_id"])
         out.append(
             {
                 "food_id": r["food_id"],
@@ -1637,8 +1698,7 @@ def update_sector(sector_id: int, sector: FridgeSectorIn, conn: Conn) -> dict:
 
 @router.delete("/fridge/sectors/{sector_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_sector(sector_id: int, conn: Conn) -> Response:
-    """What was in it goes back to each food's main place, or to no sector; nothing
-    leaves Foods or Groceries."""
+    """What was in it goes to no sector; nothing leaves Foods or Groceries."""
     if conn.execute("DELETE FROM fridge_sectors WHERE id = ?", (sector_id,)).rowcount == 0:
         raise _not_found("sector")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -1658,11 +1718,7 @@ def order_sectors(order: FridgeOrderIn, conn: Conn) -> dict:
 
 @router.post("/fridge/move", response_model=Fridge)
 def move_food(move: FridgeMoveIn, conn: Conn) -> dict:
-    """Moves some or all of a food from one sector (or none) to another (or none).
-
-    Moving all of its main place moves the main place; moving part of it sets that
-    amount aside in the other sector. Taking it out of a sector (to none) sends it
-    back to its main place, or out of every sector when that's the one it leaves."""
+    """Moves some or all of a food from one sector (or none) to another (or none)."""
     if not conn.execute("SELECT 1 FROM foods WHERE id = ?", (move.food_id,)).fetchone():
         raise _not_found("food")
     for sid in (move.from_sector_id, move.to_sector_id):
@@ -1673,59 +1729,17 @@ def move_food(move: FridgeMoveIn, conn: Conn) -> dict:
     _settle_places(conn)
     places = _places(conn).get(move.food_id, [])
     src = next((pl for pl in places if pl["sector_id"] == move.from_sector_id), None)
-    if src is None:
+    if src is None or src["amount"] <= EPS:
         raise HTTPException(UNPROCESSABLE, "it isn't there")
     there = src["amount"]
     qty = there if move.quantity is None else move.quantity
     if qty > there + EPS:
         raise HTTPException(UNPROCESSABLE, f"there are only {there:g} of it there")
-    whole = qty >= there - EPS
-    src_main = src["quantity"] is None  # its main place, or what's in no sector
-    dst = next(
-        (pl for pl in places if pl["sector_id"] == move.to_sector_id and pl["id"] is not None),
-        None,
-    )
-
-    def set_main(sector_id: int) -> None:
-        conn.execute(
-            "DELETE FROM fridge_places WHERE food_id = ? AND quantity IS NULL", (move.food_id,)
-        )
-        conn.execute(
-            """INSERT INTO fridge_places (food_id, sector_id, quantity) VALUES (?, ?, NULL)
-               ON CONFLICT (food_id, sector_id) DO UPDATE SET quantity = NULL""",
-            (move.food_id, sector_id),
-        )
-
-    def add_to(sector_id: int, amount: float) -> None:
-        if dst is not None and dst["quantity"] is None:
-            return  # its main place takes whatever isn't elsewhere
-        conn.execute(
-            """INSERT INTO fridge_places (food_id, sector_id, quantity) VALUES (?, ?, ?)
-               ON CONFLICT (food_id, sector_id) DO UPDATE SET quantity = quantity + ?""",
-            (move.food_id, sector_id, amount, amount),
-        )
-
-    if move.to_sector_id is None:
-        # out of the sector: back to the main place, or out of every sector
-        if src_main and not whole:
-            raise HTTPException(
-                UNPROCESSABLE, "part of its main place can only go to another sector"
-            )
-        if src_main:
-            conn.execute(
-                "DELETE FROM fridge_places WHERE food_id = ? AND quantity IS NULL",
-                (move.food_id,),
-            )
-        else:
-            _take_from_place(conn, src, qty)
-    elif src_main:
-        if whole:
-            set_main(move.to_sector_id)
-        else:
-            add_to(move.to_sector_id, qty)
-    else:
+    qty = min(qty, there)
+    if src["id"] is not None:
         _take_from_place(conn, src, qty)
-        add_to(move.to_sector_id, qty)
+    if move.to_sector_id is not None:
+        _add_to_place(conn, move.food_id, move.to_sector_id, qty)
     return _fridge(conn)
 
 
@@ -1882,6 +1896,7 @@ def clear_day(day: dt.date, conn: Conn) -> dict:
     """Everything logged for one day, as if it had never been filled in: food
     entries, activities, the check-in and the note."""
     iso = day.isoformat()
+    _give_back_entries(conn, "day = ?", (iso,))
     counts = {
         key: conn.execute(f"DELETE FROM {table} WHERE day = ?", (iso,)).rowcount
         for key, table in (
@@ -1891,6 +1906,7 @@ def clear_day(day: dt.date, conn: Conn) -> dict:
             ("notes", "day_notes"),
         )
     }
+    _drop_empty_meal_logs(conn)
     return {"counts": counts}
 
 
@@ -1920,6 +1936,8 @@ def wipe(body: WipeIn, conn: Conn) -> dict:
     """Delete whole kinds of tracked data, for good (the Danger Zone)."""
     counts = {}
     for key in dict.fromkeys(body.what):  # once each, in the order given
+        if key == "food_log":
+            _give_back_entries(conn, "1")
         counts[key] = conn.execute(f"DELETE FROM {_WIPE_TABLES[key]}").rowcount
     if "foods" in counts and "saved_meals" not in counts:
         # their items went with the foods: a saved meal left empty goes too
@@ -1928,6 +1946,8 @@ def wipe(body: WipeIn, conn: Conn) -> dict:
         ).rowcount
     if "foods" in counts and "groceries" not in counts:
         counts["groceries"] = _drop_empty_carts(conn)
+    if "food_log" in counts:
+        _drop_empty_meal_logs(conn)
     return {"counts": counts}
 
 

@@ -40,12 +40,9 @@ def move(client, food_id, frm, to, quantity=None, status=200) -> dict:
 
 
 def where(fr) -> dict[str | None, list[tuple]]:
-    """Sector name (None = no sector) -> [(food, amount, main)]."""
-    out = {
-        s["name"]: [(f["name"], f["quantity"], f["main"]) for f in s["foods"]]
-        for s in fr["sectors"]
-    }
-    out[None] = [(f["name"], f["quantity"], f["main"]) for f in fr["unsorted"]]
+    """Sector name (None = no sector) -> [(food, amount)]."""
+    out = {s["name"]: [(f["name"], f["quantity"]) for f in s["foods"]] for s in fr["sectors"]}
+    out[None] = [(f["name"], f["quantity"]) for f in fr["unsorted"]]
     return out
 
 
@@ -55,6 +52,24 @@ def sector(client, name, emoji="") -> int:
     return r.json()["id"]
 
 
+def fridge(client) -> dict[str | None, list[tuple]]:
+    return where(client.get("/api/fridge").json())
+
+
+def log(client, food_id, q, meal="Lunch") -> int:
+    r = client.post(
+        "/api/entries", json={"day": D[1], "meal": meal, "food_id": food_id, "quantity": q}
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def change(client, entry_id, food_id, q, **kw) -> None:
+    body = {"day": D[1], "meal": "Lunch", "food_id": food_id, "quantity": q} | kw
+    r = client.put(f"/api/entries/{entry_id}", json=body)
+    assert r.status_code == 200, r.text
+
+
 def test_sectors_and_moving_whole_foods(client, oats):
     milk = food(client, "Milk", "ml")
     buy(client, oats["id"], 500)
@@ -62,17 +77,17 @@ def test_sectors_and_moving_whole_foods(client, oats):
 
     fr = client.get("/api/fridge").json()
     assert fr["sectors"] == []
-    assert where(fr)[None] == [("Milk", 1000, False), ("Rolled oats", 500, False)]
+    assert where(fr)[None] == [("Milk", 1000), ("Rolled oats", 500)]
 
     door = sector(client, "Door", "🚪")
     pantry = sector(client, "Pantry")
     fr = move(client, milk["id"], None, door)
     assert [s["name"] for s in fr["sectors"]] == ["Door", "Pantry"]  # in the order made
-    assert where(fr)["Door"] == [("Milk", 1000, True)]
-    assert where(fr)[None] == [("Rolled oats", 500, False)]
+    assert where(fr)["Door"] == [("Milk", 1000)]
+    assert where(fr)[None] == [("Rolled oats", 500)]
 
     fr = move(client, milk["id"], door, pantry)
-    assert where(fr)["Door"] == [] and where(fr)["Pantry"] == [("Milk", 1000, True)]
+    assert where(fr)["Door"] == [] and where(fr)["Pantry"] == [("Milk", 1000)]
 
     fr = client.put("/api/fridge/order", json={"ids": [pantry, door]}).json()
     assert [s["name"] for s in fr["sectors"]] == ["Pantry", "Door"]
@@ -82,7 +97,7 @@ def test_sectors_and_moving_whole_foods(client, oats):
     assert r.json()["name"] == "Fridge door" and r.json()["emoji"] == ""
 
     fr = move(client, milk["id"], pantry, None)
-    assert where(fr)[None] == [("Milk", 1000, False), ("Rolled oats", 500, False)]
+    assert where(fr)[None] == [("Milk", 1000), ("Rolled oats", 500)]
 
     move(client, 999, None, door, status=404)
     move(client, milk["id"], None, 999, status=404)
@@ -100,152 +115,206 @@ def test_a_food_split_over_sectors(client):
     )
     move(client, milk["id"], None, shelf)
     fr = move(client, milk["id"], shelf, door, 300)
-    assert where(fr)["Shelf"] == [("Milk", 700, True)]
-    assert where(fr)["Door"] == [("Milk", 300, False)]
+    assert where(fr)["Shelf"] == [("Milk", 700)]
+    assert where(fr)["Door"] == [("Milk", 300)]
     assert fr["sectors"][0]["foods"][0]["places"] == 2
 
     fr = move(client, milk["id"], shelf, door, 100)  # adds to what's there
-    assert where(fr)["Door"] == [("Milk", 400, False)]
+    assert where(fr)["Door"] == [("Milk", 400)]
     fr = move(client, milk["id"], door, freezer, 150)
-    assert where(fr)["Door"] == [("Milk", 250, False)]
-    assert where(fr)["Freezer"] == [("Milk", 150, False)]
+    assert where(fr)["Door"] == [("Milk", 250)]
+    assert where(fr)["Freezer"] == [("Milk", 150)]
     move(client, milk["id"], door, freezer, 251, status=422)  # more than is there
 
-    # taking a part out sends it back to the main place
+    # taking it out of a sector leaves it in no sector, all or part of it
     fr = move(client, milk["id"], freezer, None)
-    assert where(fr)["Shelf"] == [("Milk", 750, True)] and where(fr)["Freezer"] == []
-    move(client, milk["id"], shelf, None, 10, status=422)
+    assert where(fr)["Freezer"] == [] and where(fr)[None] == [("Milk", 150)]
+    fr = move(client, milk["id"], shelf, None, 100)
+    assert where(fr)["Shelf"] == [("Milk", 500)] and where(fr)[None] == [("Milk", 250)]
+    fr = move(client, milk["id"], None, door, 50)
+    assert where(fr)["Door"] == [("Milk", 300)] and where(fr)[None] == [("Milk", 200)]
 
     # Groceries says where it is
     item = client.get("/api/groceries").json()["items"][0]
-    assert [(p["name"], p["quantity"], p["main"]) for p in item["places"]] == [
-        ("Shelf", 750, True),
-        ("Door", 250, False),
+    assert [(p["name"], p["quantity"]) for p in item["places"]] == [
+        ("Shelf", 500),
+        ("Door", 300),
     ]
 
-    # moving all of the main place moves the main place
-    fr = move(client, milk["id"], shelf, door)
-    assert where(fr)["Shelf"] == [] and where(fr)["Door"] == [("Milk", 1000, True)]
 
-
-def test_eating_and_buying_with_a_split_food(client):
+def test_food_bought_goes_to_no_sector(client):
     milk = food(client, "Milk", "ml")
     buy(client, milk["id"], 1000, day=D[5])
     shelf, door = sector(client, "Shelf"), sector(client, "Door")
     move(client, milk["id"], None, shelf)
     move(client, milk["id"], shelf, door, 400)
-
-    def drink(q):
-        r = client.post(
-            "/api/entries",
-            json={"day": D[1], "meal": "Breakfast", "food_id": milk["id"], "quantity": q},
-        )
-        assert r.status_code == 201
-
-    drink(500)  # the main place empties first, then the set amount gives way
-    fr = client.get("/api/fridge").json()
-    assert where(fr)["Shelf"] == [("Milk", 100, True)] and where(fr)["Door"] == [
-        ("Milk", 400, False)
-    ]
-    drink(300)
-    fr = client.get("/api/fridge").json()
-    # the emptied main place isn't listed, but it's still where new cartons go
-    assert where(fr)["Shelf"] == [] and where(fr)["Door"] == [("Milk", 200, False)]
-    # a new carton goes to the main place, not back to the door
+    log(client, milk["id"], 500)  # the Shelf comes first
+    assert fridge(client)["Shelf"] == [("Milk", 100)]
+    assert fridge(client)["Door"] == [("Milk", 400)]
+    # a new carton isn't in a sector until it's put away, even where the milk already is
     buy(client, milk["id"], 1000, day=D[1])
-    fr = client.get("/api/fridge").json()
-    assert where(fr)["Shelf"] == [("Milk", 1000, True)] and where(fr)["Door"] == [
-        ("Milk", 200, False)
-    ]
+    w = fridge(client)
+    assert (w["Shelf"], w["Door"], w[None]) == ([("Milk", 100)], [("Milk", 400)], [("Milk", 1000)])
 
 
 def test_eating_takes_from_sectors_by_priority(client):
     milk = food(client, "Milk", "ml")
     buy(client, milk["id"], 1000)
     outside, attic = sector(client, "Outside"), sector(client, "Attic")
-    move(client, milk["id"], None, attic)  # its main place is the second sector
+    move(client, milk["id"], None, attic)
     move(client, milk["id"], attic, outside, 300)
 
-    def log(q):
-        r = client.post(
-            "/api/entries",
-            json={"day": D[1], "meal": "Lunch", "food_id": milk["id"], "quantity": q},
-        )
-        assert r.status_code == 201, r.text
-        return r.json()["id"]
-
     def spots():
-        w = where(client.get("/api/fridge").json())
+        w = fridge(client)
         return w["Outside"], w["Attic"]
 
-    entry = log(200)  # the first sector goes first, even with the main place elsewhere
-    assert spots() == ([("Milk", 100, False)], [("Milk", 700, True)])
+    entry = log(client, milk["id"], 200)  # the first sector goes first
+    assert spots() == ([("Milk", 100)], [("Milk", 700)])
 
     # changing the entry: eating more takes the extra by priority too...
-    def change(q):
-        r = client.put(
-            f"/api/entries/{entry}",
-            json={"day": D[1], "meal": "Lunch", "food_id": milk["id"], "quantity": q},
-        )
-        assert r.status_code == 200, r.text
+    change(client, entry, milk["id"], 250)
+    assert spots() == ([("Milk", 50)], [("Milk", 700)])
+    # ...past the first sector into the next
+    change(client, entry, milk["id"], 400)
+    assert spots() == ([], [("Milk", 600)])
+    # eating less gives it back where it came from, the last sector it ate from first
+    change(client, entry, milk["id"], 250)
+    assert spots() == ([("Milk", 50)], [("Milk", 700)])
+    change(client, entry, milk["id"], 100)
+    assert spots() == ([("Milk", 200)], [("Milk", 700)])
 
-    change(250)
-    assert spots() == ([("Milk", 50, False)], [("Milk", 700, True)])
-    # ...and eating less gives it back to the main place
-    change(100)
-    assert spots() == ([("Milk", 50, False)], [("Milk", 850, True)])
-
-    # a saved meal's foods follow the same order, past the first sector into the next
+    # a saved meal's foods follow the same order
     r = client.post(
         "/api/entries/batch",
-        json={"day": D[1], "meal": "Dinner", "items": [{"food_id": milk["id"], "quantity": 150}]},
+        json={"day": D[1], "meal": "Dinner", "items": [{"food_id": milk["id"], "quantity": 250}]},
     )
     assert r.status_code == 201, r.text
-    assert spots() == ([], [("Milk", 750, True)])
+    assert spots() == ([], [("Milk", 650)])
 
     # the order is the user's: put Attic first and it goes first
     move(client, milk["id"], attic, outside, 250)
     client.put("/api/fridge/order", json={"ids": [attic, outside]})
-    log(100)
-    assert spots() == ([("Milk", 250, False)], [("Milk", 400, True)])
+    log(client, milk["id"], 100)
+    assert spots() == ([("Milk", 250)], [("Milk", 300)])
+
+
+def test_deleting_what_was_eaten_puts_it_back(client):
+    milk = food(client, "Milk", "ml")
+    buy(client, milk["id"], 1000)
+    shelf, door = sector(client, "Shelf"), sector(client, "Door")
+    move(client, milk["id"], None, shelf, 300)
+    move(client, milk["id"], None, door, 300)  # 400 in no sector
+    entry = log(client, milk["id"], 800)  # 300 from each sector, 200 from no sector
+    assert fridge(client) == {"Shelf": [], "Door": [], None: [("Milk", 200)]}
+    assert client.delete(f"/api/entries/{entry}").status_code == 204
+    full = {"Shelf": [("Milk", 300)], "Door": [("Milk", 300)], None: [("Milk", 400)]}
+    assert fridge(client) == full
+
+    # eaten out: it gives back what it took; changed to another food, too
+    entry = log(client, milk["id"], 100)
+    change(client, entry, milk["id"], 100, eaten_out=True)
+    assert fridge(client)["Shelf"] == [("Milk", 300)]
+    change(client, entry, milk["id"], 100)
+    assert fridge(client)["Shelf"] == [("Milk", 200)]
+    water = food(client, "Water", "ml")
+    change(client, entry, water["id"], 100)
+    assert fridge(client)["Shelf"] == [("Milk", 300)]
+    client.delete(f"/api/entries/{entry}")
+
+    # a logged saved meal, a cleared day, a wiped food log: all put it back
+    items = [{"food_id": milk["id"], "quantity": 350}]
+    sm = client.post("/api/saved-meals", json={"name": "Glass", "items": items}).json()
+    batch = {"day": D[1], "meal": "Dinner", "saved_meal_id": sm["id"], "items": items}
+    logged = client.post("/api/entries/batch", json=batch).json()
+    assert fridge(client)["Shelf"] == [] and fridge(client)["Door"] == [("Milk", 250)]
+    client.delete(f"/api/meal-logs/{logged[0]['meal_log_id']}")
+    assert fridge(client)["Shelf"] == [("Milk", 300)] and fridge(client)["Door"] == [("Milk", 300)]
+    log(client, milk["id"], 350)
+    client.delete(f"/api/days/{D[1]}")
+    assert fridge(client)["Shelf"] == [("Milk", 300)] and fridge(client)["Door"] == [("Milk", 300)]
+    log(client, milk["id"], 350)
+    client.post("/api/wipe", json={"what": ["food_log"]})
+    assert fridge(client)["Shelf"] == [("Milk", 300)] and fridge(client)["Door"] == [("Milk", 300)]
+
+    # a sector deleted meanwhile: it goes back to no sector
+    entry = log(client, milk["id"], 300)
+    client.delete(f"/api/fridge/sectors/{shelf}")
+    client.delete(f"/api/entries/{entry}")
+    assert fridge(client) == {"Door": [("Milk", 300)], None: [("Milk", 700)]}
+
+
+def test_throwing_out_takes_from_no_sector_first(client, oats):
+    buy(client, oats["id"], 1000)
+    shelf, door = sector(client, "Shelf"), sector(client, "Door")
+    move(client, oats["id"], None, shelf, 300)
+    move(client, oats["id"], None, door, 300)
+    lot = client.get("/api/groceries").json()["items"][0]["lots"][0]["id"]
+
+    def toss(q):
+        r = client.post(f"/api/groceries/lots/{lot}/expired", json={"day": D[0], "quantity": q})
+        assert r.status_code == 200, r.text
+
+    toss(500)  # no sector first, then the newest place
+    w = fridge(client)
+    assert (w["Shelf"], w["Door"], w[None]) == ([("Rolled oats", 300)], [("Rolled oats", 200)], [])
+    toss(200)
+    assert fridge(client) == {"Shelf": [("Rolled oats", 300)], "Door": [], None: []}
 
 
 def test_what_is_in_no_sector_is_eaten_last(client, oats):
     buy(client, oats["id"], 1000)
     shelf = sector(client, "Shelf")
-    move(client, oats["id"], None, shelf)
-    move(client, oats["id"], shelf, None)  # no main place: all of it is in no sector
     fr = move(client, oats["id"], None, shelf, 300)
-    assert where(fr)["Shelf"] == [("Rolled oats", 300, False)]
-    assert where(fr)[None] == [("Rolled oats", 700, False)]
-    client.post(
-        "/api/entries",
-        json={"day": D[1], "meal": "Breakfast", "food_id": oats["id"], "quantity": 400},
-    )
-    fr = client.get("/api/fridge").json()
-    assert where(fr)["Shelf"] == [] and where(fr)[None] == [("Rolled oats", 600, False)]
+    assert where(fr)["Shelf"] == [("Rolled oats", 300)]
+    assert where(fr)[None] == [("Rolled oats", 700)]
+    log(client, oats["id"], 400, meal="Breakfast")
+    w = fridge(client)
+    assert w["Shelf"] == [] and w[None] == [("Rolled oats", 600)]
 
 
-def test_food_that_ran_out_keeps_its_sector(client, oats):
+def test_food_that_ran_out_leaves_its_sectors(client, oats):
     buy(client, oats["id"], 100)
     shelf, door = sector(client, "Shelf"), sector(client, "Door")
-    move(client, oats["id"], None, shelf)
-    move(client, oats["id"], shelf, door, 60)
-    fr = move(client, oats["id"], shelf, None)  # no main place any more
-    assert where(fr)[None] == [("Rolled oats", 40, False)]
-    client.post(
-        "/api/entries",
-        json={"day": D[1], "meal": "Breakfast", "food_id": oats["id"], "quantity": 100},
-    )
+    move(client, oats["id"], None, shelf, 40)
+    move(client, oats["id"], None, door)
+    log(client, oats["id"], 100, meal="Breakfast")
     fr = client.get("/api/fridge").json()
-    # ran out: it leaves the sectors, but its last place becomes its main one...
     assert where(fr)["Door"] == [] and where(fr)["Shelf"] == []
+    # it says where the last of it was eaten from
     assert [(o["name"], o["sector"]) for o in fr["recently_out"]] == [("Rolled oats", "Door")]
     assert fr["unsorted"] == []  # foods that ran out aren't listed as unsorted
     buy(client, oats["id"], 300, day=D[0])
-    # ...so it goes back there when bought again
     fr = client.get("/api/fridge").json()
-    assert where(fr)["Door"] == [("Rolled oats", 300, True)] and fr["recently_out"] == []
+    assert where(fr)["Door"] == [] and where(fr)[None] == [("Rolled oats", 300)]
+    assert fr["recently_out"] == []
+
+
+def test_main_places_become_set_amounts(tmp_path):
+    """Migration 27: a main place keeps what it held; an emptied one goes."""
+    from pamela import db
+
+    path = tmp_path / "old.sqlite3"
+    conn = db.connect(path)
+    for i, script in enumerate(db.MIGRATIONS[:26], start=1):
+        conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {i};\nCOMMIT;")
+    conn.executescript("""
+        INSERT INTO foods (id, name) VALUES (1, 'Milk'), (2, 'Oats');
+        INSERT INTO carts (id, bought_on) VALUES (1, '2026-01-01');
+        INSERT INTO stock_lots (id, cart_id, food_id, quantity)
+            VALUES (1, 1, 1, 1000), (2, 1, 2, 50);
+        INSERT INTO stock_uses (lot_id, kind, day, quantity)
+            VALUES (1, 'expired', '2026-01-02', 100), (2, 'expired', '2026-01-02', 50);
+        INSERT INTO fridge_sectors (id, name) VALUES (1, 'Shelf'), (2, 'Door');
+        INSERT INTO fridge_places (food_id, sector_id, quantity) VALUES (1, 1, NULL), (1, 2, 300),
+            (2, 1, NULL);
+    """)
+    conn.commit()
+    conn.close()
+    assert db.migrate(path) == len(db.MIGRATIONS)
+    conn = db.connect(path)
+    rows = conn.execute("SELECT food_id, sector_id, quantity FROM fridge_places ORDER BY id")
+    assert [tuple(r.values()) for r in rows] == [(1, 1, 600), (1, 2, 300)]
+    conn.close()
 
 
 def test_deleting_a_sector_or_food(client, oats):
@@ -255,7 +324,7 @@ def test_deleting_a_sector_or_food(client, oats):
     assert client.delete(f"/api/fridge/sectors/{shelf}").status_code == 204
     assert client.delete(f"/api/fridge/sectors/{shelf}").status_code == 404
     fr = client.get("/api/fridge").json()
-    assert fr["sectors"] == [] and where(fr)[None] == [("Rolled oats", 100, False)]
+    assert fr["sectors"] == [] and where(fr)[None] == [("Rolled oats", 100)]
 
     shelf = sector(client, "Shelf")
     move(client, oats["id"], None, shelf)

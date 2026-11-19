@@ -44,7 +44,8 @@ included. Ctrl+C in the terminal still works too.
   own or in a saved meal, where each food also offers *All that's left*) shows an amber warning and asks first; it's still allowed, since
   the stock isn't always up to date.
   *Saved meal* mode loads a saved meal as an editable draft that is only logged when you
-  press *Log*. The *Check-in* card holds daily steps, sleep, body weight (kg), body fat (%)
+  press *Log*; the log then shows it as one group (its foods under it, foldable) that can be
+  deleted whole. The *Check-in* card holds daily steps, sleep, body weight (kg), body fat (%)
   and mood (with feelings); *Notes* holds a few optional words on how the day went.
   Calorie estimates for activities use the latest weight logged on or before that day.
   Activity types are grouped by category, recently used first.
@@ -78,11 +79,13 @@ included. Ctrl+C in the terminal still works too.
   their row in *In stock*.
 - **Fridge**: sectors that mirror where you keep food at home (shelves, door, freezer
   drawers, pantry…), in your own order. Put each food in stock in a sector, all of it or
-  part: a food can be split over several sectors, each with its share. Its *main* sector holds
-  the rest, and new purchases land there; what's eaten or thrown out comes from the main sector
-  first. A food that runs out stays in its main sector (greyed out) and is back in place when
-  bought again. Tick foods as you check them against the real fridge (ticks are kept in the
-  browser until *Start a new check*). The form for new sectors is at the bottom.
+  part: a food can be split over several sectors, each with its share. New purchases land in
+  *Not in a sector* until you put them away. What's eaten comes out of the sectors in your
+  order, and deleting (or shrinking) that entry puts it back where it came from; what's thrown
+  out comes from *Not in a sector* first, then the newest shares. A food that runs out leaves
+  its sectors. Tick foods as you check them against the real fridge (ticks are kept in the
+  browser until *Start a new check*, and a tick goes by itself once the amount there changes).
+  The form for new sectors is at the bottom.
 - **Meals** (saved meals): fixed mixes of catalog foods (or *☆ save* a meal from the Day tab),
   each with an optional recipe as free text. Each meal says whether your stock holds enough of
   every food, and what's missing and how much; *+ Buy missing* puts that in the cart, and

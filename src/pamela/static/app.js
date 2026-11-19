@@ -52,6 +52,7 @@ const state = {
   editingActivityId: null,
   selectedFood: null,   // food chosen in the entry form
   draft: null,          // saved meal being prepared for logging: { id, name, items }
+  foldedLogs: new Set(), // meal logs (saved meals as logged) shown folded in the Day log
   smItems: [],          // items of the saved meal in the editor
   editingSavedMealId: null,
   editingTypeId: null,
@@ -790,9 +791,10 @@ function macroCells(o, kcalCell = `<td class="n">${fmt(o.kcal)}</td>`) {
   return kcalCell + MACROS.map((m) => `<td class="n">${fmt(o[m.key], 1)}</td>`).join("");
 }
 
-/** 🔗 to where an entry comes from: its meal in Meals, else its food in Foods. Quick adds have none. */
-function entryLink(e) {
-  if (e.saved_meal_id != null) {
+/** 🔗 to where an entry comes from: its meal in Meals, else its food in Foods. Quick adds have none.
+ * Inside a logged meal's group, the group's header links the meal, so its rows link their food. */
+function entryLink(e, inGroup = false) {
+  if (e.saved_meal_id != null && !inGroup) {
     const t = `Logged from “${e.saved_meal_name}”: open it in Meals`;
     return ` <a class="entry-link" href="#/meals/${e.saved_meal_id}" title="${esc(t)}" aria-label="${esc(t)}">🔗</a>`;
   }
@@ -828,7 +830,7 @@ function renderLog() {
       html += `<tr class="empty"><td colspan="8">Nothing logged</td></tr>`;
       continue;
     }
-    for (const e of rows) {
+    const entryRow = (e, inGroup) => {
       let amount = e.quantity != null ? `${fmtQty(e.quantity)} ${esc(e.unit)}` : "";
       if (e.from_stock > 1e-6) {
         const all = e.from_stock >= e.quantity - 1e-6;
@@ -836,12 +838,25 @@ function renderLog() {
         amount = `<span class="from-stock${all ? "" : " part"}" title="${esc(t)}" aria-label="${esc(t)}">🛒</span> ${amount}`;
       }
       const qtyAttrs = e.food_id != null ? ` class="n qty" data-edit-qty="${e.id}" title="Click to change amount"` : ' class="n"';
-      html += `<tr data-entry="${e.id}">
-        <td>${esc(e.name)}${entryLink(e)}${e.eaten_out ? '<span class="out-tag" title="Eaten out: not taken from your stock">🍽️ out</span>' : ""}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
+      return `<tr data-entry="${e.id}"${inGroup ? ' class="in-group"' : ""}>
+        <td>${esc(e.name)}${entryLink(e, inGroup)}${e.eaten_out ? '<span class="out-tag" title="Eaten out: not taken from your stock">🍽️ out</span>' : ""}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
         <td${qtyAttrs}>${amount}</td>
         ${macroCells(e)}
         <td class="act"><button type="button" class="row-btn del" data-del-entry="${e.id}" title="Delete" aria-label="Delete ${esc(e.name)}">✕</button></td>
       </tr>`;
+    };
+    // a saved meal as logged shows as one group, where its first food was logged
+    const shown = new Set();
+    for (const e of rows) {
+      if (e.meal_log_id == null) {
+        html += entryRow(e, false);
+        continue;
+      }
+      if (shown.has(e.meal_log_id)) continue;
+      shown.add(e.meal_log_id);
+      const group = rows.filter((x) => x.meal_log_id === e.meal_log_id);
+      html += mealLogRow(e, group);
+      if (!state.foldedLogs.has(e.meal_log_id)) for (const x of group) html += entryRow(x, true);
     }
   }
   $("#log-body").innerHTML = html;
@@ -852,6 +867,52 @@ function renderLog() {
     $("#log-table").append(foot);
   }
   foot.innerHTML = `<tr><td>Total</td><td></td>${macroCells(totals)}<td></td></tr>`;
+}
+
+/** The header of a logged saved meal: its name, how many foods, their totals, and ✕ for all of it. */
+function mealLogRow(first, group) {
+  const id = first.meal_log_id;
+  const name = first.meal_log_name ?? "Saved meal";
+  const folded = state.foldedLogs.has(id);
+  const sub = { kcal: 0 };
+  for (const m of MACROS) sub[m.key] = 0;
+  for (const e of group) {
+    sub.kcal += e.kcal;
+    for (const m of MACROS) sub[m.key] += e[m.key];
+  }
+  // the meal itself, while it's still in Meals
+  const sm = first.saved_meal_id != null && state.savedMeals.some((x) => x.id === first.saved_meal_id);
+  const t = `Open “${name}” in Meals`;
+  const link = sm ? ` <a class="entry-link" href="#/meals/${first.saved_meal_id}" title="${esc(t)}" aria-label="${esc(t)}">🔗</a>` : "";
+  const n = group.length;
+  return `<tr class="log-group" data-meal-log="${id}">
+    <td><button type="button" class="row-btn fold" data-fold-log="${id}" aria-expanded="${!folded}" title="${folded ? "Show" : "Hide"} its foods" aria-label="${folded ? "Show" : "Hide"} the foods of ${esc(name)}">${folded ? "▸" : "▾"}</button>
+      <span class="log-name">⭐ ${esc(name)}</span>${link}</td>
+    <td class="n count">${n} ${n === 1 ? "food" : "foods"}</td>
+    ${macroCells(sub)}
+    <td class="act"><button type="button" class="row-btn del" data-del-log="${id}" title="Delete this meal and its foods" aria-label="Delete ${esc(name)} and its ${n} ${n === 1 ? "food" : "foods"}">✕</button></td>
+  </tr>`;
+}
+
+async function deleteMealLog(id) {
+  const group = state.dayData.entries.filter((e) => e.meal_log_id === id);
+  if (!group.length) return;
+  const name = group[0].meal_log_name ?? "this meal";
+  const ok = await confirmDialog({
+    title: `Delete “${name}”?`,
+    body: `<p>This deletes it from ${esc(mealLabel(group[0].meal))} on ${esc(fmtDay(state.day))}, with its ${group.length} ${group.length === 1 ? "food" : "foods"}:</p>
+      <ul>${group.map((e) => `<li>${esc(e.name)}${e.quantity != null ? ` · ${fmtQty(e.quantity)} ${esc(e.unit)}` : ""}</li>`).join("")}</ul>
+      <p>What they took from your stock goes back there. The saved meal itself stays.</p>`,
+  });
+  if (!ok) return;
+  try {
+    await api("DELETE", `/meal-logs/${id}`);
+    state.foldedLogs.delete(id);
+    toast(`Deleted “${name}”`);
+    await Promise.all([loadDay(), loadSavedMeals()]); // what's left of their foods changed
+  } catch (err) {
+    showError(err);
+  }
 }
 
 async function saveMealAsSaved(meal) {
@@ -2663,16 +2724,36 @@ async function undoExpired(id) {
 
 // --- fridge view -------------------------------------------------------------------
 
-// Foods ticked while checking the sectors against the real fridge, as "food:sector":
-// kept in this browser only, until "Start a new check".
-const fridgeChecks = new Set();
+// Foods ticked while checking the sectors against the real fridge, as "food:sector" ->
+// the amount that was there when ticked: kept in this browser only, until "Start a new
+// check". A tick goes once the amount there changes (eaten, thrown out, moved...), since
+// what was checked isn't what's there any more.
+const fridgeChecks = new Map();
 try {
-  for (const key of JSON.parse(prefGet("pamela-fridge-checks") || "[]")) if (typeof key === "string") fridgeChecks.add(key);
+  const saved = JSON.parse(prefGet("pamela-fridge-checks") || "{}");
+  // an older list of keys, without amounts: they take the amount there now
+  const pairs = Array.isArray(saved) ? saved.map((k) => [k, null]) : Object.entries(saved);
+  for (const [key, q] of pairs) if (typeof key === "string" && (q === null || typeof q === "number")) fridgeChecks.set(key, q);
 } catch {
   // a broken value: start with no ticks
 }
 function saveFridgeChecks() {
-  prefSet("pamela-fridge-checks", JSON.stringify([...fridgeChecks]));
+  prefSet("pamela-fridge-checks", JSON.stringify(Object.fromEntries(fridgeChecks)));
+}
+/** Drops the ticks of foods whose amount in that sector changed, or that left it. */
+function pruneFridgeChecks() {
+  if (!fridgeChecks.size) return;
+  const now = new Map();
+  for (const sec of state.fridge.sectors) for (const f of sec.foods) if (hasStock(f)) now.set(checkKey(f, sec), f.quantity);
+  let changed = false;
+  for (const [key, q] of fridgeChecks) {
+    const there = now.get(key);
+    if (there === undefined || (q !== null && Math.abs(there - q) > 1e-6)) fridgeChecks.delete(key);
+    else if (q === null) fridgeChecks.set(key, there);
+    else continue;
+    changed = true;
+  }
+  if (changed) saveFridgeChecks();
 }
 const checkKey = (f, sec) => `${f.food_id}:${sec.id}`;
 
@@ -2711,16 +2792,15 @@ function fridgeRow(f, sector) {
   const moveBtn = canMove
     ? `<button type="button" class="row-btn add-to" data-move="${f.food_id}" data-from="${from}" title="Move all or part of it to another sector">${sector ? "Move…" : "Put in…"}</button>`
     : "";
-  const out = sector ? `<button type="button" class="row-btn del" data-unplace="${f.food_id}" data-from="${from}" title="${f.main ? "Take it out of this sector" : "Send it back to its main sector"}" aria-label="Take ${esc(f.name)} out of ${esc(sector.name)}">✕</button>` : "";
+  const out = sector ? `<button type="button" class="row-btn del" data-unplace="${f.food_id}" data-from="${from}" title="Take it out of this sector: to Not in a sector" aria-label="Take ${esc(f.name)} out of ${esc(sector.name)}">✕</button>` : "";
   const split = f.places > 1 || (sector && f.quantity < f.in_stock - 1e-6);
-  const main = sector && f.main && f.places > 1 ? `<span class="ff-main" title="Its main sector: holds what isn't elsewhere, and new purchases of it land here">main</span>` : "";
   const left = has
     ? `${fmtStock(f.quantity, f)}${split ? ` <span class="ff-of">of ${fmtQty(f.in_stock)}</span>` : ""}`
     : "none left";
   const expired = has && expiryClass(f.next_expiry) === "past";
   return `<li class="${has ? "" : "out"}${ticked ? " ticked" : ""}"${has ? "" : ` title="None left in stock: it comes back here when you buy it again"`}>
     <span class="ff-tick">${tick}</span>
-    <span class="ff-name">${expired ? `<button type="button" class="link-btn exp-flag" data-goto-stock="${f.food_id}" title="Past its date: open it in Stock">⚠️</button> ` : ""}${groupEmoji(f.food_group)}${foodLabel(f)}${main}</span>
+    <span class="ff-name">${expired ? `<button type="button" class="link-btn exp-flag" data-goto-stock="${f.food_id}" title="Past its date: open it in Stock">⚠️</button> ` : ""}${groupEmoji(f.food_group)}${foodLabel(f)}</span>
     <span class="ff-left">${left}</span>
     <span class="ff-meta"><span>${has && f.next_expiry ? expiryBadge(f.next_expiry) : ""}</span><span class="ff-btns">${moveBtn}${out}</span></span></li>`;
 }
@@ -2735,6 +2815,7 @@ const ofCount = (shown, all) => (shown === all ? `(${all})` : `(${shown} of ${al
 function renderFridge() {
   const fr = state.fridge;
   if (!fr) return;
+  pruneFridgeChecks();
   const { sectors, unsorted } = fr;
   renderExpiredAlert($("#fridge-alert"), fridgeExpired());
   const unsortedShown = fridgeMatches(unsorted);
@@ -2807,7 +2888,7 @@ function renderRecentlyOut(all, searching) {
         .map((it) => {
           const d = daysBetween(it.ran_out_on, todayISO());
           const when = d === 0 ? "today" : d === 1 ? "yesterday" : `${d} d ago`;
-          const where = it.sector ? ` · goes back to ${it.emoji ? `${esc(it.emoji)} ` : ""}${esc(it.sector)}` : "";
+          const where = it.sector ? ` · last eaten from ${it.emoji ? `${esc(it.emoji)} ` : ""}${esc(it.sector)}` : "";
           return `<li><span>${groupEmoji(it.food_group)}${foodLabel(it)}</span>
             <small title="${fmtDay(it.ran_out_on)}">ran out ${when}${where}</small></li>`;
         })
@@ -2869,7 +2950,7 @@ async function deleteSector(id) {
   if (!sec) return;
   const ok = await confirmDialog({
     title: "🗑️ Delete this sector?",
-    body: `<p><b>${esc(sectorName(sec))}</b> leaves the Fridge tab. ${sec.foods.length ? "What's in it goes back to each food's main sector, or to <i>Not in a sector</i>; " : ""}nothing leaves Foods or your stock.</p>`,
+    body: `<p><b>${esc(sectorName(sec))}</b> leaves the Fridge tab. ${sec.foods.length ? "What's in it goes to <i>Not in a sector</i>; " : ""}nothing leaves Foods or your stock.</p>`,
     ok: "Delete sector",
   });
   if (!ok) return;
@@ -2945,9 +3026,8 @@ function updateMoveHint() {
   const q = num($("#move-form").elements.quantity.value);
   const all = q != null && q >= f.quantity - 0.005;
   let hint;
-  if (from == null) hint = all ? "It all goes there, and that sector becomes its main one." : "That amount goes there; the rest stays out of any sector.";
-  else if (f.main) hint = all ? "All of it moves, and the other sector becomes its main one: new purchases of it will land there." : "That amount moves; the rest stays here, its main sector, where new purchases land.";
-  else hint = "That amount moves there.";
+  if (from == null) hint = all ? "It all goes there." : "That amount goes there; the rest stays out of any sector.";
+  else hint = all ? "All of it moves there." : "That amount moves there; the rest stays here.";
   $("#move-hint").textContent = hint;
 }
 
@@ -3038,8 +3118,11 @@ function wireFridge() {
   $("#view-fridge").addEventListener("change", (e) => {
     const t = e.target;
     if (t.dataset.check) {
-      if (t.checked) fridgeChecks.add(t.dataset.check);
-      else fridgeChecks.delete(t.dataset.check);
+      if (t.checked) {
+        const [food, sec] = t.dataset.check.split(":").map(Number);
+        const f = state.fridge.sectors.find((x) => x.id === sec)?.foods.find((x) => x.food_id === food);
+        fridgeChecks.set(t.dataset.check, f ? f.quantity : null);
+      } else fridgeChecks.delete(t.dataset.check);
       saveFridgeChecks();
       renderFridge();
       $(`[data-check="${t.dataset.check}"]`)?.focus();
@@ -4721,6 +4804,16 @@ function wire() {
     }
     const save = e.target.closest("[data-save-meal]");
     if (save) return saveMealAsSaved(save.dataset.saveMeal);
+    const fold = e.target.closest("[data-fold-log]");
+    if (fold) {
+      const id = Number(fold.dataset.foldLog);
+      if (!state.foldedLogs.delete(id)) state.foldedLogs.add(id);
+      renderLog();
+      $(`#log-body [data-fold-log="${id}"]`)?.focus();
+      return;
+    }
+    const delLog = e.target.closest("[data-del-log]");
+    if (delLog) return deleteMealLog(Number(delLog.dataset.delLog));
     const del = e.target.closest("[data-del-entry]");
     if (del) {
       try {

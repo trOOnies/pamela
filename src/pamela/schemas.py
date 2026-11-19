@@ -481,6 +481,11 @@ class Entry(Macros):
     from_stock: float = Field(0, description="How much of it was taken from Groceries")
     saved_meal_id: int | None = Field(None, description="The meal it was logged from, if any")
     saved_meal_name: str | None = None
+    meal_log_id: int | None = Field(
+        None,
+        description="The logged saved meal it's part of (DELETE /meal-logs/{id} deletes it all)",
+    )
+    meal_log_name: str | None = Field(None, description="That saved meal's name when it was logged")
     eaten_out: bool = Field(False, description="Eaten out: not taken from Groceries")
 
 
@@ -592,7 +597,6 @@ class StockPlace(BaseModel):
     name: str
     emoji: str
     quantity: float
-    main: bool
 
 
 class StockItem(BaseModel):
@@ -685,7 +689,7 @@ class FridgeMoveIn(_In):
     food_id: int
     from_sector_id: int | None = Field(description="Where it is now; None = not in a sector")
     to_sector_id: int | None = Field(
-        description="Where it goes; None = out of the sector (back to its main place)"
+        description="Where it goes; None = out of the sector (to no sector)"
     )
     quantity: float | None = Field(
         None, gt=0, description="How much, in the food's unit; None = all that's there"
@@ -700,7 +704,6 @@ class FridgeFood(BaseModel):
     package_qty: float | None = None
     food_group: str = ""
     quantity: float = Field(description="How much of it is here")
-    main: bool = Field(False, description="Its main place: new purchases of it land here")
     places: int = Field(1, description="How many sectors it's in")
     in_stock: float = Field(description="All that's left of it in Groceries (0 = ran out)")
     next_expiry: dt.date | None = None
@@ -722,7 +725,7 @@ class RecentlyOut(BaseModel):
     unit: str
     food_group: str = ""
     ran_out_on: dt.date = Field(description="The day the last of it was eaten or taken out")
-    sector: str | None = Field(None, description="Its main sector, where it goes back to")
+    sector: str | None = Field(None, description="The sector the last of it was eaten from")
     emoji: str = ""
 
 

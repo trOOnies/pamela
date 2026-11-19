@@ -701,3 +701,53 @@ def test_alcoholic_drink_from_abv_and_package(client):
 
     glasses = client.get("/api/vocab").json()["glasses"]
     assert {"label": "Wine glass", "emoji": "🍷", "ml": 150} in glasses
+
+
+def test_logged_saved_meal_is_one_group(client):
+    oats = client.post("/api/foods", json={"name": "Oats", "unit": "g", "kcal": 380}).json()
+    milk = client.post("/api/foods", json={"name": "Milk", "unit": "ml", "kcal": 60}).json()
+    items = [{"food_id": oats["id"], "quantity": 60}, {"food_id": milk["id"], "quantity": 200}]
+    sm = client.post("/api/saved-meals", json={"name": "Porridge", "items": items}).json()
+    batch = {"day": DAY, "meal": "Breakfast", "items": items, "saved_meal_id": sm["id"]}
+    first = client.post("/api/entries/batch", json=batch).json()
+    second = client.post("/api/entries/batch", json=batch).json()
+    plain = client.post("/api/entries/batch", json=batch | {"saved_meal_id": None}).json()
+    # each logging is its own group, named after the meal
+    a, b = first[0]["meal_log_id"], second[0]["meal_log_id"]
+    assert a is not None and b is not None and a != b
+    assert {e["meal_log_id"] for e in first} == {a}
+    assert {e["meal_log_name"] for e in first} == {"Porridge"}
+    assert {e["meal_log_id"] for e in plain} == {None}
+
+    # the group keeps its name when the meal is renamed
+    client.put(f"/api/saved-meals/{sm['id']}", json={"name": "Oatmeal", "items": items})
+    day = client.get(f"/api/days/{DAY}").json()
+    assert {e["meal_log_name"] for e in day["entries"] if e["meal_log_id"] == a} == {"Porridge"}
+
+    # deleting a group deletes its foods only
+    assert client.delete(f"/api/meal-logs/{a}").status_code == 204
+    left = client.get(f"/api/days/{DAY}").json()["entries"]
+    assert sorted(e["id"] for e in left) == sorted(e["id"] for e in second + plain)
+    assert client.delete(f"/api/meal-logs/{a}").status_code == 404
+
+    # moved to another meal, an entry leaves its group; a group left empty goes
+    e = second[0]
+    put = {"day": DAY, "meal": "Lunch", "food_id": e["food_id"], "quantity": e["quantity"]}
+    assert client.put(f"/api/entries/{e['id']}", json=put).json()["meal_log_id"] is None
+    assert client.delete(f"/api/entries/{second[1]['id']}").status_code == 204
+    assert client.delete(f"/api/meal-logs/{b}").status_code == 404
+
+
+def test_deleting_a_group_gives_back_its_stock(client):
+    oats = client.post("/api/foods", json={"name": "Oats", "unit": "g", "kcal": 380}).json()
+    cart = {"bought_on": DAY, "items": [{"food_id": oats["id"], "quantity": 500}]}
+    assert client.post("/api/groceries/carts", json=cart).status_code == 201
+    items = [{"food_id": oats["id"], "quantity": 60}]
+    sm = client.post("/api/saved-meals", json={"name": "Porridge", "items": items}).json()
+    batch = {"day": DAY, "meal": "Breakfast", "items": items, "saved_meal_id": sm["id"]}
+    logged = client.post("/api/entries/batch", json=batch).json()
+    assert logged[0]["from_stock"] == 60
+    client.delete(f"/api/meal-logs/{logged[0]['meal_log_id']}")
+    all_of_it = [items[0] | {"quantity": 500}]
+    again = client.post("/api/entries/batch", json=batch | {"items": all_of_it})
+    assert again.json()[0]["from_stock"] == 500
