@@ -655,6 +655,12 @@ MIGRATIONS: list[str] = [
     DROP TABLE shopping_items;
     ALTER TABLE shopping_items_new RENAME TO shopping_items;
     """,
+    # 31: vitamin D (µg) and caffeine (mg) per basis_qty of the food, like B12: NULL
+    # until they're entered.
+    """
+    ALTER TABLE foods ADD COLUMN vit_d_ug REAL CHECK (vit_d_ug >= 0);
+    ALTER TABLE foods ADD COLUMN caffeine_mg REAL CHECK (caffeine_mg >= 0);
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

@@ -278,6 +278,12 @@
           <label class="field not-alc"><span>Vitamin B12 (µg) <small>(optional)</small></span>
             <input type="number" name="b12_ug" min="0" step="any" placeholder="unknown"
                    title="Per the amount in Values per. Leave empty if you don't know it yet; 0 means it has none"></label>
+          <label class="field not-alc"><span>Vitamin D (µg) <small>(optional)</small></span>
+            <input type="number" name="vit_d_ug" min="0" step="any" placeholder="unknown"
+                   title="Per the amount in Values per (1 µg = 40 IU). Leave empty if you don't know it yet; 0 means it has none"></label>
+          <label class="field not-alc"><span>Caffeine (mg) <small>(optional)</small></span>
+            <input type="number" name="caffeine_mg" min="0" step="any" placeholder="unknown"
+                   title="Per the amount in Values per. Leave empty if you don't know it yet; 0 means it has none"></label>
           <p class="hint span2 not-alc" id="food-kcal-hint"></p>
           <label class="field only-alc" hidden><span>Alcohol content</span>
             <span class="with-unit"><input type="number" name="abv_pct" min="0" max="100" step="any" placeholder="e.g. 5"><span class="unit">% V/V</span></span></label>
@@ -910,9 +916,12 @@
             as 0 kcal, and the list marks it with <span class="warn-kcal">⚠ ?</span> until you fill it in.
             Entering <b>0</b> means it really has none, and it gets the
             <span class="tag tag-calorie_free">Calorie-free</span> tag on its own (you can't set that tag yourself).</p>
-          <p>💊 <b>Vitamin B12</b> (µg, per the amount in <i>Values per</i>) is optional: empty means
-            not known yet and shows as – in the list, 0 means it has none. It's kept on the food only,
-            not added up in your days.</p>
+          <p>💊 <b>Vitamin B12</b> (µg), <b>Vitamin D</b> (µg; 1 µg = 40 IU) and ☕ <b>Caffeine</b> (mg),
+            per the amount in <i>Values per</i>, are optional: empty means not known yet and shows as – in
+            the list, 0 means it has none. A barcode lookup fills them in when Open Food Facts has them.
+            They're kept on the food only, not added up in your days.</p>
+          <p>💪 <b>P/100</b> in the list is the grams of protein per 100 kcal: how much protein the food
+            gives for its calories, whatever the amount. It's worked out from the food's values (– without kcal).</p>
           <p>✍️ The <b>Brand</b> field suggests brands you've already used.</p>
           <p>📏 <b>Units</b>: besides <b>g</b> and <b>ml</b>, use <b>u</b> for one piece of a pack
             (one egg of a carton, one cookie) and <b>whole</b> for one whole item (an apple).</p>

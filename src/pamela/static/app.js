@@ -12,6 +12,12 @@ const MACROS = [
   { key: "fat_g", label: "Fat", short: "F", color: "var(--c-fat)" },
   { key: "fiber_g", label: "Fiber", short: "Fib", color: "var(--c-fiber)" },
 ];
+// Optional values kept on foods only (not added up in days): empty = not known yet.
+const MICROS = [
+  { key: "b12_ug", label: "Vitamin B12", short: "B12", unit: "µg" },
+  { key: "vit_d_ug", label: "Vitamin D", short: "D", unit: "µg" },
+  { key: "caffeine_mg", label: "Caffeine", short: "Caf", unit: "mg" },
+];
 const MOOD_EMOJI = { 1: "😣", 2: "🙁", 3: "😐", 4: "🙂", 5: "😄" };
 const FEELING_GROUP_EMOJI = { Content: "😊", Driven: "⚡", Tense: "😬", Down: "🌧️", Drained: "🪫" };
 // Meals named like the usual ones get an emoji (names come from info/config.toml).
@@ -1678,7 +1684,7 @@ async function submitActivity(ev) {
 
 // --- foods view --------------------------------------------------------------
 
-const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "b12_ug", "serving_qty", "package_qty", "food_group", "abv_pct", "meta_id"];
+const FOOD_FIELDS = ["name", "brand", "ean", "basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), ...MICROS.map((m) => m.key), "serving_qty", "package_qty", "food_group", "abv_pct", "meta_id"];
 
 // Alcoholic drinks are entered by their alcohol content and package size alone: the
 // backend keeps them per 100 ml, with kcal from the ethanol (0.789 g/ml, 7 kcal/g).
@@ -1711,7 +1717,7 @@ function per100(f) {
   const k = 100 / f.basis_qty;
   const out = { ...f, basis_qty: 100, kcal: f.kcal == null ? null : f.kcal * k };
   for (const m of MACROS) out[m.key] = f[m.key] == null ? null : f[m.key] * k;
-  out.b12_ug = f.b12_ug == null ? null : f.b12_ug * k;
+  for (const m of MICROS) out[m.key] = f[m.key] == null ? null : f[m.key] * k;
   return out;
 }
 
@@ -1732,7 +1738,8 @@ function renderFoods() {
       <td>${f.is_meta ? `<span class="muted">any brand</span>` : esc(f.brand)}${f.ean ? `<span class="ean" title="Barcode">${esc(f.ean)}</span>` : ""}</td>
       <td class="n">${fmtQty(f.basis_qty)} ${esc(f.unit)}</td>
       ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
-      <td class="n">${f.b12_ug == null ? `<span class="muted" title="Not entered yet">–</span>` : fmt(f.b12_ug, f.b12_ug < 10 ? 2 : 1)}</td>
+      <td class="n">${f.protein_per_100kcal == null ? `<span class="muted" title="${f.kcal == null ? "No kcal entered yet" : "Calorie-free"}">–</span>` : fmt(f.protein_per_100kcal, 1)}</td>
+      ${MICROS.map((m) => `<td class="n">${f[m.key] == null ? `<span class="muted" title="Not entered yet">–</span>` : fmt(f[m.key], f[m.key] < 10 ? 2 : 1)}</td>`).join("")}
       <td class="n">${f.uses}</td>
       <td class="act">${favButton("food", f)}${listButton(f.id, f.name)}<button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
     </tr>`;
@@ -1757,7 +1764,7 @@ function renderFoods() {
     const arrow = sorted ? (sorted > 0 ? " ▲" : " ▼") : "";
     return `<th class="${cls}"${aria}${title ? ` title="${title}"` : ""}><button type="button" class="sort-btn" data-sort="${key}">${label}<span class="sort-arrow" aria-hidden="true">${arrow}</span></button></th>`;
   };
-  const head = `<tr>${th("name", "Name")}${th("brand", "Brand")}${th("per", "Per", "n")}${th("kcal", "kcal", "n")}${th("protein_g", "P", "n")}${th("carbs_g", "C", "n")}${th("fat_g", "F", "n")}${th("fiber_g", "Fib", "n")}${th("b12_ug", "B12", "n", "Vitamin B12 (µg)")}${th("uses", "Uses", "n", "Times logged in the last 90 days")}<th class="act"><span class="sr">Actions</span></th></tr>`;
+  const head = `<tr>${th("name", "Name")}${th("brand", "Brand")}${th("per", "Per", "n")}${th("kcal", "kcal", "n")}${th("protein_g", "P", "n")}${th("carbs_g", "C", "n")}${th("fat_g", "F", "n")}${th("fiber_g", "Fib", "n")}${th("protein_per_100kcal", "P/100", "n", "Protein (g) per 100 kcal")}${MICROS.map((m) => th(m.key, m.short, "n", `${m.label} (${m.unit})`)).join("")}${th("uses", "Uses", "n", "Times logged in the last 90 days")}<th class="act"><span class="sr">Actions</span></th></tr>`;
   // One table per group, in the vocabulary's order; foods without a group last.
   box.innerHTML = byFoodGroup(rows)
     .map(
@@ -1765,7 +1772,7 @@ function renderFoods() {
       ${groupHeading(g, list.length, `fg-${g.key || "none"}`)}
       <div class="table-wrap">
         <table class="foods-table">
-          <colgroup><col class="c-name"><col class="c-brand"><col class="c-per"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-act"></colgroup>
+          <colgroup><col class="c-name"><col class="c-brand"><col class="c-per">${'<col class="c-n">'.repeat(7 + MICROS.length)}<col class="c-act"></colgroup>
           <thead>${head}</thead>
           <tbody>${list.map(row).join("")}</tbody>
         </table>
@@ -1814,7 +1821,7 @@ function fillMetaSelect() {
 
 // What a new food takes from the meta food picked under "One of". The user can still
 // change these; the group and unit always follow the meta food.
-const META_FILL = ["basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), "b12_ug", "serving_qty", "abv_pct"];
+const META_FILL = ["basis_qty", "unit", "kcal", ...MACROS.map((m) => m.key), ...MICROS.map((m) => m.key), "serving_qty", "abv_pct"];
 
 /** The meta food picked under "One of", if the form is for a food (not a meta food). */
 function pickedMeta() {
@@ -1877,7 +1884,8 @@ const FOOD_SORT = {
   carbs_g: { get: (f) => f.carbs_g },
   fat_g: { get: (f) => f.fat_g },
   fiber_g: { get: (f) => f.fiber_g },
-  b12_ug: { get: (f) => f.b12_ug },
+  protein_per_100kcal: { get: (f) => f.protein_per_100kcal },
+  ...Object.fromEntries(MICROS.map((m) => [m.key, { get: (f) => f[m.key] }])),
   uses: { get: (f) => f.uses },
 };
 
@@ -2081,7 +2089,7 @@ function toPer100(body) {
   const scale = (v) => (v == null ? v : Math.round(v * k * 100) / 100);
   body.basis_qty = 100;
   body.kcal = scale(body.kcal);
-  body.b12_ug = scale(body.b12_ug);
+  for (const m of MICROS) body[m.key] = scale(body[m.key]);
   for (const m of MACROS) body[m.key] = scale(body[m.key]);
 }
 
@@ -2096,7 +2104,6 @@ async function submitFood(ev) {
     basis_qty: num(v.basis_qty),
     unit: v.unit.trim(),
     kcal: num(v.kcal), // empty = not known yet, unlike 0
-    b12_ug: num(v.b12_ug), // empty = not known yet, unlike 0
     serving_qty: num(v.serving_qty) || null,
     package_qty: num(v.package_qty) || null,
     food_group: form.elements.food_group.value,
@@ -2105,11 +2112,13 @@ async function submitFood(ev) {
   };
   if (body.is_meta) Object.assign(body, { brand: "", ean: null, package_qty: null, meta_id: null });
   for (const m of MACROS) body[m.key] = num(v[m.key]) ?? 0;
+  for (const m of MICROS) body[m.key] = num(v[m.key]); // empty = not known yet, unlike 0
   for (const t of state.vocab.diet_tags) body[t.key] = form.elements[t.key].checked;
   if (body.food_group === ALCOHOLIC) {
     // the rest comes from the alcohol content (the backend works it out)
-    Object.assign(body, { basis_qty: 100, unit: "ml", kcal: null, serving_qty: null, abv_pct: num(v.abv_pct), b12_ug: null });
+    Object.assign(body, { basis_qty: 100, unit: "ml", kcal: null, serving_qty: null, abv_pct: num(v.abv_pct) });
     for (const m of MACROS) body[m.key] = 0;
+    for (const m of MICROS) body[m.key] = null;
   } else if (state.offDraft && !state.editingFoodId) {
     toPer100(body);
   }

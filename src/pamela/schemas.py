@@ -217,6 +217,12 @@ class FoodIn(DietTags, _In):
     b12_ug: float | None = Field(
         None, ge=0, le=100_000, description="Vitamin B12 (µg) per basis_qty; empty = not known"
     )
+    vit_d_ug: float | None = Field(
+        None, ge=0, le=100_000, description="Vitamin D (µg) per basis_qty; empty = not known"
+    )
+    caffeine_mg: float | None = Field(
+        None, ge=0, le=100_000, description="Caffeine (mg) per basis_qty; empty = not known"
+    )
     serving_qty: float | None = Field(None, gt=0, description="One serving, in `unit`")
     package_qty: float | None = Field(None, gt=0, description="Whole package, in `unit`")
     food_group: FoodGroup | Literal[""] = Field("", description="'' = no group")
@@ -284,6 +290,8 @@ class Food(Macros, DietTags):
     food_group: str = ""
     abv_pct: float | None = None
     b12_ug: float | None = Field(None, description="Vitamin B12 (µg) per basis_qty; null = unknown")
+    vit_d_ug: float | None = Field(None, description="Vitamin D (µg) per basis_qty; null = unknown")
+    caffeine_mg: float | None = Field(None, description="Caffeine (mg) per basis_qty; null = unknown")
     is_meta: bool = False
     meta_id: int | None = None
     meta_name: str | None = Field(None, description="The name of its meta food")
@@ -299,6 +307,11 @@ class Food(Macros, DietTags):
     def calorie_free(self) -> bool:
         return self.kcal == 0
 
+    @computed_field(description="Grams of protein per 100 kcal; null without kcal")
+    @property
+    def protein_per_100kcal(self) -> float | None:
+        return None if not self.kcal else self.protein_g / self.kcal * 100
+
 
 class FoodDraft(Macros, DietTags):
     """Prefilled food fields from a barcode lookup; not saved yet."""
@@ -313,6 +326,9 @@ class FoodDraft(Macros, DietTags):
     package_qty: float | None = None
     food_group: str = ""
     abv_pct: float | None = None
+    b12_ug: float | None = None
+    vit_d_ug: float | None = None
+    caffeine_mg: float | None = None
 
 
 class BarcodeLookup(BaseModel):

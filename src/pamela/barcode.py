@@ -126,6 +126,11 @@ def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
     def r(v: float | None) -> float:
         return round(v or 0, 2)
 
+    def micro(key: str, scale: float) -> float | None:
+        """An optional value, which Open Food Facts keeps in grams; missing = unknown."""
+        v = None if alcoholic else _num(n.get(f"{key}{per}"))
+        return None if v is None else round(v * scale, 2)
+
     return {
         "ean": code,
         "name": (product.get("product_name") or product.get("generic_name") or "").strip(),
@@ -137,6 +142,9 @@ def product_to_draft(code: str, product: dict[str, Any]) -> dict[str, Any]:
         "carbs_g": r(_num(n.get(f"carbohydrates{per}"))),
         "fat_g": r(_num(n.get(f"fat{per}"))),
         "fiber_g": r(_num(n.get(f"fiber{per}"))),
+        "b12_ug": micro("vitamin-b12", 1e6),
+        "vit_d_ug": micro("vitamin-d", 1e6),
+        "caffeine_mg": micro("caffeine", 1e3),
         "serving_qty": serving,
         "package_qty": _num(product.get("product_quantity")) or None,
         "food_group": "alcoholic" if alcoholic else "",

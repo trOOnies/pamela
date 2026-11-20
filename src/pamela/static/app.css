@@ -428,8 +428,8 @@ input.invalid { border-color: var(--danger); }
 .food-group + .food-group { margin-top: 18px; }
 .food-group h3 { margin: 0 0 4px; font-size: 1rem; }
 .food-group h3 .count { color: var(--text-3); font-weight: 400; font-size: .85rem; }
-/* the fixed columns take ~550px: the minimum width and Brand's share leave Name room */
-.foods-table { table-layout: fixed; min-width: 760px; }
+/* the fixed columns take ~740px: the minimum width and Brand's share leave Name room */
+.foods-table { table-layout: fixed; min-width: 940px; }
 .foods-table col.c-brand { width: 16%; }
 .foods-table col.c-per { width: 82px; }
 .foods-table col.c-n { width: 52px; }
