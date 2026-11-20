@@ -69,6 +69,9 @@ from .schemas import (
     ReminderIn,
     SavedMeal,
     SavedMealIn,
+    ShoppingItem,
+    ShoppingItemIn,
+    ShoppingNoteIn,
     Target,
     TargetIn,
     Vocabulary,
@@ -1414,6 +1417,7 @@ def create_cart(cart: CartIn, conn: Conn) -> dict:
     )
     for food_id in _store_cart_items(conn, cur.lastrowid, cart):
         _fill_shortfalls(conn, food_id, cart.bought_on.isoformat())
+    _cross_off(conn, {it.food_id for it in cart.items}, {x.name for x in cart.extras})
     return _cart(conn, cur.lastrowid)
 
 
@@ -1430,6 +1434,12 @@ def update_cart(cart_id: int, cart: CartIn, conn: Conn) -> dict:
     old = _cart(conn, cart_id)
     _not_future(cart.bought_on)
     day = cart.bought_on.isoformat()
+    had = {db.fold(x["name"]) for x in old["extras"]}
+    _cross_off(
+        conn,
+        {it.food_id for it in cart.items if it.id is None},
+        {x.name for x in cart.extras if db.fold(x.name) not in had},
+    )
     conn.execute(
         "UPDATE carts SET bought_on = ?, store = ?, updated_at = datetime('now') WHERE id = ?",
         (day, cart.store, cart_id),
@@ -1456,6 +1466,129 @@ def delete_cart(cart_id: int, conn: Conn) -> Response:
     for food_id in {it["food_id"] for it in old["items"]}:
         _fill_shortfalls(conn, food_id, old["bought_on"])
     _settle_places(conn)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- shopping list ----------------------------------------------------------------
+
+
+def _cross_off(conn: sqlite3.Connection, food_ids: set[int], names: set[str] | None = None) -> None:
+    """Bought: those foods, the meta foods they're one of, and the things that aren't
+    food with those names (ignoring case and accents) leave the shopping list."""
+    folded = sorted({db.fold(n) for n in names or ()})
+    if folded:
+        conn.execute(
+            f"DELETE FROM shopping_items WHERE food_id IS NULL AND fold(name) IN "
+            f"({', '.join('?' * len(folded))})",
+            folded,
+        )
+    if not food_ids:
+        return
+    marks = ", ".join("?" * len(food_ids))
+    conn.execute(
+        f"""DELETE FROM shopping_items WHERE food_id IN ({marks})
+            OR food_id IN (SELECT meta_id FROM foods WHERE id IN ({marks}))""",
+        (*food_ids, *food_ids),
+    )
+
+
+def _shopping_list(conn: sqlite3.Connection, item_id: int | None = None) -> list[dict]:
+    """The list, by name; each meta food with its foods, any of which will do. Things
+    that aren't food have only a name."""
+    rows = conn.execute(
+        """SELECT s.id, s.food_id, s.note, date(s.created_at) AS added_on,
+                  COALESCE(f.name, s.name) AS name, COALESCE(f.brand, '') AS brand,
+                  COALESCE(f.unit, '') AS unit, f.basis_qty, f.package_qty,
+                  COALESCE(f.food_group, '') AS food_group, COALESCE(f.is_meta, 0) AS is_meta
+           FROM shopping_items s LEFT JOIN foods f ON f.id = s.food_id"""
+        + (" WHERE s.id = ?" if item_id is not None else "")
+        + " ORDER BY name COLLATE NOCASE, brand COLLATE NOCASE, s.id",
+        () if item_id is None else (item_id,),
+    ).fetchall()
+    if not rows:
+        return rows
+    stock = _stock_left(conn)
+    last = {
+        r["food_id"]: r["quantity"]
+        for r in conn.execute(
+            """SELECT l.food_id, l.quantity FROM stock_lots l JOIN carts c ON c.id = l.cart_id
+               ORDER BY c.bought_on, c.id, l.position, l.id"""
+        )
+    }  # the latest purchase wins
+    options: dict[int, list[dict]] = {}
+    metas = [r["food_id"] for r in rows if r["is_meta"]]
+    if metas:
+        marks = ", ".join("?" * len(metas))
+        for f in conn.execute(
+            f"""SELECT id, meta_id, name, brand, unit, basis_qty, package_qty FROM foods
+                WHERE meta_id IN ({marks}) ORDER BY name COLLATE NOCASE, brand COLLATE NOCASE""",
+            metas,
+        ):
+            f["last_quantity"] = last.get(f["id"])
+            options.setdefault(f.pop("meta_id"), []).append(f)
+    for r in rows:
+        opts = options.get(r["food_id"], [])
+        r["options"] = opts
+        r["in_stock"] = (
+            sum(stock.get(o["id"], 0) for o in opts) if r["is_meta"] else stock.get(r["food_id"], 0)
+        )
+        r["last_quantity"] = None if r["is_meta"] else last.get(r["food_id"])
+    return rows
+
+
+@router.get("/shopping-list", response_model=list[ShoppingItem])
+def list_shopping(conn: Conn) -> list[dict]:
+    """What to buy next. Saving a cart takes what's in it off the list."""
+    return _shopping_list(conn)
+
+
+@router.post("/shopping-list", response_model=ShoppingItem, status_code=status.HTTP_201_CREATED)
+def add_shopping(item: ShoppingItemIn, conn: Conn) -> dict:
+    """Put a food (or a meta food), or something that isn't food (by name), on the list.
+    One already on it (for a name: the same, ignoring case and accents) stays as it
+    was, unless a note is given."""
+    if item.food_id is not None:
+        _food_row(conn, item.food_id)
+        row = conn.execute(
+            "SELECT id FROM shopping_items WHERE food_id = ?", (item.food_id,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT id FROM shopping_items WHERE food_id IS NULL AND fold(name) = ?",
+            (db.fold(item.name),),
+        ).fetchone()
+    if row is None:
+        item_id = conn.execute(
+            "INSERT INTO shopping_items (food_id, name, note) VALUES (?, ?, ?)",
+            (item.food_id, item.name, item.note),
+        ).lastrowid
+    else:
+        item_id = row["id"]
+        if item.note:
+            conn.execute("UPDATE shopping_items SET note = ? WHERE id = ?", (item.note, item_id))
+    return _shopping_list(conn, item_id)[0]
+
+
+@router.put("/shopping-list/{item_id}", response_model=ShoppingItem)
+def update_shopping(item_id: int, body: ShoppingNoteIn, conn: Conn) -> dict:
+    if conn.execute(
+        "UPDATE shopping_items SET note = ? WHERE id = ?", (body.note, item_id)
+    ).rowcount == 0:
+        raise _not_found("shopping list item")
+    return _shopping_list(conn, item_id)[0]
+
+
+@router.delete("/shopping-list/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_shopping(item_id: int, conn: Conn) -> Response:
+    if conn.execute("DELETE FROM shopping_items WHERE id = ?", (item_id,)).rowcount == 0:
+        raise _not_found("shopping list item")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/shopping-list", status_code=status.HTTP_204_NO_CONTENT)
+def clear_shopping(conn: Conn) -> Response:
+    """Empty the whole list."""
+    conn.execute("DELETE FROM shopping_items")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

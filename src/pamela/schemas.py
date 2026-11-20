@@ -1080,3 +1080,58 @@ class Vocabulary(BaseModel):
     feelings: list[Choice]
     genders: list[Choice]
     weekdays: list[str] = Field(description="Day names, Monday first (weekday 0)")
+
+
+# --- shopping list ----------------------------------------------------------------
+
+
+class ShoppingItemIn(_In):
+    """A food to buy (``food_id``; a meta food is fine: any of its foods will do), or
+    something that isn't food (``name``), which is never tracked."""
+
+    food_id: int | None = None
+    name: str = Field("", max_length=200, description="What to buy, when it isn't a food")
+    note: str = Field("", max_length=100, description='e.g. "2 packs", "the big one"')
+
+    @model_validator(mode="after")
+    def _one(self) -> ShoppingItemIn:
+        if (self.food_id is None) == (self.name == ""):
+            raise ValueError("a shopping list item is a food (food_id) or a name, not both")
+        return self
+
+
+class ShoppingNoteIn(_In):
+    note: str = Field("", max_length=100)
+
+
+class ShoppingOption(BaseModel):
+    """One of a meta food's foods, which can go in the cart for it."""
+
+    id: int
+    name: str
+    brand: str
+    unit: str
+    basis_qty: float
+    package_qty: float | None
+    last_quantity: float | None = Field(None, description="How much was bought the last time")
+
+
+class ShoppingItem(BaseModel):
+    id: int
+    food_id: int | None = Field(description="None: it isn't food, only a name")
+    name: str
+    brand: str = ""
+    unit: str = ""
+    basis_qty: float | None = None
+    package_qty: float | None = None
+    food_group: str = ""
+    is_meta: bool = False
+    note: str
+    added_on: dt.date
+    in_stock: float = Field(
+        0, description="What's left at home (of all its foods, for a meta food)"
+    )
+    last_quantity: float | None = Field(None, description="How much was bought the last time")
+    options: list[ShoppingOption] = Field(
+        default_factory=list, description="A meta food's foods, which can be bought for it"
+    )

@@ -28,10 +28,26 @@ function favButton(kind, x) {
 function favoritesFirst(list) {
   return list.map((x, i) => [x, i]).sort(([a, i], [b, j]) => (b.favorite - a.favorite) || i - j).map(([x]) => x);
 }
+const LIST_ICON = `<svg class="ico" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M2.5 3.5h2l1.8 8.6a1.2 1.2 0 0 0 1.2.9h6.9a1.2 1.2 0 0 0 1.2-.9l1.3-5.6H5.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="16.3" r="1.3" fill="currentColor"/><circle cx="14" cy="16.3" r="1.3" fill="currentColor"/></svg>`;
+/** The shopping list's item for a food, if it's on it. */
+function onList(foodId) {
+  return state.shopping.find((it) => it.food_id === foodId);
+}
+/** Puts a food on the shopping list, or takes it off: an icon (Foods) or a word (Ran out). */
+function listButton(foodId, name, asText = false) {
+  const on = !!onList(foodId);
+  const label = `${on ? "Take" : "Put"} ${name} ${on ? "off" : "on"} the shopping list`;
+  const title = on ? "On the shopping list (in Carts): press to take it off" : "Add to the shopping list, in Carts";
+  return asText
+    ? `<button type="button" class="row-btn list-btn text" data-shop-toggle="${foodId}" aria-pressed="${on}" title="${title}" aria-label="${esc(label)}">${on ? "✓ On the list" : "+ List"}</button>`
+    : `<button type="button" class="row-btn icon list-btn" data-shop-toggle="${foodId}" aria-pressed="${on}" title="${title}" aria-label="${esc(label)}">${LIST_ICON}</button>`;
+}
 const PENCIL = `<svg class="ico" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M13.3 3.3a1.9 1.9 0 0 1 2.7 0l.7.7a1.9 1.9 0 0 1 0 2.7L7.4 16 3.5 16.9l.9-3.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.8 4.8l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
 
 const state = {
   config: null,
+  shopping: [],         // the shopping list: { id, food_id, name, is_meta, note, options, ... }
+  shopPicks: new Map(), // shopping list item id -> which of a meta food's foods goes in the cart
   vocab: null,          // diet tags, moods and feelings (labels come from the backend)
   activityTypes: [],
   savedMeals: [],
@@ -452,9 +468,9 @@ function openDayPicker() {
 /**
  * Wires a search input + listbox to the food catalog.
  * onPick(food) is called on a choice; onCreate(query), if given, adds a last
- * "create / look up" option. Enter never submits a form unless canSubmit() says so.
+ * "create / look up" option (createLabel(query) words it, as HTML). Enter never submits a form unless canSubmit() says so.
  */
-function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => false, showStock = () => true, kind = "foods" }) {
+function foodCombo({ input, list, onPick, onCreate, createLabel, onInput, canSubmit = () => false, showStock = () => true, kind = "foods" }) {
   // pending: a search is waiting (debounce or request). Enter meanwhile is held
   // and picks the first fresh result, so fast typing and barcode scanners
   // (digits + Enter in a few ms) never pick a stale suggestion.
@@ -478,7 +494,7 @@ function foodCombo({ input, list, onPick, onCreate, onInput, canSubmit = () => f
       )
       .join("");
     if (q && onCreate) {
-      const label = isBarcode(q) ? `+ Look up barcode ${esc(q)} in Foods` : `+ Create “${esc(q)}” in Foods`;
+      const label = createLabel ? createLabel(q) : isBarcode(q) ? `+ Look up barcode ${esc(q)} in Foods` : `+ Create “${esc(q)}” in Foods`;
       html += `<li role="option" class="create" data-create="1" id="${idp}-create" aria-selected="${c.active === c.results.length}"><span>${label}</span></li>`;
     }
     if (q && !onCreate && !c.results.length) html = `<li class="none" aria-disabled="true"><span>No foods match</span></li>`;
@@ -1675,7 +1691,7 @@ const NO_KCAL_CELL = `<td class="n"><span class="warn-kcal" title="No kcal enter
 async function loadFoods() {
   document.title = "Foods · Pamela";
   try {
-    const [foods, brands] = await Promise.all([api("GET", "/foods?limit=1000"), api("GET", "/brands")]);
+    const [foods, brands] = await Promise.all([api("GET", "/foods?limit=1000"), api("GET", "/brands"), loadShopping()]);
     state.foods = foods;
     fillMetaSelect();
     updateMetaLock(); // the meta food picked in the form may have a new group
@@ -1718,7 +1734,7 @@ function renderFoods() {
       ${f.kcal == null ? macroCells(f, NO_KCAL_CELL) : macroCells(f)}
       <td class="n">${f.b12_ug == null ? `<span class="muted" title="Not entered yet">–</span>` : fmt(f.b12_ug, f.b12_ug < 10 ? 2 : 1)}</td>
       <td class="n">${f.uses}</td>
-      <td class="act">${favButton("food", f)}<button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
+      <td class="act">${favButton("food", f)}${listButton(f.id, f.name)}<button type="button" class="row-btn icon" data-edit-food="${f.id}" title="Edit" aria-label="Edit ${esc(f.name)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-food="${f.id}" aria-label="Delete ${esc(f.name)}">✕</button></td>
     </tr>`;
   const box = $("#foods-groups");
   if (!rows.length) {
@@ -2193,7 +2209,7 @@ async function loadGroceries() {
   if (!day.value || (!state.editingCartId && day.value > todayISO())) day.value = todayISO();
   renderTrip();
   try {
-    state.groceries = await api("GET", "/groceries");
+    [state.groceries] = await Promise.all([api("GET", "/groceries"), loadShopping()]);
     // the cart being edited was deleted meanwhile (e.g. its foods were)
     if (state.editingCartId && !state.groceries.carts.some((c) => c.id === state.editingCartId)) resetCartForm();
     renderGroceries();
@@ -2247,13 +2263,14 @@ function renderGroceries() {
   renderStock(inStock);
   renderStockBalance(g.nutrition);
   renderCarts();
+  renderShopping();
 
   $("#ranout-count").textContent = ranOut.length ? `(${ranOut.length})` : "";
   $("#ranout-list").innerHTML = ranOut.length
     ? groupedList(
         ranOut,
         (it) => `<li><span>${foodLabel(it)} <small>last bought ${fmtDay(it.last_bought)}</small></span>
-          <button type="button" class="row-btn add-to" data-buy-again="${it.food_id}">+ Buy again</button></li>`
+          <span class="ranout-btns">${listButton(it.food_id, it.name, true)}<button type="button" class="row-btn add-to" data-buy-again="${it.food_id}">+ Buy again</button></span></li>`
       )
     : `<li class="empty">Nothing yet. Foods you finish show up here.</li>`;
 
@@ -2527,6 +2544,7 @@ function renderTrip() {
   $("#trip-submit").textContent = state.editingCartId ? "Save cart" : what ? `Add cart (${what})` : "Add cart";
   renderExtras();
   renderTripTotal();
+  if (!$("#shop-list").contains(document.activeElement)) renderShopping();
 }
 
 /** The cart's other items (not food): { name, quantity, unit, price }. */
@@ -2838,6 +2856,182 @@ function openCartForm() {
   requestAnimationFrame(() => $(".trip-card").scrollIntoView({ block: "nearest" }));
 }
 
+// shopping list ------------------------------------------------------------------------------
+
+async function loadShopping() {
+  state.shopping = await api("GET", "/shopping-list");
+}
+
+/** The foods in the cart being filled in that are new to it (saving it crosses those off). */
+function tripNewFoods() {
+  return new Set(state.trip.filter((it) => it.id == null).map((it) => it.food.id));
+}
+/** The other items (not food) in the cart being filled in that are new to it, by name. */
+function tripNewExtras() {
+  const cart = state.editingCartId && state.groceries?.carts.find((c) => c.id === state.editingCartId);
+  const had = new Set((cart?.extras ?? []).map((x) => fold(x.name.trim())));
+  return new Set(state.tripExtras.map((x) => fold(x.name.trim())).filter((n) => n && !had.has(n)));
+}
+/** It's in the cart being filled in: the food, one of a meta food's foods, or (not
+ * food) an other item of the same name. */
+function inTrip(it, ids = tripNewFoods(), extras = tripNewExtras()) {
+  if (it.food_id == null) return extras.has(fold(it.name));
+  return ids.has(it.food_id) || it.options.some((o) => ids.has(o.id));
+}
+/** The food that goes in the cart for it: itself, or the meta food's picked food. */
+function shopPick(it) {
+  if (it.food_id == null) return null;
+  if (!it.is_meta) return { id: it.food_id, name: it.name, brand: it.brand, unit: it.unit, basis_qty: it.basis_qty, package_qty: it.package_qty, last_quantity: it.last_quantity };
+  if (!it.options.length) return null;
+  const chosen = Number($(`[data-shop-pick="${it.id}"]`)?.value) || state.shopPicks.get(it.id);
+  return it.options.find((o) => o.id === chosen) ?? it.options.find((o) => o.last_quantity != null) ?? it.options[0];
+}
+
+function renderShopping() {
+  const items = state.shopping;
+  if (!$("#shop-list")) return;
+  const ids = tripNewFoods();
+  const extras = tripNewExtras();
+  const todo = items.filter((it) => !inTrip(it, ids, extras) && (!it.is_meta || it.options.length));
+  $("#shop-count").textContent = items.length ? `(${items.length})` : "";
+  $("#shop-clear").hidden = !items.length;
+  $("#shop-all").hidden = todo.length < 2;
+  const row = (it) => {
+    const home = it.in_stock > 1e-6 ? `<span class="shop-home" title="What's left at home">${fmtStock(it.in_stock, it)} at home</span>` : "";
+    const pill = it.is_meta ? ` <span class="meta-pill" title="Any brand: pick which one goes in the cart">🔀 any brand</span>` : "";
+    let pick = "";
+    if (it.is_meta && it.options.length > 1) {
+      const sel = shopPick(it).id;
+      pick = `<select class="shop-pick" data-shop-pick="${it.id}" aria-label="Which ${esc(it.name)} to buy">${it.options
+        .map((o) => `<option value="${o.id}"${o.id === sel ? " selected" : ""}>${esc(o.name)}${o.brand ? ` · ${esc(o.brand)}` : ""}</option>`)
+        .join("")}</select>`;
+    } else if (it.is_meta && it.options.length === 1) {
+      pick = `<small class="shop-one">${esc(it.options[0].brand || it.options[0].name)}</small>`;
+    }
+    const cartBtn = inTrip(it, ids, extras)
+      ? `<span class="shop-in" title="It's in the cart you're filling in: saving the cart takes it off the list">✓ In the cart</span>`
+      : it.is_meta && !it.options.length
+        ? `<span class="meta-none" title="Make a food one of it, in Foods, to buy it">No foods of it yet</span>`
+        : `<button type="button" class="row-btn add-to" data-shop-cart="${it.id}" title="${it.food_id == null ? "Add it to the cart you're filling in, under Other items" : "Add it to the cart you're filling in"}">+ Cart</button>`;
+    return `<li data-shop-item="${it.id}">
+        <span class="shop-what">${foodLabel(it)}${pill}${home}</span>
+        <span class="shop-btns">${pick}<input type="text" class="shop-note" maxlength="100" value="${esc(it.note)}" data-shop-note="${it.id}" placeholder="Note" aria-label="Note for ${esc(it.name)}" title="e.g. 2 packs, the big one">${cartBtn}<button type="button" class="row-btn del" data-shop-del="${it.id}" title="Take it off the list" aria-label="Take ${esc(it.name)} off the list">✕</button></span>
+      </li>`;
+  };
+  const foods = items.filter((it) => it.food_id != null);
+  const others = items.filter((it) => it.food_id == null);
+  $("#shop-list").innerHTML = items.length
+    ? (foods.length ? groupedList(foods, row) : "") +
+      (others.length ? `<li class="group-head">${groupHeading({ emoji: "🧴", label: "Not food" }, others.length)}</li>${others.map(row).join("")}` : "")
+    : `<li class="empty">Nothing to buy yet. Add foods (or anything else) here, foods from Foods too, or from what ran out in Stock and Fridge.</li>`;
+}
+
+/** Re-draws whatever shows the list in the open tab. */
+function renderListButtons() {
+  if (state.view === "foods") renderFoods();
+  else if (GROCERY_VIEWS.includes(state.view)) renderGroceries();
+  else if (state.view === "fridge") renderFridge();
+}
+
+/** Puts a food on the list (by id), or something that isn't food (by name). */
+async function addShopping(foodId, name = "") {
+  try {
+    const it = await api("POST", "/shopping-list", foodId == null ? { name } : { food_id: foodId });
+    await loadShopping();
+    renderListButtons();
+    toast(`📝 ${it.name} is on the shopping list`);
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function toggleShopping(foodId) {
+  const it = onList(foodId);
+  try {
+    if (it) await api("DELETE", `/shopping-list/${it.id}`);
+    else await api("POST", "/shopping-list", { food_id: foodId });
+    await loadShopping();
+    renderListButtons();
+    $(`#view-${state.view} [data-shop-toggle="${foodId}"]`)?.focus();
+    const name = it?.name ?? onList(foodId)?.name ?? "It";
+    toast(it ? `${name} is off the shopping list` : `📝 ${name} is on the shopping list, in Carts`);
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function removeShopping(id) {
+  const it = state.shopping.find((x) => x.id === id);
+  if (!it) return;
+  try {
+    await api("DELETE", `/shopping-list/${id}`);
+    await loadShopping();
+    renderShopping();
+    toast(`${it.name} is off the shopping list`);
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function saveShoppingNote(id, note) {
+  const it = state.shopping.find((x) => x.id === id);
+  if (!it || it.note === note.trim()) return;
+  const was = it.note;
+  it.note = note.trim(); // a redraw meanwhile keeps what was typed
+  try {
+    const saved = await api("PUT", `/shopping-list/${id}`, { note });
+    it.note = saved.note;
+  } catch (err) {
+    it.note = was;
+    showError(err);
+  }
+}
+
+async function clearShopping() {
+  const n = state.shopping.length;
+  const ok = await confirmDialog({
+    title: "🧹 Clear the shopping list?",
+    body: `<p>All ${n} item${n === 1 ? "" : "s"} leave the list. Your foods and carts stay as they are.</p>`,
+    ok: "Clear list",
+  });
+  if (!ok) return;
+  try {
+    await api("DELETE", "/shopping-list");
+    await loadShopping();
+    renderShopping();
+    toast("Shopping list cleared");
+  } catch (err) {
+    showError(err);
+  }
+}
+
+/** Puts a shopping list item in the cart being filled in. */
+function shopToCart(id, quiet = false) {
+  const it = state.shopping.find((x) => x.id === id);
+  if (it && it.food_id == null) {
+    // not food: one of the cart's other items, priced at the shops
+    state.tripExtras.push({ name: it.name, quantity: 1, unit: "u", price: "" });
+    renderTrip();
+    renderShopping();
+    if (!quiet) toast(`${it.name} added to the cart, under Other items`);
+    return true;
+  }
+  const f = it && shopPick(it);
+  if (!f) return false;
+  addTripItem(f, f.last_quantity ?? undefined);
+  renderShopping(); // focus left the list for the new row, so mark it "in the cart"
+  if (!quiet) toast(`${f.name} added to the cart`);
+  return true;
+}
+
+function shopAllToCart() {
+  const ids = tripNewFoods();
+  const extras = tripNewExtras();
+  const todo = state.shopping.filter((it) => !inTrip(it, ids, extras));
+  const n = todo.filter((it) => shopToCart(it.id, true)).length;
+  if (n) toast(`${n} item${n === 1 ? "" : "s"} added to the cart`);
+}
+
 // taking out: expired, or eaten by someone else ------------------------------------------
 
 // How food leaves the stock without being logged, so without counting toward your macros.
@@ -2934,7 +3128,7 @@ const checkKey = (f, sec) => `${f.food_id}:${sec.id}`;
 async function loadFridge() {
   document.title = "Fridge · Pamela";
   try {
-    state.fridge = await api("GET", "/fridge");
+    [state.fridge] = await Promise.all([api("GET", "/fridge"), loadShopping()]);
     if (state.editingSectorId && !state.fridge.sectors.some((x) => x.id === state.editingSectorId)) resetSectorForm();
     renderFridge();
   } catch (err) {
@@ -3064,7 +3258,7 @@ function renderRecentlyOut(all, searching) {
           const when = d === 0 ? "today" : d === 1 ? "yesterday" : `${d} d ago`;
           const where = it.sector ? ` · last eaten from ${it.emoji ? `${esc(it.emoji)} ` : ""}${esc(it.sector)}` : "";
           return `<li><span>${groupEmoji(it.food_group)}${foodLabel(it)}</span>
-            <small title="${fmtDay(it.ran_out_on)}">ran out ${when}${where}</small></li>`;
+            <span class="ranout-btns"><small title="${fmtDay(it.ran_out_on)}">ran out ${when}${where}</small>${listButton(it.food_id, it.name, true)}</span></li>`;
         })
         .join("")
     : `<li class="empty">Nothing ran out in the last 30 days.</li>`;
@@ -5206,6 +5400,54 @@ function wire() {
     }
   };
   for (const v of GROCERY_VIEWS) $(`#view-${v}`).addEventListener("click", onGroceriesClick);
+
+  // shopping list: in Carts; the 🛒 / "+ List" buttons in Foods, Stock and Fridge
+  for (const v of ["foods", "stock", "fridge"]) {
+    $(`#view-${v}`).addEventListener("click", (e) => {
+      const t = e.target.closest("[data-shop-toggle]");
+      if (t) toggleShopping(Number(t.dataset.shopToggle));
+    });
+  }
+  foodCombo({
+    input: $("#shop-search"),
+    list: $("#shop-suggest"),
+    kind: "all",
+    onPick: (f) => {
+      $("#shop-search").value = "";
+      addShopping(f.id);
+    },
+    onCreate: (q) => {
+      $("#shop-search").value = "";
+      addShopping(null, q);
+    },
+    createLabel: (q) => `+ Add “${esc(q)}”, not a food <small>(only to remember: it's never tracked)</small>`,
+  });
+  $("#shop-list").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-shop-cart], [data-shop-del]");
+    if (!t) return;
+    if (t.dataset.shopCart) shopToCart(Number(t.dataset.shopCart));
+    else removeShopping(Number(t.dataset.shopDel));
+  });
+  $("#shop-list").addEventListener("change", (e) => {
+    const note = e.target.closest("[data-shop-note]");
+    if (note) return saveShoppingNote(Number(note.dataset.shopNote), note.value);
+    const pick = e.target.closest("[data-shop-pick]");
+    if (pick) state.shopPicks.set(Number(pick.dataset.shopPick), Number(pick.value));
+  });
+  $("#shop-list").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.matches("[data-shop-note]")) {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+  $("#shop-list").addEventListener("focusout", (e) => {
+    // the "in the cart" marks wait while a note is being typed
+    if (!e.relatedTarget || !$("#shop-list").contains(e.relatedTarget)) requestAnimationFrame(() => {
+      if (!$("#shop-list").contains(document.activeElement)) renderShopping();
+    });
+  });
+  $("#shop-all").addEventListener("click", shopAllToCart);
+  $("#shop-clear").addEventListener("click", clearShopping);
   $("#expire-form").addEventListener("submit", submitExpire);
 
   // saved meals

@@ -627,6 +627,34 @@ MIGRATIONS: list[str] = [
     WHERE meta_id IS NOT NULL
       AND food_group != (SELECT m.food_group FROM foods m WHERE m.id = foods.meta_id);
     """,
+    # 29: the shopping list: foods to buy (a meta food too: any of its foods will do),
+    # each once, with an optional note ("2 packs", "the big one"). Saving a cart with
+    # one of them (or one of a meta food's foods) takes it off the list.
+    """
+    CREATE TABLE shopping_items (
+        id          INTEGER PRIMARY KEY,
+        food_id     INTEGER NOT NULL UNIQUE REFERENCES foods (id) ON DELETE CASCADE,
+        note        TEXT    NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    """,
+    # 30: the shopping list can hold things that aren't food too (dish soap, bags...),
+    # by name only: like a cart's other items, they're never tracked. Saving a cart with
+    # an other item of the same name takes it off the list.
+    """
+    CREATE TABLE shopping_items_new (
+        id          INTEGER PRIMARY KEY,
+        food_id     INTEGER UNIQUE REFERENCES foods (id) ON DELETE CASCADE,
+        name        TEXT    NOT NULL DEFAULT '',      -- what to buy, when it isn't a food
+        note        TEXT    NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        CHECK ((food_id IS NULL) != (name = ''))
+    );
+    INSERT INTO shopping_items_new (id, food_id, note, created_at)
+    SELECT id, food_id, note, created_at FROM shopping_items;
+    DROP TABLE shopping_items;
+    ALTER TABLE shopping_items_new RENAME TO shopping_items;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

@@ -433,7 +433,7 @@ input.invalid { border-color: var(--danger); }
 .foods-table col.c-brand { width: 16%; }
 .foods-table col.c-per { width: 82px; }
 .foods-table col.c-n { width: 52px; }
-.foods-table col.c-act { width: 106px; }
+.foods-table col.c-act { width: 136px; }
 .foods-table td { overflow-wrap: anywhere; }
 /* pills never spill into Brand: in a narrow Name column they wrap inside it */
 .foods-table td .tag, .foods-table td .meta-pill { max-width: 100%; white-space: normal; }
@@ -952,6 +952,21 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .bal-key { display: flex; justify-content: space-between; font-size: .78rem; color: var(--text-3); }
 .groc-side { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
 .cart-list { display: flex; flex-direction: column; gap: 10px; }
+/* Carts: the shopping list above the list of carts */
+.carts-side { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.shop-btns { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; }
+.shop-card .card-head .shop-btns .btn { padding-block: 2px; font-size: .85rem; }
+.shop-list li { align-items: center; flex-wrap: wrap; }
+.shop-list li.group-head { flex-wrap: nowrap; }
+.shop-what { min-width: 0; overflow-wrap: anywhere; }
+.shop-home { display: block; font-size: .8rem; color: var(--text-3); }
+.shop-list .shop-btns { margin-left: auto; justify-content: flex-end; }
+.shop-note { width: 9rem; height: 28px; font-size: .85rem; }
+.shop-pick { max-width: 11rem; height: 28px; font-size: .85rem; }
+.shop-one { color: var(--text-2); }
+.shop-in { font-size: .8rem; color: var(--accent); white-space: nowrap; }
+.shop-list .meta-none { display: inline; font-size: .8rem; }
+.shop-card .combo { margin-top: 8px; }
 .cart { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .cart.editing { border-color: var(--accent-2-line); background: var(--accent-2-soft); }
 .cart.flash { animation: row-flash 1.6s ease-out; }
@@ -1100,6 +1115,15 @@ tr.unpicked td[data-k] { color: var(--text-3); font-style: italic; }
 .sm-top h3 { display: flex; align-items: center; gap: 2px; }
 .sm-top h3 .fav-btn { margin-left: -6px; }
 .fav-mark { color: var(--fav); }
+
+/* --- shopping list: a cart icon (Foods) or "+ List" (Ran out) ------------------------ */
+.list-btn:hover, .list-btn[aria-pressed="true"] { color: var(--accent); }
+.list-btn[aria-pressed="true"] svg path { fill: color-mix(in srgb, currentColor 25%, transparent); }
+.list-btn.text { font-size: .8rem; white-space: nowrap; color: var(--accent); }
+.list-btn.text[aria-pressed="true"] { color: var(--text-2); }
+.ranout-btns { display: inline-flex; align-items: baseline; gap: 4px 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+/* Stock's Ran out is a narrow column: one button under the other */
+#ranout-list .ranout-btns { flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
 
 /* --- day: more than is left in stock ------------------------------------------------ */
 .stock-warn { color: var(--warn); font-weight: 600; }

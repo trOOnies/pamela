@@ -398,10 +398,28 @@
           </div>
         </form>
       </section>
-      <section class="card carts-card" aria-labelledby="carts-h">
-        <div class="card-head"><h2 id="carts-h">Carts <span class="count" id="carts-count"></span></h2></div>
-        <div class="cart-list" id="cart-list"></div>
-      </section>
+      <div class="carts-side">
+        <section class="card shop-card" aria-labelledby="shop-h">
+          <div class="card-head">
+            <h2 id="shop-h">📝 Shopping list <span class="count" id="shop-count"></span></h2>
+            <div class="shop-btns">
+              <button type="button" class="btn ghost" id="shop-all" title="Put everything on the list in the cart you're filling in" hidden>+ All to the cart</button>
+              <button type="button" class="btn ghost" id="shop-clear" hidden>Clear list</button>
+            </div>
+          </div>
+          <ul class="ranout-list shop-list" id="shop-list"></ul>
+          <div class="combo">
+            <input type="search" id="shop-search" placeholder="+ Add a food, or anything else, to buy…"
+                   role="combobox" aria-expanded="false" aria-controls="shop-suggest"
+                   aria-autocomplete="list" aria-label="Add a food, or anything else, to the shopping list">
+            <ul id="shop-suggest" class="suggest" role="listbox" hidden></ul>
+          </div>
+        </section>
+        <section class="card carts-card" aria-labelledby="carts-h">
+          <div class="card-head"><h2 id="carts-h">Carts <span class="count" id="carts-count"></span></h2></div>
+          <div class="cart-list" id="cart-list"></div>
+        </section>
+      </div>
     </section>
 
     <!-- Fridge ---------------------------------------------------------- -->
@@ -865,6 +883,8 @@
           <p>♥ <b>Favorites.</b> Press the heart on a food's row to make it a favorite, and again to
             take it off. Favorites come first: in each group of the list, and in every food search,
             like the one in the Day tab.</p>
+          <p>🛒 <b>Shopping list.</b> The cart button next to the heart puts a food (a meta food
+            too) on the shopping list, in Carts; press it again to take it off.</p>
           <p>🏷️ <b>Diet tags</b>: <span class="tag tag-pescatarian">Pescatarian</span>
             <span class="tag tag-ovolactovegetarian">Ovolactovegetarian</span>
             <span class="tag tag-vegetarian">Vegetarian</span>
@@ -987,7 +1007,20 @@
             <i>Taken out</i>, where <b>Undo</b> puts it back. Neither counts toward your
             macros: to count something you ate, log it in the Day tab.</p>
           <p>🔁 <b>Ran out</b> lists foods you've finished, with <b>+ Buy again</b> to put them in
-            the cart you're filling in, in Carts.</p>
+            the cart you're filling in, in Carts, and <b>+ List</b> to put them on the shopping list.</p>
+          <p>📝 <b>Shopping list.</b> In Carts, next to the list of carts: what to buy next. Add a
+            food with its search box, with the 🛒 button on its row in Foods, or with <b>+ List</b>
+            in <i>Ran out</i> (Stock) and <i>Recently ran out</i> (Fridge); press the button again to
+            take it off. A meta food can go on it too: any of its foods will do, and you pick which
+            one goes in the cart. Things that aren't food (dish soap, bags…) go on it too: type the
+            name in its search box and pick <b>+ Add “…”, not a food</b>. They're only there to
+            remember them, never tracked, and <b>+ Cart</b> puts them in the cart's <i>Other
+            items</i>. Each item can have a note (<i>2 packs</i>, <i>the big one</i>) and
+            shows what's left at home. <b>+ Cart</b> puts it in the cart you're filling in (in the
+            amount you bought last time), and <b>+ All to the cart</b> puts them all. Saving the
+            cart takes what's in it off the list, a meta food too when one of its foods is in it, and
+            something that isn't food when the cart has an other item of the same name.
+            ✕ takes one item off, <b>Clear list</b> all of them.</p>
           <p>🔎 In the Day tab, the food search and the line under the form show how much of a food
             is left.</p>
           <p>📍 Under each food in <i>In stock</i>, where it is in the Fridge tab: its sector, or each
@@ -1013,7 +1046,8 @@
           <p>🗂️ The <b>New sector</b> form is at the very bottom of the page.</p>
           <p>🫙 <b>Recently ran out.</b> Above the <b>New sector</b> form: the foods you had in
             stock in the last 30 days and have none of now, newest first, with the day the last of
-            it went and the sector the last of it was eaten from.</p>
+            it went and the sector the last of it was eaten from. <b>+ List</b> puts one on the
+            shopping list, in Carts.</p>
           <p>🔍 <b>Search the Fridge.</b> The box on top keeps, in every sector and in <i>Not in a
             sector</i>, only the foods whose name or brand has all the words you type (accents don't matter). Sectors with no match are hidden
             while you search.</p>
