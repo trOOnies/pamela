@@ -15,11 +15,16 @@
     <a class="brand" href="#/"><img class="brand-logo" src="/static/pamela.svg" alt="" width="28" height="28">Pamela</a>
     <nav class="tabs" aria-label="Sections">
       <a href="#/" data-nav="day">Day</a>
-      <a href="#/foods" data-nav="foods">Foods</a>
-      <a href="#/meals" data-nav="meals">Meals</a>
+      <div class="nav-group" data-nav-group="catalog">
+        <span class="nav-trigger" tabindex="0" aria-controls="nav-catalog">Catalog <span class="caret" aria-hidden="true">▾</span></span>
+        <ul class="nav-menu" id="nav-catalog" aria-label="Catalog">
+          <li><a href="#/foods" data-nav="foods">🥫 Food items</a></li>
+          <li><a href="#/meals" data-nav="meals">⭐ Meals</a></li>
+        </ul>
+      </div>
       <div class="nav-group" data-nav-group="stock">
-        <span class="nav-trigger" tabindex="0" aria-controls="nav-stock">Stock <span class="caret" aria-hidden="true">▾</span></span>
-        <ul class="nav-menu" id="nav-stock" aria-label="Stock">
+        <span class="nav-trigger" tabindex="0" aria-controls="nav-stock">Food <span class="caret" aria-hidden="true">▾</span></span>
+        <ul class="nav-menu" id="nav-stock" aria-label="Food">
           <li><a href="#/fridge" data-nav="fridge">🧊 Fridge</a></li>
           <li><a href="#/stock" data-nav="stock">📦 Stock</a></li>
           <li><a href="#/carts" data-nav="carts">🛒 Carts</a></li>
@@ -434,20 +439,15 @@
       <div class="fridge-search">
         <input type="search" id="fridge-filter" placeholder="Search the Fridge…" aria-label="Search foods in every sector">
       </div>
-      <div class="fridge-grid">
-        <section class="card fridge-side" aria-labelledby="unsorted-h">
-          <div class="card-head"><h2 id="unsorted-h">Not in a sector <span class="count" id="unsorted-count"></span></h2></div>
-          <ul class="fridge-foods" id="unsorted-list"></ul>
-        </section>
-        <section class="fridge-main" aria-labelledby="sectors-h">
-          <div class="card-head fridge-head">
-            <h2 id="sectors-h">Sectors <span class="count" id="sectors-count"></span></h2>
-            <span class="fridge-progress" id="fridge-progress" aria-live="polite"></span>
-            <button type="button" class="btn ghost" id="fridge-reset-checks" title="Clear every tick to start a new check">Start a new check</button>
-          </div>
-          <div class="sector-list" id="sector-list"></div>
-        </section>
-      </div>
+      <section class="fridge-main" aria-labelledby="sectors-h">
+        <div class="card-head fridge-head">
+          <h2 id="sectors-h">Sectors <span class="count" id="sectors-count"></span></h2>
+          <span class="fridge-progress" id="fridge-progress" aria-live="polite"></span>
+          <button type="button" class="btn ghost" id="fridge-reset-checks" title="Clear every tick to start a new check">Start a new check</button>
+        </div>
+        <!-- the first card is "Not in a sector": not a real sector, it's what's left over -->
+        <div class="sector-list" id="sector-list"></div>
+      </section>
       <section class="card recent-out-card" aria-labelledby="recent-out-h">
         <div class="card-head"><h2 id="recent-out-h">Recently ran out <span class="count" id="recent-out-count"></span></h2></div>
         <ul class="ranout-list recent-out-list" id="recent-out-list"></ul>
@@ -532,12 +532,19 @@
             <div class="seg" role="radiogroup" aria-label="Show weight as">
               <label><input type="radio" name="weight-unit" value="kg" checked><span>kg</span></label>
               <label><input type="radio" name="weight-unit" value="bmi"><span>BMI</span></label>
+              <label><input type="radio" name="weight-unit" value="fat"><span>Fat</span></label>
             </div>
           </div>
           <div class="chart" id="chart-weight"></div>
           <div class="body-refs" id="body-refs"></div>
         </section>
-        <section class="card" style="--series:var(--c-bodyfat)"><h3>Body fat (%)</h3><div class="chart" id="chart-bodyfat"></div></section>
+        <section class="card split-card">
+          <div class="chart-head">
+            <h3>Energy from protein, carbs and fat (%)</h3>
+            <div class="split-legend" id="split-chart-legend"></div>
+          </div>
+          <div class="chart" id="chart-split"></div>
+        </section>
       </div>
       <section class="card">
         <div class="table-wrap">
@@ -722,7 +729,7 @@
               <li><a href="#/help" data-jump="help-day-clear">Clearing a day</a></li>
               <li><a href="#/help" data-jump="help-day-summary">Summary</a></li>
             </ol></li>
-          <li><a href="#/help" data-jump="help-foods">🥫 Foods</a></li>
+          <li><a href="#/help" data-jump="help-foods">🥫 Food items</a></li>
           <li><a href="#/help" data-jump="help-meals">⭐ Meals</a></li>
           <li><a href="#/help" data-jump="help-groceries">🛒 Stock and Carts</a></li>
           <li><a href="#/help" data-jump="help-fridge">🧊 Fridge</a></li>
@@ -753,13 +760,13 @@
             nothing is uploaded. The only time it goes online is when you look up a barcode, and
             then only the barcode itself is sent.</p>
           <p>💾 <b>No save button needed.</b> Everything you add or change is saved the moment you do it.</p>
-          <p>🗺️ <b>Finding your way.</b> The tabs at the top are the parts of the app. <b>Stock ▾</b>
-            and <b>Settings ▾</b> open a menu with a few tabs when you point at them:</p>
+          <p>🗺️ <b>Finding your way.</b> The tabs at the top are the parts of the app. <b>Catalog ▾</b>,
+            <b>Food ▾</b> and <b>Settings ▾</b> open a menu with a few tabs when you point at them:</p>
           <ul class="help-tour">
             <li><b>Day</b>: your diary for one day. This is where you'll spend most of your time.</li>
-            <li><b>Foods</b>: your own list of foods and their nutrition.</li>
-            <li><b>Meals</b>: combos you eat often, ready to log in one go, with their recipes.</li>
-            <li><b>Stock ▾</b>: your groceries. <b>Fridge</b> sorts them by where you keep them at home,
+            <li><b>Catalog ▾</b>: <b>Food items</b>, your own list of foods and their nutrition, and
+              <b>Meals</b>, combos you eat often, ready to log in one go, with their recipes.</li>
+            <li><b>Food ▾</b>: your groceries. <b>Fridge</b> sorts them by where you keep them at home,
               <b>Stock</b> shows what you have, what ran out and what expired or others ate, and
               <b>Carts</b> holds what you bought, one cart per trip to the shops.</li>
             <li><b>History</b>: charts and totals over 7, 30 or 90 days.</li>
@@ -801,7 +808,7 @@
             the form on the days it's due. <b>Log it</b> fills in the form; once it's logged that day,
             the reminder goes away until next time.</p>
           <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
-            the list, and the Foods tab opens with it filled in.</p>
+            the list, and the Food items tab opens with it filled in.</p>
           <p>🍽️ <b>Eaten out?</b> At a restaurant or at a friend's, the food didn't come from home.
             Tick <b>Eaten out</b> and whatever you log (a food or a saved meal) counts toward your
             day as usual, but isn't taken from your stock nor compared with it. Those entries show
@@ -825,8 +832,16 @@
           <p>Click an amount to change it (<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels).
             <b>+ add</b> logs straight into that meal, <b>☆ save</b> keeps its foods as a saved meal,
             and <b>✕</b> deletes a row.</p>
-          <p>🔗 next to a row opens where it came from: the food in the Foods tab, or, on a logged
+          <p>🔗 next to a row opens where it came from: the food in the Food items tab, or, on a logged
             meal's group, the meal in the Meals tab. Quick adds have no link.</p>
+          <p>⠿ <b>Sorting by hand.</b> Drag the dotted grip on the left of a row to put it somewhere
+            else: between two other rows, or on a meal's name (or its <i>Nothing logged</i>) to move it
+            to the top of that meal. A logged saved meal moves with its foods. Click a grip to select its
+            row, and click it again to deselect it; <kbd>Ctrl</kbd>- or <kbd>Alt</kbd>-click adds or takes out
+            one more, and <kbd>Shift</kbd>-click selects everything from the last one clicked. Drag any
+            selected grip and every selected row moves, in its order. With a grip focused,
+            <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> moves it (or the selection) one place, and
+            <kbd>Esc</kbd> clears the selection. What you log later goes at the bottom of its meal.</p>
 
           <h3 id="help-day-checkin">💭 Check-in</h3>
           <p>👟 Steps, 😴 hours of sleep (type <code>7:30</code>, <code>7.5</code> or <code>7h30</code>),
@@ -861,6 +876,8 @@
             humidity (%), wind (km/h) and how comfortable it felt, from ★ to ★★★★★ (tap the same star
             again to clear it). Activities with a time are listed in time order. Press the ✏️ pencil on
             a logged activity to change it or add its conditions later.</p>
+          <p>⠿ Activities sort by hand too, with the grip on their left, just like the food log. Once
+            you've sorted a day's activities, a new one goes at the bottom, whatever its time.</p>
 
           <h3 id="help-day-clear">🗑️ Clearing a day</h3>
           <p><b>Clear this day</b>, below the notes, deletes everything logged on the day you're
@@ -878,7 +895,7 @@
         </section>
 
         <section class="card help-card" id="help-foods" aria-labelledby="help-foods-h">
-          <h2 id="help-foods-h">🥫 Foods</h2>
+          <h2 id="help-foods-h">🥫 Food items</h2>
           <p>Your own food list. Each food has its nutrition per an amount you choose, like
             <i>per 100 g</i> or <i>per 1 slice</i>, and logging works out the rest. To compare foods
             easily, the list always shows foods in <b>g</b> or <b>ml</b> per 100 g / 100 ml, whatever
@@ -971,15 +988,15 @@
         <section class="card help-card" id="help-groceries" aria-labelledby="help-groceries-h">
           <h2 id="help-groceries-h">🛒 Stock and Carts</h2>
           <p>Your groceries: what you have at home, in <b>carts</b>, one per trip to the shops. Both
-            tabs are in the <b>Stock ▾</b> menu: <b>Carts</b> is where you add and edit carts, and
+            tabs are in the <b>Food ▾</b> menu: <b>Carts</b> is where you add and edit carts, and
             <b>Stock</b> shows what's left, what ran out and what was taken out. Back from the
             shops? In Carts, under <b>New cart</b>, set the day and the store, add each food you bought (from
-            your Foods), and press <b>Add cart</b>. For each food you can give the amount (or the
+            your Food items), and press <b>Add cart</b>. For each food you can give the amount (or the
             number of packs, if the food has a package size), its expiry date and what it cost. Only
             the amount is needed.</p>
           <p>🧴 <b>Other items</b>: things that aren't food, like soap or bags, go under
             <b>+ Add an item that isn't food</b> with a name, amount, unit and price. They only count
-            towards the cart's total, so it matches the receipt: they're not added to your Foods or
+            towards the cart's total, so it matches the receipt: they're not added to your Food items or
             your stock. A cart can even be only other items.</p>
           <p>🎁 <b>A gift</b>: someone gave you the food? Tick <b>It was a gift</b> and the prices,
             discount and delivery fee go away: the cart costs nothing, and its foods show 🎁 in
@@ -1004,7 +1021,7 @@
             than you had? It takes what's there; the rest isn't counted. Days before you bought it
             never take from it, but if you enter a cart a few days late, what you logged since
             that day is taken from it. Food logged as <b>Eaten out</b> never takes from it.</p>
-          <p>📦 <b>In stock</b> lists every food you have, one table per food group like in Foods
+          <p>📦 <b>In stock</b> lists every food you have, one table per food group like in Food items
             (foods without a group last), with what's left from each cart under it (click the cart
             to open it). <i>Ran out</i> and <i>Taken out</i> are grouped the same way. Expiry dates
             turn <span class="exp-demo soon">amber</span> three days before and
@@ -1025,7 +1042,7 @@
           <p>🔁 <b>Ran out</b> lists foods you've finished, with <b>+ Buy again</b> to put them in
             the cart you're filling in, in Carts, and <b>+ List</b> to put them on the shopping list.</p>
           <p>📝 <b>Shopping list.</b> In Carts, next to the list of carts: what to buy next. Add a
-            food with its search box, with the 🛒 button on its row in Foods, or with <b>+ List</b>
+            food with its search box, with the 🛒 button on its row in Food items, or with <b>+ List</b>
             in <i>Ran out</i> (Stock) and <i>Recently ran out</i> (Fridge); press the button again to
             take it off. A meta food can go on it too: any of its foods will do, and you pick which
             one goes in the cart. Things that aren't food (dish soap, bags…) go on it too: type the
@@ -1067,8 +1084,9 @@
           <p>🔍 <b>Search the Fridge.</b> The box on top keeps, in every sector and in <i>Not in a
             sector</i>, only the foods whose name or brand has all the words you type (accents don't matter). Sectors with no match are hidden
             while you search.</p>
-          <p>📥 <b>Putting food in.</b> <i>Not in a sector</i> lists everything in stock that has no
-            place yet: press <b>Put in…</b> next to it. Or use <b>+ Add a food from your stock</b> at
+          <p>📥 <b>Putting food in.</b> <i>Not in a sector</i>, the dashed card that always comes first
+            among the sectors, lists everything in stock that has no place yet: press <b>Put in…</b>
+            next to it. It isn't a sector itself, so it can't be moved, renamed or deleted. Or use <b>+ Add a food from your stock</b> at
             the bottom of a sector. <b>Move…</b> moves a food to another sector, and ✕ takes it out of
             one.</p>
           <p>✂️ <b>One food, many sectors.</b> When you move or put in a food, say how much (all of it,
@@ -1092,7 +1110,7 @@
 
         <section class="card help-card" id="help-history" aria-labelledby="help-history-h">
           <h2 id="help-history-h">📈 History</h2>
-          <p>Calories, protein, steps, sleep, body weight and body fat for the last 7, 30 or 90 days. The dashed line is
+          <p>Calories, protein, steps, sleep, body weight and body fat, and where the calories came from, for the last 7, 30 or 90 days. The dashed line is
             your target, and it steps up or down where a target changed. Click a bar or a row to
             jump to that day. Steps include the day's walks and runs (see Check-in): a <b>~</b>
             marks an estimate.</p>
@@ -1105,10 +1123,14 @@
           <p>⚖️ Latest weight and body fat show <span class="trend-demo up">▲</span> up,
             <span class="trend-demo flat">–</span> no change or <span class="trend-demo down">▼</span> down,
             compared with the latest value logged <i>before</i> the period. Hover for the exact change.</p>
-          <p>⚖️ <b>kg or BMI</b>: the switch on the body weight chart shows your weight in kg or as
-            BMI (body mass index: kg divided by your height in meters, squared). BMI needs your
-            height, set in Settings.</p>
-          <p>📐 <b>Weight references</b>, below that chart, split weight into six brackets, from
+          <p>⚖️ <b>kg, BMI or Fat</b>: the switch on the body weight chart shows your weight in kg or as
+            BMI (body mass index: kg divided by your height in meters, squared), or your body fat (%).
+            BMI needs your height, set in Settings.</p>
+          <p>🥧 <b>Energy from protein, carbs and fat</b>: each day's calories as one full bar, split
+            by where they came from (protein and carbs give 4 kcal a gram, fat 9). The two dashed
+            lines are your targets' split: where protein should end, and where carbs should. Hover
+            a bar for the exact %.</p>
+          <p>📐 <b>Weight references</b>, folded below that chart (click to show them), split weight into six brackets, from
             <i>Underweight</i> to <i>Severely obese</i>, each with the body type it's usually
             associated with (e.g. <i>Lean</i>, <i>Curvy</i>, <i>Stocky</i>). They follow the switch, in
             kg or BMI, and your latest weight's bracket is highlighted. They're defined in BMI, so they
@@ -1170,6 +1192,7 @@
               <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Previous / next day</td></tr>
               <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Choose a food from the list</td></tr>
               <tr><td><kbd>Esc</kbd></td><td>Close the list, or cancel an edit</td></tr>
+              <tr><td><kbd>Alt</kbd>+<kbd>↑</kbd> <kbd>↓</kbd></td><td>On a Day grip (⠿): move that row, or the selected ones</td></tr>
               <tr><td><kbd>?</kbd></td><td>Open this help</td></tr>
             </tbody>
           </table>

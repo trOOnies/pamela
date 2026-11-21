@@ -278,6 +278,21 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transpa
 .log-table tr.log-group td.count { color: var(--text-3); font-size: .8rem; white-space: nowrap; }
 .log-table tr.log-group .fold { width: 1.4em; padding: 0; color: var(--text-2); }
 .log-table tr.in-group td:first-child { padding-left: calc(6px + 1.4em); border-left: 2px solid var(--border); }
+/* sorting by hand (Day's food log and activities): the grip, selected rows, where a drop lands */
+.grip {
+  display: inline-flex; align-items: center; justify-content: center; width: 1.1em; height: 1.5em;
+  margin: 0 4px 0 -2px; vertical-align: middle; border-radius: 4px; color: var(--text-3);
+  cursor: grab; opacity: .55; touch-action: none; user-select: none;
+}
+.grip:hover, .grip:focus-visible, tr:hover .grip, li:hover > .grip { opacity: 1; color: var(--text-2); }
+.grip:hover { background: var(--surface-2); }
+.grip:active { cursor: grabbing; }
+.grip[aria-pressed="true"] { opacity: 1; color: #fff; background: var(--accent); }
+.log-table tr.selected td, .act-list li.selected { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.log-table tr.dragging td, .act-list li.dragging { opacity: .45; }
+.log-table tr.drop-before td, .act-list li.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+.log-table tr.drop-after td, .act-list li.drop-after { box-shadow: inset 0 -3px 0 var(--accent); }
+.log-table tr.in-group td:first-child { padding-left: calc(6px + 2.4em); }
 .log-table tfoot td { font-weight: 600; border-bottom: 0; padding-top: 10px; }
 
 /* --- chips & tags ------------------------------------------------------ */
@@ -375,16 +390,17 @@ input.invalid { border-color: var(--danger); }
 /* --- activity --------------------------------------------------------- */
 .type-field select { width: 200px; }
 .act-list { list-style: none; margin: 0; padding: 0; }
-.act-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.act-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.act-list li > .grip { margin-right: -6px; }
 .act-list .t { font-weight: 600; }
 .act-list .d { color: var(--text-2); font-size: .88rem; font-variant-numeric: tabular-nums; }
-.act-list .notes { grid-column: 1 / -1; color: var(--text-2); font-size: .85rem; }
+.act-list .notes { grid-column: 2 / -1; color: var(--text-2); font-size: .85rem; }
 .act-list .kc { font-variant-numeric: tabular-nums; font-weight: 600; }
 .act-list .kc small { font-weight: normal; }
 .act-list .empty { display: block; color: var(--text-3); font-style: italic; border: 0; }
 .act-list li.editing { background: var(--accent-2-soft); }
 .act-list .tm { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: .88rem; margin-right: 2px; }
-.act-list .cond { grid-column: 1 / -1; color: var(--text-2); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.act-list .cond { grid-column: 2 / -1; color: var(--text-2); font-size: .85rem; font-variant-numeric: tabular-nums; }
 .act-btns { display: inline-flex; white-space: nowrap; }
 .stars-ro { color: var(--accent-2-line); letter-spacing: 1px; }
 .stars-ro .off { color: var(--border); }
@@ -451,6 +467,9 @@ th[aria-sort] { color: var(--text); }
 .chart-head h3 { margin: 0; }
 .seg input:disabled + span { opacity: .45; cursor: not-allowed; }
 .body-refs { margin-top: 10px; }
+.refs-details > summary { cursor: pointer; font-weight: 600; font-size: .9rem; color: var(--text); padding: 2px 0; }
+.refs-details > summary small { font-weight: 400; color: var(--text-2); }
+.refs-details[open] > summary { margin-bottom: 6px; }
 .refs-table { font-size: .85rem; }
 .refs-table caption { text-align: left; font-weight: 600; padding-bottom: 4px; color: var(--text); }
 .refs-table caption small { font-weight: 400; color: var(--text-2); }
@@ -582,6 +601,11 @@ th[aria-sort] { color: var(--text); }
 .chart .target { stroke: var(--text-2); stroke-width: 1.5; stroke-dasharray: 5 4; }
 .chart .target-lbl { fill: var(--text-2); font-size: 11px; }
 .chart .hit { fill: transparent; cursor: pointer; }
+.chart .stack.hot { filter: brightness(1.12); }
+.split-card .split-legend { margin-top: 0; }
+.split-card h3::before { display: none; } /* three series: the legend has their colors */
+.split-legend .dash-key { display: inline-flex; align-items: center; gap: 5px; }
+.split-legend .dash-key::before { content: ""; width: 16px; border-top: 1.5px dashed var(--text-2); }
 .chart .empty-msg { fill: var(--text-3); font-size: 13px; }
 .history-table td a { text-decoration: none; }
 .history-table .dow { width: 1%; padding-right: 4px; color: var(--text-2); }
@@ -1003,13 +1027,9 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .cart-items li.extra { color: var(--text-2); font-style: italic; }
 
 /* --- fridge ---------------------------------------------------------------- */
-/* left: the sector form and what isn't in a sector; right: the sectors */
-/* the sector form sits at the very bottom, under both */
+/* the sectors' grid (with "Not in a sector" as its first card), then Recently ran out,
+   and the sector form at the very bottom */
 #view-fridge:not([hidden]) { display: flex; flex-direction: column; gap: var(--gap); }
-.fridge-grid { display: grid; gap: var(--gap); align-items: start; grid-template-columns: minmax(340px, 420px) minmax(0, 1fr); }
-@media (max-width: 1099px) { .fridge-grid { grid-template-columns: minmax(0, 1fr); } }
-.fridge-grid.solo { grid-template-columns: minmax(0, 1fr); }
-.fridge-side[hidden] { display: none; }
 .recent-out-card[hidden] { display: none; }
 .recent-out-list small { color: var(--text-3); text-align: right; }
 .fridge-search input { width: 100%; max-width: 420px; }
@@ -1024,6 +1044,10 @@ body:not([data-view="day"]) .daynav { visibility: hidden; }
 .sector-form + .hint { margin-top: 10px; }
 .sector-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gap); }
 .sector-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sector-list > .empty-note { grid-column: 1 / -1; }
+/* not a real sector (no buttons): dashed, so it reads as the leftovers' tray */
+.sector-card.unsorted-card { border-style: dashed; }
+.unsorted-card .sector-top { min-height: 28px; }
 .sector-card.editing { border-color: var(--accent-2-line); background: var(--accent-2-soft); }
 .sector-card.checked { border-color: color-mix(in srgb, var(--done) 70%, var(--border)); background: color-mix(in srgb, var(--done) 16%, var(--surface)); }
 .sector-top { display: flex; align-items: center; gap: 6px; }

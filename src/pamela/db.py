@@ -661,6 +661,15 @@ MIGRATIONS: list[str] = [
     ALTER TABLE foods ADD COLUMN vit_d_ug REAL CHECK (vit_d_ug >= 0);
     ALTER TABLE foods ADD COLUMN caffeine_mg REAL CHECK (caffeine_mg >= 0);
     """,
+    # 32: the Day tab's order, set by hand. Within a meal, the foods logged on their own
+    # and the saved meals logged (meal logs) share one order; activities have their own.
+    # Everything starts at 0, so what's already logged keeps its order: by when it was
+    # logged (activities: by time of day).
+    """
+    ALTER TABLE food_entries ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE meal_logs ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE activities ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.

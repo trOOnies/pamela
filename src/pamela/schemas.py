@@ -505,6 +505,28 @@ class Entry(Macros):
     eaten_out: bool = Field(False, description="Eaten out: not taken from Groceries")
 
 
+class FoodOrderItem(_In):
+    """A food logged on its own (entry_id) or a logged saved meal (meal_log_id)."""
+
+    entry_id: int | None = None
+    meal_log_id: int | None = None
+    meal: str = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _one_of(self) -> FoodOrderItem:
+        if (self.entry_id is None) == (self.meal_log_id is None):
+            raise ValueError("give either entry_id or meal_log_id")
+        return self
+
+
+class FoodOrderIn(_In):
+    items: list[FoodOrderItem] = Field(min_length=1, max_length=500)
+
+
+class ActivityOrderIn(_In):
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
 class EntryBatchIn(_In):
     """Several catalog foods logged at once, e.g. a saved meal after editing it."""
 

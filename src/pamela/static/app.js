@@ -1,7 +1,7 @@
 // Pamela frontend - vanilla JS, no build step.
 // Views are routed by URL hash: #/ (today), #/day/YYYY-MM-DD, #/foods, #/meals, #/fridge, #/stock,
 // #/carts, #/history, #/targets, #/settings (Global), #/help.
-// Fridge, Stock and Carts are under the Stock menu; Targets and Global under Settings.
+// Fridge, Stock and Carts are under the Food menu; Targets and Global under Settings.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -67,7 +67,7 @@ const state = {
   foodTagFilter: new Set(),
   foodSort: null, // { key, dir: 1 | -1 }; null = the API's order (most used first)
   hideTags: prefGet("pamela-hide-tags") === "1",
-  weightUnit: prefGet("pamela-weight-unit") === "bmi" ? "bmi" : "kg",
+  weightUnit: ["bmi", "fat"].includes(prefGet("pamela-weight-unit")) ? prefGet("pamela-weight-unit") : "kg",
   bodyRefs: null, // GET /body-references
   historyDays: null,
   editingFoodId: null,
@@ -77,6 +77,9 @@ const state = {
   selectedFood: null,   // food chosen in the entry form
   draft: null,          // saved meal being prepared for logging: { id, name, items }
   foldedLogs: new Set(), // meal logs (saved meals as logged) shown folded in the Day log
+  logSel: new Set(), // Day: grips selected in the food log ("e:<entry id>", "l:<meal log id>")
+  actSel: new Set(), // Day: grips selected in the activities ("a:<id>")
+  selDay: null, // the day those selections are on
   smItems: [],          // items of the saved meal in the editor
   editingSavedMealId: null,
   editingTypeId: null,
@@ -502,7 +505,7 @@ function foodCombo({ input, list, onPick, onCreate, createLabel, onInput, canSub
       )
       .join("");
     if (q && onCreate) {
-      const label = createLabel ? createLabel(q) : isBarcode(q) ? `+ Look up barcode ${esc(q)} in Foods` : `+ Create “${esc(q)}” in Foods`;
+      const label = createLabel ? createLabel(q) : isBarcode(q) ? `+ Look up barcode ${esc(q)} in Food items` : `+ Create “${esc(q)}” in Food items`;
       html += `<li role="option" class="create" data-create="1" id="${idp}-create" aria-selected="${c.active === c.results.length}"><span>${label}</span></li>`;
     }
     if (q && !onCreate && !c.results.length) html = `<li class="none" aria-disabled="true"><span>No foods match</span></li>`;
@@ -650,7 +653,7 @@ function itemNameCell(it, i) {
     return `${esc(it.name)}${it.brand ? ` <span class="brand-tag">${esc(it.brand)}</span>` : ""}${meta}`;
   }
   if (!p.options.length) {
-    return `🔀 ${esc(p.name)} <span class="meta-none">No food is one of it yet: <a href="#/foods">link one in Foods</a>, or remove it</span>`;
+    return `🔀 ${esc(p.name)} <span class="meta-none">No food is one of it yet: <a href="#/foods">link one in Food items</a>, or remove it</span>`;
   }
   const opts = p.options
     .map((f) => {
@@ -737,6 +740,167 @@ function itemsTable({ tbody, tfoot, getItems, fiber, empty, onChange, qtyExtra }
   return { render };
 }
 
+// --- sorting by hand: grips ----------------------------------------------------
+
+const GRIP = `<svg viewBox="0 0 10 16" width="8" height="13" aria-hidden="true" fill="currentColor"><circle cx="2.5" cy="3" r="1.4"/><circle cx="7.5" cy="3" r="1.4"/><circle cx="2.5" cy="8" r="1.4"/><circle cx="7.5" cy="8" r="1.4"/><circle cx="2.5" cy="13" r="1.4"/><circle cx="7.5" cy="13" r="1.4"/></svg>`;
+
+/** The grip at the left of a sortable row. */
+function gripHtml(key, sel, label) {
+  const on = sel.has(key);
+  // a span, not a button: Firefox doesn't drag buttons
+  return `<span class="grip" role="button" tabindex="0" draggable="true" data-grip="${key}" aria-pressed="${on}" title="Drag to move it · click to select (again to deselect) · Ctrl/Alt-click: one more · Shift-click: a range · Alt+↑/↓: move" aria-label="Select or move ${esc(label)}">${GRIP}</span>`;
+}
+
+/** Drops from a selection what's no longer there. */
+function pruneSel(sel, keys) {
+  const have = new Set(keys);
+  for (const k of [...sel]) if (!have.has(k)) sel.delete(k);
+}
+
+/**
+ * Rows sorted by hand with the grips on their left. Click a grip to select its row (click
+ * it again to deselect it), Ctrl/Alt-click to add or take out one more, Shift-click to
+ * add the range from the last one clicked. Dragging a grip moves its row, or every
+ * selected row when its row is selected, to where it's dropped: next to another row, or
+ * at the top of a bucket (a meal) by dropping it on the bucket's header. Alt+↑/↓ on a
+ * focused grip does the same one place at a time; Esc clears the selection.
+ *
+ * Every element of an item has data-item="<key>" (a logged meal and its foods share one);
+ * a bucket's header (or its "Nothing logged" row) has data-bucket="<name>".
+ * layout() gives [{ bucket, keys }] as shown; save(layout) stores a new one and redraws.
+ */
+function sortable({ root, sel, layout, save }) {
+  let anchor = null;
+  let moving = null;
+  let target = null;
+  const flat = () => layout().flatMap((b) => b.keys);
+  const paint = () => {
+    for (const el of $$("[data-item]", root)) el.classList.toggle("selected", sel.has(el.dataset.item));
+    for (const g of $$(".grip", root)) g.setAttribute("aria-pressed", sel.has(g.dataset.grip));
+  };
+  const rowsOf = (key) => $$(`[data-item="${key}"]`, root);
+  const clearMarks = () => $$(".drop-before, .drop-after", root).forEach((el) => el.classList.remove("drop-before", "drop-after"));
+  /** What moves when ``key``'s grip is dragged: the selection in the order shown, or just it. */
+  const what = (key) => (sel.has(key) ? flat().filter((k) => sel.has(k)) : [key]);
+  /** The layout with ``keys`` moved to ``to``: { bucket, key: null (its top) | key, after }. */
+  const moved = (keys, to) => {
+    const lay = layout().map((b) => ({ bucket: b.bucket, keys: b.keys.filter((k) => !keys.includes(k)) }));
+    const b = lay.find((x) => x.bucket === to.bucket);
+    b.keys.splice(to.key == null ? 0 : b.keys.indexOf(to.key) + (to.after ? 1 : 0), 0, ...keys);
+    return lay;
+  };
+  const commit = async (keys, to) => {
+    const before = JSON.stringify(layout());
+    const lay = moved(keys, to);
+    if (JSON.stringify(lay) === before) return;
+    try {
+      await save(lay);
+      $(`.grip[data-grip="${keys[0]}"]`, root)?.focus();
+    } catch (err) {
+      showError(err);
+    }
+  };
+  const bucketOf = (key) => layout().find((b) => b.keys.includes(key))?.bucket;
+
+  const pick = (g, e) => {
+    const key = g.dataset.grip;
+    if (e.shiftKey && anchor && anchor !== key) {
+      const keys = flat();
+      const [a, b] = [keys.indexOf(anchor), keys.indexOf(key)].sort((x, y) => x - y);
+      if (a >= 0) for (const k of keys.slice(a, b + 1)) sel.add(k);
+    } else if (e.ctrlKey || e.metaKey || e.altKey) {
+      if (!sel.delete(key)) sel.add(key);
+      anchor = key;
+    } else if (sel.has(key)) {
+      sel.delete(key); // selected again: deselected
+    } else {
+      sel.clear();
+      sel.add(key);
+      anchor = key;
+    }
+    paint();
+  };
+  root.addEventListener("click", (e) => {
+    const g = e.target.closest(".grip");
+    if (g) pick(g, e);
+  });
+
+  root.addEventListener("keydown", (e) => {
+    const g = e.target.closest(".grip");
+    if (!g) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      return pick(g, e);
+    }
+    if (e.key === "Escape" && sel.size) {
+      sel.clear();
+      paint();
+      return e.preventDefault();
+    }
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    const keys = what(g.dataset.grip);
+    // every place it can go, in order: each bucket's top, then after each of its other rows
+    const lay = layout();
+    const slots = lay.flatMap((b) => [
+      { bucket: b.bucket, key: null },
+      ...b.keys.filter((k) => !keys.includes(k)).map((k) => ({ bucket: b.bucket, key: k, after: true })),
+    ]);
+    // where it is now: after the nearest row above it that isn't moving, or its bucket's top
+    const b = lay.find((x) => x.keys.includes(keys[0]));
+    const prevKey = b.keys.slice(0, b.keys.indexOf(keys[0])).findLast((k) => !keys.includes(k)) ?? null;
+    let at = slots.findIndex((x) => x.bucket === b.bucket && x.key === prevKey);
+    at += e.key === "ArrowUp" ? -1 : 1;
+    // the first bucket's top is as high as it goes
+    if (at < 0 || at >= slots.length) return;
+    commit(keys, slots[at]);
+  });
+
+  root.addEventListener("dragstart", (e) => {
+    const g = e.target.closest?.(".grip");
+    if (!g) return;
+    moving = what(g.dataset.grip);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", moving.join(" ")); // Firefox starts no drag without data
+    const row = g.closest("[data-item]");
+    const r = row.getBoundingClientRect();
+    e.dataTransfer.setDragImage(row, e.clientX - r.left, e.clientY - r.top);
+    for (const k of moving) rowsOf(k).forEach((el) => el.classList.add("dragging"));
+  });
+  root.addEventListener("dragover", (e) => {
+    if (!moving) return;
+    const el = e.target.closest?.("[data-item], [data-bucket]");
+    clearMarks();
+    target = null;
+    if (!el || !root.contains(el)) return;
+    if (el.dataset.bucket != null) {
+      target = { bucket: el.dataset.bucket, key: null };
+      el.classList.add("drop-after");
+    } else {
+      const key = el.dataset.item;
+      if (moving.includes(key)) return;
+      const rows = rowsOf(key);
+      const top = rows[0].getBoundingClientRect().top, bottom = rows.at(-1).getBoundingClientRect().bottom;
+      const after = e.clientY > (top + bottom) / 2;
+      target = { bucket: bucketOf(key), key, after };
+      (after ? rows.at(-1) : rows[0]).classList.add(after ? "drop-after" : "drop-before");
+    }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  });
+  root.addEventListener("drop", (e) => {
+    if (!moving || !target) return;
+    e.preventDefault();
+    const keys = moving, to = target;
+    commit(keys, to);
+  });
+  root.addEventListener("dragend", () => {
+    moving = target = null;
+    clearMarks();
+    $$(".dragging", root).forEach((el) => el.classList.remove("dragging"));
+  });
+}
+
 // --- day view ----------------------------------------------------------------
 
 async function loadDay() {
@@ -747,6 +911,11 @@ async function loadDay() {
     const data = await api("GET", `/days/${day}`);
     if (day !== state.day) return; // user navigated meanwhile
     state.dayData = data;
+    if (state.selDay !== day) {
+      state.logSel.clear();
+      state.actSel.clear();
+      state.selDay = day;
+    }
     // an activity being edited on another day: drop the edit
     if (state.editingActivityId && !data.activities.some((a) => a.id === state.editingActivityId)) resetActivityForm();
     renderSummary();
@@ -817,7 +986,7 @@ function macroCells(o, kcalCell = `<td class="n">${fmt(o.kcal)}</td>`) {
   return kcalCell + MACROS.map((m) => `<td class="n">${fmt(o[m.key], 1)}</td>`).join("");
 }
 
-/** 🔗 to where an entry comes from: its meal in Meals, else its food in Foods. Quick adds have none.
+/** 🔗 to where an entry comes from: its meal in Meals, else its food in Food items. Quick adds have none.
  * Inside a logged meal's group, the group's header links the meal, so its rows link their food. */
 function entryLink(e, inGroup = false) {
   if (e.saved_meal_id != null && !inGroup) {
@@ -825,7 +994,7 @@ function entryLink(e, inGroup = false) {
     return ` <a class="entry-link" href="#/meals/${e.saved_meal_id}" title="${esc(t)}" aria-label="${esc(t)}">🔗</a>`;
   }
   if (e.food_id == null) return "";
-  const t = `Open “${e.name}” in Foods`;
+  const t = `Open “${e.name}” in Food items`;
   return ` <a class="entry-link" href="#/foods/${e.food_id}" title="${esc(t)}" aria-label="${esc(t)}">🔗</a>`;
 }
 
@@ -849,11 +1018,11 @@ function renderLog() {
     const btns =
       (canAdd ? `<button type="button" class="row-btn add-to" data-add-meal="${esc(meal)}">+ add</button>` : "") +
       (canSave ? `<button type="button" class="row-btn add-to" data-save-meal="${esc(meal)}" title="Keep these foods as a saved meal">☆ save</button>` : "");
-    html += `<tr class="meal-head"><td>${esc(mealLabel(meal))}</td><td class="n head-btns">${btns}</td>${
+    html += `<tr class="meal-head" data-bucket="${esc(meal)}"><td>${esc(mealLabel(meal))}</td><td class="n head-btns">${btns}</td>${
       rows.length ? macroCells(sub) : '<td colspan="5"></td>'
     }<td></td></tr>`;
     if (!rows.length) {
-      html += `<tr class="empty"><td colspan="8">Nothing logged</td></tr>`;
+      html += `<tr class="empty" data-bucket="${esc(meal)}"><td colspan="8">Nothing logged</td></tr>`;
       continue;
     }
     const entryRow = (e, inGroup) => {
@@ -864,8 +1033,11 @@ function renderLog() {
         amount = `<span class="from-stock${all ? "" : " part"}" title="${esc(t)}" aria-label="${esc(t)}">🛒</span> ${amount}`;
       }
       const qtyAttrs = e.food_id != null ? ` class="n qty" data-edit-qty="${e.id}" title="Click to change amount"` : ' class="n"';
-      return `<tr data-entry="${e.id}"${inGroup ? ' class="in-group"' : ""}>
-        <td>${esc(e.name)}${entryLink(e, inGroup)}${e.eaten_out ? '<span class="out-tag" title="Eaten out: not taken from your stock">🍽️ out</span>' : ""}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
+      const key = `e:${e.id}`;
+      const item = inGroup ? ` data-item="l:${e.meal_log_id}"` : ` data-item="${key}"`;
+      const cls = [inGroup ? "in-group" : "", state.logSel.has(inGroup ? `l:${e.meal_log_id}` : key) ? "selected" : ""].filter(Boolean).join(" ");
+      return `<tr data-entry="${e.id}"${item}${cls ? ` class="${cls}"` : ""}>
+        <td>${inGroup ? "" : gripHtml(key, state.logSel, e.name)}${esc(e.name)}${entryLink(e, inGroup)}${e.eaten_out ? '<span class="out-tag" title="Eaten out: not taken from your stock">🍽️ out</span>' : ""}${e.food_id == null ? '<span class="quick-tag">quick</span>' : ""}</td>
         <td${qtyAttrs}>${amount}</td>
         ${macroCells(e)}
         <td class="act"><button type="button" class="row-btn del" data-del-entry="${e.id}" title="Delete" aria-label="Delete ${esc(e.name)}">✕</button></td>
@@ -886,6 +1058,7 @@ function renderLog() {
     }
   }
   $("#log-body").innerHTML = html;
+  pruneSel(state.logSel, logLayout().flatMap((b) => b.keys));
 
   let foot = $("#log-table tfoot");
   if (!foot) {
@@ -893,6 +1066,39 @@ function renderLog() {
     $("#log-table").append(foot);
   }
   foot.innerHTML = `<tr><td>Total</td><td></td>${macroCells(totals)}<td></td></tr>`;
+}
+
+/** The food log as sortable items: per meal, the foods logged on their own ("e:<id>")
+ * and the saved meals logged ("l:<meal log id>"), in the order shown. */
+function logLayout() {
+  const { entries } = state.dayData;
+  const meals = [...state.config.meals.names];
+  for (const e of entries) if (!meals.includes(e.meal)) meals.push(e.meal);
+  return meals.map((meal) => {
+    const keys = [];
+    for (const e of entries) {
+      if (e.meal !== meal) continue;
+      const k = e.meal_log_id == null ? `e:${e.id}` : `l:${e.meal_log_id}`;
+      if (!keys.includes(k)) keys.push(k);
+    }
+    return { bucket: meal, keys };
+  });
+}
+
+async function saveLogOrder(layout) {
+  const items = layout.flatMap((b) =>
+    b.keys.map((k) => ({ [k[0] === "e" ? "entry_id" : "meal_log_id"]: Number(k.slice(2)), meal: b.bucket }))
+  );
+  if (!items.length) return;
+  await api("PUT", `/days/${state.day}/food-order`, { items });
+  await loadDay();
+}
+
+async function saveActivityOrder(layout) {
+  const ids = layout[0].keys.map((k) => Number(k.slice(2)));
+  if (!ids.length) return;
+  await api("PUT", `/days/${state.day}/activity-order`, { ids });
+  await loadDay();
 }
 
 /** The header of a logged saved meal: its name, how many foods, their totals, and ✕ for all of it. */
@@ -911,8 +1117,9 @@ function mealLogRow(first, group) {
   const t = `Open “${name}” in Meals`;
   const link = sm ? ` <a class="entry-link" href="#/meals/${first.saved_meal_id}" title="${esc(t)}" aria-label="${esc(t)}">🔗</a>` : "";
   const n = group.length;
-  return `<tr class="log-group" data-meal-log="${id}">
-    <td><button type="button" class="row-btn fold" data-fold-log="${id}" aria-expanded="${!folded}" title="${folded ? "Show" : "Hide"} its foods" aria-label="${folded ? "Show" : "Hide"} the foods of ${esc(name)}">${folded ? "▸" : "▾"}</button>
+  const key = `l:${id}`;
+  return `<tr class="log-group${state.logSel.has(key) ? " selected" : ""}" data-meal-log="${id}" data-item="${key}">
+    <td>${gripHtml(key, state.logSel, name)}<button type="button" class="row-btn fold" data-fold-log="${id}" aria-expanded="${!folded}" title="${folded ? "Show" : "Hide"} its foods" aria-label="${folded ? "Show" : "Hide"} the foods of ${esc(name)}">${folded ? "▸" : "▾"}</button>
       <span class="log-name">⭐ ${esc(name)}</span>${link}</td>
     <td class="n count">${n} ${n === 1 ? "food" : "foods"}</td>
     ${macroCells(sub)}
@@ -1044,6 +1251,7 @@ function updateStepsReminder() {
 
 function renderActivities() {
   const { activities } = state.dayData;
+  pruneSel(state.actSel, activities.map((a) => `a:${a.id}`));
   if (!activities.length) {
     $("#act-list").innerHTML = '<li class="empty">No activity logged</li>';
     return;
@@ -1060,7 +1268,10 @@ function renderActivities() {
       const spm = activityTypeOf(a.type)?.steps_per_min;
       if (spm && a.duration_min) bits.push(`<span title="Estimated: ${fmtQty(spm)} steps a minute">~${fmt(a.duration_min * spm)} steps</span>`);
       const cond = activityConditions(a);
-      return `<li class="${a.id === state.editingActivityId ? "editing" : ""}">
+      const key = `a:${a.id}`;
+      const cls = [a.id === state.editingActivityId ? "editing" : "", state.actSel.has(key) ? "selected" : ""].filter(Boolean).join(" ");
+      return `<li class="${cls}" data-item="${key}">
+        ${gripHtml(key, state.actSel, a.type)}
         <div>${a.start_time ? `<span class="tm">${esc(a.start_time)}</span> ` : ""}<span class="t">${activityIcon(a.type)}${esc(a.type)}</span> <span class="d">${bits.join(" · ")}</span></div>
         <span class="kc">${fmt(a.kcal)} <small>kcal${a.kcal_estimated ? " (est.)" : ""}</small></span>
         <span class="act-btns"><button type="button" class="row-btn icon" data-edit-activity="${a.id}" title="Edit" aria-label="Edit ${esc(a.type)}">${PENCIL}</button><button type="button" class="row-btn del" data-del-activity="${a.id}" title="Delete" aria-label="Delete ${esc(a.type)}">✕</button></span>
@@ -1610,7 +1821,7 @@ async function commitDraft() {
   const unpicked = d.items.findIndex((it) => it.pick && !it.food_id);
   if (unpicked >= 0) {
     const p = d.items[unpicked].pick;
-    toast(p.options.length ? `Pick which ${p.name} you used` : `No food is one of ${p.name} yet: link one in Foods, or remove it`, true);
+    toast(p.options.length ? `Pick which ${p.name} you used` : `No food is one of ${p.name} yet: link one in Food items, or remove it`, true);
     $(`#draft-body [data-pick-i="${unpicked}"]`)?.focus();
     return;
   }
@@ -1717,7 +1928,7 @@ const alcoholKcal = (abv, ml = 100) => (ml * abv * 0.789 * 7) / 100;
 const NO_KCAL_CELL = `<td class="n"><span class="warn-kcal" title="No kcal entered yet: counted as 0 until you add it. Enter 0 if it really has none.">⚠ ?<span class="sr"> No kcal entered yet, counted as 0</span></span></td>`;
 
 async function loadFoods() {
-  document.title = "Foods · Pamela";
+  document.title = "Food items · Pamela";
   try {
     const [foods, brands] = await Promise.all([api("GET", "/foods?limit=1000"), api("GET", "/brands"), loadShopping()]);
     state.foods = foods;
@@ -1818,7 +2029,7 @@ function groupEmoji(key) {
   const g = key && state.vocab.food_groups.find((x) => x.key === key);
   return g ? `<span class="group-emoji" aria-hidden="true" title="${esc(g.label)}">${g.emoji}</span> ` : "";
 }
-/** A group's heading, as in the Foods tab. */
+/** A group's heading, as in the Food items tab. */
 function groupHeading(g, n, id) {
   return `<h3${id ? ` id="${id}"` : ""}><span aria-hidden="true">${g.emoji}</span> ${esc(g.label)} <span class="count">(${n})</span></h3>`;
 }
@@ -2177,9 +2388,9 @@ async function deleteFood(id) {
   if (!f) return;
   const ok = await confirmDialog({
     title: "🗑️ Delete this food?",
-    body: `<p><b>${esc(f.name)}</b>${f.brand ? ` <span class="brand-tag">${esc(f.brand)}</span>` : ""} leaves your Foods.
+    body: `<p><b>${esc(f.name)}</b>${f.brand ? ` <span class="brand-tag">${esc(f.brand)}</span>` : ""} leaves your Food items.
       Days you already logged it on keep their values. It's also removed from saved meals and groceries.</p>
-      ${f.is_meta && f.variants ? `<p>The ${f.variants} food${f.variants === 1 ? "" : "s"} that ${f.variants === 1 ? "is" : "are"} one of it stay in Foods, just unlinked.</p>` : ""}
+      ${f.is_meta && f.variants ? `<p>The ${f.variants} food${f.variants === 1 ? "" : "s"} that ${f.variants === 1 ? "is" : "are"} one of it stay in Food items, just unlinked.</p>` : ""}
       <p>This can't be undone.</p>`,
     ok: "Delete food",
   });
@@ -2363,7 +2574,7 @@ function renderStock(items) {
         .join("");
       return head + lots;
   };
-  // One table per food group, as in Foods; fixed columns keep them lined up.
+  // One table per food group, as in Food items; fixed columns keep them lined up.
   box.innerHTML = byFoodGroup(rows)
     .map(
       ([g, list]) => `<section class="food-group" aria-labelledby="sg-${g.key || "none"}">
@@ -2942,7 +3153,7 @@ function renderShopping() {
     const cartBtn = inTrip(it, ids, extras)
       ? `<span class="shop-in" title="It's in the cart you're filling in: saving the cart takes it off the list">✓ In the cart</span>`
       : it.is_meta && !it.options.length
-        ? `<span class="meta-none" title="Make a food one of it, in Foods, to buy it">No foods of it yet</span>`
+        ? `<span class="meta-none" title="Make a food one of it, in Food items, to buy it">No foods of it yet</span>`
         : `<button type="button" class="row-btn add-to" data-shop-cart="${it.id}" title="${it.food_id == null ? "Add it to the cart you're filling in, under Other items" : "Add it to the cart you're filling in"}">+ Cart</button>`;
     return `<li data-shop-item="${it.id}">
         <span class="shop-what">${foodLabel(it)}${pill}${home}</span>
@@ -2954,7 +3165,7 @@ function renderShopping() {
   $("#shop-list").innerHTML = items.length
     ? (foods.length ? groupedList(foods, row) : "") +
       (others.length ? `<li class="group-head">${groupHeading({ emoji: "🧴", label: "Not food" }, others.length)}</li>${others.map(row).join("")}` : "")
-    : `<li class="empty">Nothing to buy yet. Add foods (or anything else) here, foods from Foods too, or from what ran out in Stock and Fridge.</li>`;
+    : `<li class="empty">Nothing to buy yet. Add foods (or anything else) here, foods from Food items too, or from what ran out in Stock and Fridge.</li>`;
 }
 
 /** Re-draws whatever shows the list in the open tab. */
@@ -3219,15 +3430,19 @@ function renderFridge() {
   renderExpiredAlert($("#fridge-alert"), fridgeExpired());
   const unsortedShown = fridgeMatches(unsorted);
   const searching = !!$("#fridge-filter").value.trim();
-  const hideUnsorted = searching && !unsortedShown.length; // like sectors with no match
-  $(".fridge-side").hidden = hideUnsorted;
-  $(".fridge-grid").classList.toggle("solo", hideUnsorted);
-  $("#unsorted-count").textContent = ofCount(unsortedShown.length, unsorted.length);
-  $("#unsorted-list").innerHTML = unsortedShown.length
+  // "Not in a sector" is the first card of the grid, like a sector but without its
+  // buttons: it isn't one (it can't be renamed, moved or deleted, and it's always used last).
+  const unsortedList = unsortedShown.length
     ? (sectors.length ? "" : `<li class="empty">Add a sector (at the bottom of the page) to put these in.</li>`) + unsortedShown.map((f) => fridgeRow(f, null)).join("")
     : unsorted.length
     ? `<li class="empty">No matches</li>`
-    : `<li class="empty">${sectors.some((x) => x.foods.some(hasStock)) ? "Everything in stock has its sector." : "Nothing in stock. Add a cart in Carts, under the Stock menu."}</li>`;
+    : `<li class="empty">${sectors.some((x) => x.foods.some(hasStock)) ? "Everything in stock has its sector." : "Nothing in stock. Add a cart in Carts, under the Food menu."}</li>`;
+  const unsortedCard = searching && !unsortedShown.length // hidden like sectors with no match
+    ? ""
+    : `<section class="card sector-card unsorted-card" aria-label="Not in a sector">
+        <div class="sector-top"><h3>📥 Not in a sector <span class="count">${ofCount(unsortedShown.length, unsorted.length)}</span></h3></div>
+        <ul class="fridge-foods">${unsortedList}</ul>
+      </section>`;
 
   $("#sectors-count").textContent = sectors.length ? `(${sectors.length})` : "";
   const placed = sectors.flatMap((x) => x.foods.filter(hasStock).map((f) => checkKey(f, x)));
@@ -3240,7 +3455,7 @@ function renderFridge() {
   renderRecentlyOut(fr.recently_out || [], searching);
 
   if (!sectors.length) {
-    $("#sector-list").innerHTML = `<p class="empty-note">No sectors yet. Add one for each shelf, drawer or cupboard where you keep food, with the form at the bottom of the page.</p>`;
+    $("#sector-list").innerHTML = unsortedCard + `<p class="empty-note">No sectors yet. Add one for each shelf, drawer or cupboard where you keep food, with the form at the bottom of the page.</p>`;
     return;
   }
   const html = sectors
@@ -3272,7 +3487,7 @@ function renderFridge() {
       </section>`;
     })
     .join("");
-  $("#sector-list").innerHTML = html || `<p class="empty-note">No sector has a match.</p>`;
+  $("#sector-list").innerHTML = unsortedCard + (html || `<p class="empty-note">No sector has a match.</p>`);
   if (searching) $("#sectors-count").textContent = ofCount(sectors.filter((x) => fridgeMatches(x.foods).length).length, sectors.length);
 }
 
@@ -3349,7 +3564,7 @@ async function deleteSector(id) {
   if (!sec) return;
   const ok = await confirmDialog({
     title: "🗑️ Delete this sector?",
-    body: `<p><b>${esc(sectorName(sec))}</b> leaves the Fridge tab. ${sec.foods.length ? "What's in it goes to <i>Not in a sector</i>; " : ""}nothing leaves Foods or your stock.</p>`,
+    body: `<p><b>${esc(sectorName(sec))}</b> leaves the Fridge tab. ${sec.foods.length ? "What's in it goes to <i>Not in a sector</i>; " : ""}nothing leaves Food items or your stock.</p>`,
     ok: "Delete sector",
   });
   if (!ok) return;
@@ -4068,7 +4283,7 @@ async function logReminder(id) {
     if (!r.is_meta) return logReminderFood(await api("GET", `/foods/${r.food_id}`));
     // a meta food: pick which of its foods
     const opts = await api("GET", `/foods?kind=foods&limit=50&meta=${r.food_id}`);
-    if (!opts.length) return toast(`No food is one of “${r.name}” yet: set that in Foods`, true);
+    if (!opts.length) return toast(`No food is one of “${r.name}” yet: set that in Food items`, true);
     if (opts.length === 1) return logReminderFood(opts[0]);
     state.rmOptions[id] = opts;
     renderDayReminders();
@@ -4509,7 +4724,7 @@ function renderHistory(days, baseline) {
   barChart($("#chart-steps"), days, "steps", "steps");
   barChart($("#chart-sleep"), days, "sleep_h", "h", 1);
   renderWeight();
-  lineChart($("#chart-bodyfat"), days, "body_fat_pct", "%", 1);
+  splitChart($("#chart-split"), days);
 
   $("#history-body").innerHTML = days
     .toReversed()
@@ -4534,7 +4749,7 @@ function heightM() {
   return h ? h / 100 : null;
 }
 
-/** The body weight chart in kg or BMI, and the weight references below it. */
+/** The body chart in kg, BMI or body fat %, and the weight references below it (not for fat). */
 function renderWeight() {
   const days = state.historyDays;
   if (!days) return;
@@ -4542,9 +4757,15 @@ function renderWeight() {
   const bmiRadio = $('input[name="weight-unit"][value="bmi"]');
   bmiRadio.disabled = !h;
   bmiRadio.parentElement.title = h ? "" : "Set your height in Settings to see BMI";
-  const unit = h && state.weightUnit === "bmi" ? "bmi" : "kg";
+  const unit = state.weightUnit === "fat" ? "fat" : h && state.weightUnit === "bmi" ? "bmi" : "kg";
   $(`input[name="weight-unit"][value="${unit}"]`).checked = true;
-  $("#weight-h").textContent = unit === "bmi" ? "Body mass index (BMI)" : "Body weight (kg)";
+  $("#weight-h").textContent = { bmi: "Body mass index (BMI)", fat: "Body fat (%)", kg: "Body weight (kg)" }[unit];
+  $(".weight-card").style.setProperty("--series", unit === "fat" ? "var(--c-bodyfat)" : "var(--c-weight)");
+  if (unit === "fat") {
+    lineChart($("#chart-weight"), days, "body_fat_pct", "%", 1);
+    $("#body-refs").innerHTML = ""; // the references are about weight
+    return;
+  }
   if (unit === "bmi") {
     const withBmi = days.map((d) => ({ ...d, bmi: d.weight_kg != null ? d.weight_kg / h ** 2 : null }));
     lineChart($("#chart-weight"), withBmi, "bmi", "BMI", 1);
@@ -4570,17 +4791,22 @@ function renderBodyRefs(unit) {
     b.min_bmi == null ? `under ${show(b.max_bmi)}` : b.max_bmi == null ? `${show(b.min_bmi)} and up` : `${show(b.min_bmi)} – ${show(b.max_bmi)}`;
   const inside = (b) => lastBmi != null && (b.min_bmi == null || lastBmi >= b.min_bmi) && (b.max_bmi == null || lastBmi < b.max_bmi);
   const groupLabel = { male: "men", female: "women", other: "everyone else" }[refs.gender_group];
+  const cur = refs.brackets.find(inside);
+  // folded by default, so the chart's card is as tall as the one next to it
   box.innerHTML = `
-    <table class="refs-table">
-      <caption>Weight references <small>${refs.custom ? "your own values" : `defaults for ${groupLabel}`} · <a href="#/settings">edit</a></small></caption>
-      <thead><tr><th>Bracket</th><th>Body type</th><th class="n">${unit === "bmi" ? "BMI" : "Weight"}</th></tr></thead>
-      <tbody>${refs.brackets
-        .map(
-          (b) => `<tr class="${inside(b) ? "current" : ""}">
-        <td>${esc(b.label)}${inside(b) ? ` <span class="you">← latest</span>` : ""}</td><td>${esc(b.body_type)}</td><td class="n">${range(b)}</td></tr>`
-        )
-        .join("")}</tbody>
-    </table>`;
+    <details class="refs-details"${prefGet("pamela-refs-open") === "1" ? " open" : ""}>
+      <summary>Weight references <small>${cur ? `latest: ${esc(cur.label)} · ` : ""}${refs.custom ? "your own values" : `defaults for ${groupLabel}`} · <a href="#/settings">edit</a></small></summary>
+      <table class="refs-table">
+        <thead><tr><th>Bracket</th><th>Body type</th><th class="n">${unit === "bmi" ? "BMI" : "Weight"}</th></tr></thead>
+        <tbody>${refs.brackets
+          .map(
+            (b) => `<tr class="${inside(b) ? "current" : ""}">
+          <td>${esc(b.label)}${inside(b) ? ` <span class="you">← latest</span>` : ""}</td><td>${esc(b.body_type)}</td><td class="n">${range(b)}</td></tr>`
+          )
+          .join("")}</tbody>
+      </table>
+    </details>`;
+  $("details", box).addEventListener("toggle", (e) => prefSet("pamela-refs-open", e.target.open ? "1" : "0"));
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -4601,6 +4827,16 @@ function lineChart(el, days, key, unit, digits = 1) {
   drawChart(el);
 }
 
+/** 100% stacked bars: each day's calories split into protein, carbs and fat (the
+ * energy of each, 4 / 4 / 9 kcal a gram), with the targets' split as two dashed lines. */
+function splitChart(el, days) {
+  chartData.set(el, { days, split: true });
+  const macros = ENERGY.map((e) => MACROS.find((m) => m.key === e.key));
+  $("#split-chart-legend").innerHTML =
+    macros.map((m) => `<span style="--c:${m.color}"><b>${m.label}</b></span>`).join("") + `<span class="dash-key">targets</span>`;
+  drawChart(el);
+}
+
 function niceMax(v) {
   if (v <= 0) return 1;
   const pow = 10 ** Math.floor(Math.log10(v));
@@ -4611,6 +4847,7 @@ function niceMax(v) {
 function drawChart(el) {
   const spec = chartData.get(el);
   if (!spec) return;
+  if (spec.split) return drawSplitChart(el, spec.days);
   const { days, key, unit, digits, line } = spec;
   const tgt = (d) => d.targets?.[key] ?? null;
   const W = el.clientWidth, H = el.clientHeight;
@@ -4713,6 +4950,102 @@ function drawChart(el) {
   svg.addEventListener("mouseleave", () => {
     tip.hidden = true;
     $$(".bar.hot, .dot.hot", svg).forEach((b) => b.classList.remove("hot"));
+  });
+  svg.addEventListener("click", (e) => {
+    const hit = e.target.closest(".hit");
+    if (hit) {
+      tip.hidden = true;
+      goDay(days[Number(hit.dataset.i)].day);
+    }
+  });
+}
+
+/** Draws splitChart's bars: protein at the bottom, then carbs, then fat. */
+function drawSplitChart(el, days) {
+  const W = el.clientWidth, H = el.clientHeight;
+  if (!W || !H) return;
+  const m = { top: 14, right: 8, bottom: 22, left: 44 };
+  const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
+  const y = (share) => m.top + ih - share * ih;
+  const band = iw / days.length;
+  const gap = Math.min(2, band * 0.25);
+  const bw = Math.max(1, band - gap);
+  const macros = ENERGY.map((e) => MACROS.find((x) => x.key === e.key));
+  const shares = days.map((d) => (d.kcal > 0 ? energySplit(d) : null));
+  // the target split, only when all three are set that day
+  const goals = days.map((d) => (d.targets && ENERGY.every((e) => d.targets[e.key]) ? energySplit(d.targets) : null));
+  const pct = (p) => `${Math.round(p * 100)}%`;
+
+  let s = `<g class="grid axis">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = i / 4;
+    s += `<line x1="${m.left}" x2="${W - m.right}" y1="${y(v)}" y2="${y(v)}"/>`;
+    s += `<text x="${m.left - 6}" y="${y(v) + 4}" text-anchor="end">${pct(v)}</text>`;
+  }
+  s += `</g><g class="axis">`;
+  const every = Math.ceil(days.length / Math.max(1, Math.floor(iw / 64)));
+  days.forEach((d, i) => {
+    if ((days.length - 1 - i) % every) return;
+    s += `<text x="${m.left + i * band + band / 2}" y="${H - 6}" text-anchor="middle">${d.day.slice(5)}</text>`;
+  });
+  s += `</g>`;
+  shares.forEach((sh, i) => {
+    if (!sh) return;
+    const x = m.left + i * band + gap / 2;
+    let at = 0;
+    s += `<g class="stack" data-i="${i}">`;
+    sh.forEach((p, j) => {
+      s += `<rect x="${x}" y="${y(at + p)}" width="${bw}" height="${p * ih}" style="fill:${macros[j].color}"/>`;
+      at += p;
+    });
+    s += `</g>`;
+  });
+  // the targets: where protein ends and where carbs end, stepping where a target changed
+  for (const upTo of [1, 2]) {
+    let path = "", prev = null;
+    goals.forEach((g, i) => {
+      const v = g ? g.slice(0, upTo).reduce((a, b) => a + b, 0) : null;
+      const x0 = m.left + i * band, x1 = x0 + band;
+      if (v == null) {
+        // no target that day: the line breaks
+      } else if (prev == null) path += `M${x0},${y(v)}H${x1}`;
+      else if (Math.abs(prev - v) < 1e-9) path += `H${x1}`;
+      else path += `V${y(v)}H${x1}`;
+      prev = v;
+    });
+    if (path) s += `<path class="target" fill="none" d="${path}"/>`;
+  }
+  if (!shares.some(Boolean)) {
+    s += `<text class="empty-msg" x="${m.left + iw / 2}" y="${m.top + ih / 2}" text-anchor="middle">No data in this range</text>`;
+  }
+  days.forEach((d, i) => {
+    s += `<rect class="hit" data-i="${i}" x="${m.left + i * band}" y="${m.top}" width="${band}" height="${ih}"/>`;
+  });
+  el.innerHTML = `<svg xmlns="${SVG_NS}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of each day's calories from protein, carbs and fat">${s}</svg>`;
+
+  const svg = el.firstChild;
+  const tip = $("#tooltip");
+  const cool = () => $$(".stack.hot", svg).forEach((g) => g.classList.remove("hot"));
+  svg.addEventListener("mousemove", (e) => {
+    const hit = e.target.closest(".hit");
+    cool();
+    if (!hit) return (tip.hidden = true);
+    const i = Number(hit.dataset.i);
+    const sh = shares[i], g = goals[i];
+    $(`.stack[data-i="${i}"]`, svg)?.classList.add("hot");
+    tip.innerHTML = `<b>${fmtDayWd(days[i].day)}</b>${
+      sh
+        ? `${fmt(days[i].kcal)} kcal: ${macros.map((x, j) => `${x.label} ${pct(sh[j])}${g ? ` <small>(target ${pct(g[j])})</small>` : ""}`).join(" · ")}`
+        : "Nothing logged"
+    }`;
+    tip.hidden = false;
+    const tw = tip.offsetWidth;
+    tip.style.left = `${Math.min(e.clientX + 12, window.innerWidth - tw - 8)}px`;
+    tip.style.top = `${e.clientY + 14}px`;
+  });
+  svg.addEventListener("mouseleave", () => {
+    tip.hidden = true;
+    cool();
   });
   svg.addEventListener("click", (e) => {
     const hit = e.target.closest(".hit");
@@ -5191,6 +5524,15 @@ function wire() {
   $("#notes-input").addEventListener("change", flushNote);
   window.addEventListener("pagehide", flushNote);
 
+  // sorting the log and the activities by hand
+  sortable({ root: $("#log-body"), sel: state.logSel, layout: logLayout, save: saveLogOrder });
+  sortable({
+    root: $("#act-list"),
+    sel: state.actSel,
+    layout: () => [{ bucket: "", keys: (state.dayData?.activities ?? []).map((a) => `a:${a.id}`) }],
+    save: saveActivityOrder,
+  });
+
   // log table
   $("#log-body").addEventListener("click", async (e) => {
     const add = e.target.closest("[data-add-meal]");
@@ -5432,7 +5774,7 @@ function wire() {
   };
   for (const v of GROCERY_VIEWS) $(`#view-${v}`).addEventListener("click", onGroceriesClick);
 
-  // shopping list: in Carts; the 🛒 / "+ List" buttons in Foods, Stock and Fridge
+  // shopping list: in Carts; the 🛒 / "+ List" buttons in Food items, Stock and Fridge
   for (const v of ["foods", "stock", "fridge"]) {
     $(`#view-${v}`).addEventListener("click", (e) => {
       const t = e.target.closest("[data-shop-toggle]");
@@ -5595,7 +5937,7 @@ function wire() {
     });
   }
   const ro = new ResizeObserver((entries) => entries.forEach((en) => drawChart(en.target)));
-  for (const id of ["#chart-kcal", "#chart-protein", "#chart-steps", "#chart-sleep", "#chart-weight", "#chart-bodyfat"]) {
+  for (const id of ["#chart-kcal", "#chart-protein", "#chart-steps", "#chart-sleep", "#chart-weight", "#chart-split"]) {
     ro.observe($(id));
   }
 

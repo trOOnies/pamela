@@ -33,6 +33,7 @@ from .schemas import (
     WIPE_TARGETS,
     Activity,
     ActivityIn,
+    ActivityOrderIn,
     ActivityType,
     ActivityTypeIn,
     BarcodeLookup,
@@ -54,6 +55,7 @@ from .schemas import (
     FavoriteIn,
     Food,
     FoodIn,
+    FoodOrderIn,
     Fridge,
     FridgeMoveIn,
     FridgeOrderIn,
@@ -898,8 +900,21 @@ def _entry_row(conn: sqlite3.Connection, entry_id: int) -> dict:
     return row
 
 
+def _next_food_position(conn: sqlite3.Connection, day: str, meal: str) -> int:
+    """After everything in that meal of that day: foods on their own and meal logs."""
+    row = conn.execute(
+        """SELECT MAX(p) AS p FROM (
+             SELECT position AS p FROM food_entries
+              WHERE day = ? AND meal = ? AND meal_log_id IS NULL
+             UNION ALL SELECT position FROM meal_logs WHERE day = ? AND meal = ?)""",
+        (day, meal, day, meal),
+    ).fetchone()
+    return (row["p"] or 0) + 1
+
+
 def _insert_entry(conn: sqlite3.Connection, entry: EntryIn, config: AppConfig) -> int:
     values = _entry_values(entry, conn, config)
+    values["position"] = _next_food_position(conn, values["day"], values["meal"])
     cols = ", ".join(values)
     marks = ", ".join("?" * len(values))
     cur = conn.execute(
@@ -924,6 +939,7 @@ def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict
         sm = conn.execute("SELECT name FROM saved_meals WHERE id = ?", (sm_id,)).fetchone()
         if sm is None:
             raise HTTPException(UNPROCESSABLE, "saved meal not found")
+    log_position = _next_food_position(conn, batch.day.isoformat(), batch.meal)
     ids = [
         _insert_entry(
             conn,
@@ -940,8 +956,9 @@ def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict
     ]
     if sm is not None:
         log_id = conn.execute(
-            "INSERT INTO meal_logs (day, meal, saved_meal_id, name) VALUES (?, ?, ?, ?)",
-            (batch.day.isoformat(), batch.meal, sm_id, sm["name"]),
+            "INSERT INTO meal_logs (day, meal, saved_meal_id, name, position) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (batch.day.isoformat(), batch.meal, sm_id, sm["name"], log_position),
         ).lastrowid
         conn.executemany(
             "UPDATE food_entries SET saved_meal_id = ?, meal_log_id = ? WHERE id = ?",
@@ -957,6 +974,7 @@ def update_entry(entry_id: int, entry: EntryIn, conn: Conn, config: Config) -> d
     values = _entry_values(entry, conn, config)
     if (values["day"], values["meal"]) != (old["day"], old["meal"]):
         values["meal_log_id"] = None
+        values["position"] = _next_food_position(conn, values["day"], values["meal"])
     sets = ", ".join(f"{k} = ?" for k in values)
     conn.execute(f"UPDATE food_entries SET {sets} WHERE id = ?", (*values.values(), entry_id))
     _take_stock(conn, entry_id, values)
@@ -982,6 +1000,54 @@ def delete_meal_log(meal_log_id: int, conn: Conn) -> Response:
     _give_back_entries(conn, "meal_log_id = ?", (meal_log_id,))
     if conn.execute("DELETE FROM meal_logs WHERE id = ?", (meal_log_id,)).rowcount == 0:
         raise _not_found("meal log")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# A day's entries in the Day tab's order: within a meal, each food logged on its own and
+# each meal log (with its foods together, as they were logged) by its position.
+_DAY_ORDER = """ORDER BY CASE WHEN e.meal_log_id IS NULL THEN e.position ELSE ml.position END,
+    COALESCE(ml.created_at, e.created_at), e.meal_log_id IS NOT NULL,
+    COALESCE(e.meal_log_id, e.id), e.created_at, e.id"""
+
+
+@router.put("/days/{day}/food-order", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_food(day: dt.date, order: FoodOrderIn, conn: Conn) -> Response:
+    """Sets the order of foods logged on their own and of meal logs, each in the meal
+    given (moving it there; a meal log takes its foods along). Positions count within
+    each meal, in the order listed; what isn't listed keeps its place."""
+    iso = day.isoformat()
+    count: dict[str, int] = {}
+    for it in order.items:
+        pos = count[it.meal] = count.get(it.meal, 0) + 1
+        if it.entry_id is not None:
+            n = conn.execute(
+                "UPDATE food_entries SET meal = ?, position = ? "
+                "WHERE id = ? AND day = ? AND meal_log_id IS NULL",
+                (it.meal, pos, it.entry_id, iso),
+            ).rowcount
+        else:
+            n = conn.execute(
+                "UPDATE meal_logs SET meal = ?, position = ? WHERE id = ? AND day = ?",
+                (it.meal, pos, it.meal_log_id, iso),
+            ).rowcount
+            conn.execute(
+                "UPDATE food_entries SET meal = ? WHERE meal_log_id = ?", (it.meal, it.meal_log_id)
+            )
+        if n == 0:
+            raise HTTPException(UNPROCESSABLE, "not logged on that day (or part of a saved meal)")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/days/{day}/activity-order", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_activities(day: dt.date, order: ActivityOrderIn, conn: Conn) -> Response:
+    """Sets the order of the day's activities: the ones listed first, in that order."""
+    iso = day.isoformat()
+    for pos, aid in enumerate(order.ids, start=1):
+        n = conn.execute(
+            "UPDATE activities SET position = ? WHERE id = ? AND day = ?", (pos, aid, iso)
+        ).rowcount
+        if n == 0:
+            raise HTTPException(UNPROCESSABLE, "activity not logged on that day")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -1963,9 +2029,17 @@ def _activity_row(conn: sqlite3.Connection, activity_id: int) -> dict:
     return row
 
 
+def _next_activity_position(conn: sqlite3.Connection, day: str) -> int:
+    """Last, once the day's activities were sorted by hand; until then 0, so they keep
+    going by time of day."""
+    row = conn.execute("SELECT MAX(position) AS p FROM activities WHERE day = ?", (day,)).fetchone()
+    return (row["p"] + 1) if row["p"] else 0
+
+
 @router.post("/activities", response_model=Activity, status_code=status.HTTP_201_CREATED)
 def create_activity(activity: ActivityIn, conn: Conn, config: Config) -> dict:
     values = _activity_values(activity, conn, config)
+    values["position"] = _next_activity_position(conn, values["day"])
     cols = ", ".join(values)
     marks = ", ".join("?" * len(values))
     cur = conn.execute(f"INSERT INTO activities ({cols}) VALUES ({marks})", tuple(values.values()))
@@ -1974,8 +2048,10 @@ def create_activity(activity: ActivityIn, conn: Conn, config: Config) -> dict:
 
 @router.put("/activities/{activity_id}", response_model=Activity)
 def update_activity(activity_id: int, activity: ActivityIn, conn: Conn, config: Config) -> dict:
-    _activity_row(conn, activity_id)
+    old = _activity_row(conn, activity_id)
     values = _activity_values(activity, conn, config)
+    if values["day"] != old["day"]:
+        values["position"] = _next_activity_position(conn, values["day"])
     sets = ", ".join(f"{k} = ?" for k in values)
     conn.execute(f"UPDATE activities SET {sets} WHERE id = ?", (*values.values(), activity_id))
     return _activity_row(conn, activity_id)
@@ -2132,12 +2208,12 @@ def wipe(body: WipeIn, conn: Conn) -> dict:
 def read_day(day: dt.date, conn: Conn, config: Config) -> dict:
     iso = day.isoformat()
     entries = conn.execute(
-        _ENTRY_SELECT + " WHERE e.day = ? ORDER BY e.created_at, e.id", (iso,)
+        _ENTRY_SELECT + " WHERE e.day = ? " + _DAY_ORDER, (iso,)
     ).fetchall()
     activities = conn.execute(
         "SELECT * FROM activities WHERE day = ? "
-        # by time of day when given; the rest in the order they were logged
-        "ORDER BY start_time IS NULL, start_time, created_at, id",
+        # as sorted by hand; then by time of day when given, the rest as they were logged
+        "ORDER BY position, start_time IS NULL, start_time, created_at, id",
         (iso,),
     ).fetchall()
     totals = Macros(**{k: sum(e[k] for e in entries) for k in MACRO_FIELDS})
