@@ -455,6 +455,8 @@ function renderDayNav() {
   $("#day-label").textContent = state.day;
   $("#daypick").classList.toggle("is-today", isToday);
   $("#next-day").disabled = isToday;
+  // on yesterday, the next arrow is the way back to today
+  $("#next-day").classList.toggle("to-today", state.day === addDays(today, -1));
   $("#today-btn").disabled = isToday;
   $("#today-btn").title = isToday ? "You're on today" : "Go to today";
   $("#day-today").textContent = isToday ? "This is today" : "";
@@ -958,9 +960,14 @@ async function saveMealAsSaved(meal) {
   }
 }
 
+/** A logged activity's type, if it still exists (matched by name, as the server does). */
+function activityTypeOf(name) {
+  return state.activityTypes.find((x) => x.name.toLowerCase() === name.toLowerCase());
+}
+
 /** The emoji of a logged activity's type, if that type still exists. */
 function activityIcon(name) {
-  const t = state.activityTypes.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  const t = activityTypeOf(name);
   return t ? `<span class="act-emoji" aria-hidden="true">${t.icon}</span>` : "";
 }
 
@@ -1049,6 +1056,9 @@ function renderActivities() {
         const pace = a.duration_min / a.distance_km;
         bits.push(`${Math.floor(pace)}:${String(Math.round((pace % 1) * 60)).padStart(2, "0")} /km`);
       }
+      // done on foot: the steps it takes, as the day's steps count them
+      const spm = activityTypeOf(a.type)?.steps_per_min;
+      if (spm && a.duration_min) bits.push(`<span title="Estimated: ${fmtQty(spm)} steps a minute">~${fmt(a.duration_min * spm)} steps</span>`);
       const cond = activityConditions(a);
       return `<li class="${a.id === state.editingActivityId ? "editing" : ""}">
         <div>${a.start_time ? `<span class="tm">${esc(a.start_time)}</span> ` : ""}<span class="t">${activityIcon(a.type)}${esc(a.type)}</span> <span class="d">${bits.join(" · ")}</span></div>
@@ -1069,7 +1079,11 @@ function renderCheckin() {
   const steps = $("#steps-input"), sleep = $("#sleep-input");
   const weight = $("#weight-input"), fat = $("#bodyfat-input");
   // don't clobber what the user is typing
-  if (document.activeElement !== steps) steps.value = m.steps ?? "";
+  // when the on-foot activities take more steps than logged, the box shows their estimate
+  // greyed out, and "+" adds onto it
+  const sbNow = state.dayData.steps_burn;
+  if (document.activeElement !== steps) steps.value = sbNow.estimated ? "" : m.steps ?? "";
+  steps.placeholder = sbNow.estimated ? `~${sbNow.total}` : "–";
   if (document.activeElement !== sleep) sleep.value = m.sleep_min != null ? fmtSleep(m.sleep_min) : "";
   if (document.activeElement !== weight) weight.value = m.weight_kg ?? "";
   if (document.activeElement !== fat) fat.value = m.body_fat_pct ?? "";
@@ -1077,8 +1091,13 @@ function renderCheckin() {
   updateStepsReminder();
   renderBodySub();
 
-  $("#steps-bar").style.width = `${meterPct(m.steps ?? 0, t.steps)}%`;
-  $("#steps-sub").textContent = t.steps ? `${fmt(m.steps ?? 0)} of ${fmt(t.steps)}` : "";
+  // on-foot activities count too: when they take more steps than logged, theirs (an estimate)
+  const sb = state.dayData.steps_burn;
+  const stepsNow = sb.total ?? 0;
+  $("#steps-bar").style.width = `${meterPct(stepsNow, t.steps)}%`;
+  const est = sb.estimated ? "~" : "";
+  $("#steps-sub").textContent = t.steps ? `${est}${fmt(stepsNow)} of ${fmt(t.steps)}` : sb.estimated ? `~${fmt(stepsNow)}` : "";
+  $("#steps-sub").title = sb.estimated ? "Estimated from your logged walks and runs (they take more steps than you logged)" : "";
   const sleepTarget = t.sleep_h * 60;
   $("#sleep-bar").style.width = `${meterPct(m.sleep_min ?? 0, sleepTarget)}%`;
   $("#sleep-sub").textContent = sleepTarget ? `${fmtSleep(m.sleep_min ?? 0)} of ${fmtSleep(sleepTarget)} h` : "";
@@ -1173,6 +1192,7 @@ function commitSteps() {
   const raw = $("#steps-input").value.trim();
   const steps = raw === "" ? null : Math.round(num(raw) ?? -1);
   if (steps != null && steps < 0) return toast("Steps must be a positive number", true);
+  if (steps == null && state.dayData.steps_burn.estimated) return; // the box was showing the estimate
   if (steps !== state.dayData.metrics.steps) saveCheckin({ steps });
 }
 
@@ -1181,8 +1201,10 @@ function addToMetric(which) {
   const m = state.dayData.metrics;
   const input = $(`#${which}-input`);
   const steps = which === "steps";
-  const saved = steps ? m.steps : m.sleep_min;
-  const shown = saved == null ? "" : steps ? String(saved) : fmtSleep(saved);
+  // steps: onto the day's count, which may be the on-foot activities' estimate
+  const est = steps && state.dayData.steps_burn.estimated;
+  const saved = steps ? (est ? state.dayData.steps_burn.total : m.steps) : m.sleep_min;
+  const shown = saved == null || est ? "" : steps ? String(saved) : fmtSleep(saved);
   if (input.value.trim() === shown) {
     input.focus();
     input.select();
@@ -4498,7 +4520,7 @@ function renderHistory(days, baseline) {
       <td class="n">${fmt(d.kcal)}</td>
       ${MACROS.map((m) => `<td class="n">${fmt(d[m.key])}</td>`).join("")}
       <td class="n">${fmt(d.burned_kcal)}</td><td class="n">${fmt(d.active_min)}</td>
-      <td class="n">${fmt(d.steps)}</td><td class="n">${fmtSleep(d.sleep_min)}</td>
+      <td class="n"${d.steps_estimated ? ' title="Estimated from the day\'s walks and runs"' : ""}>${d.steps_estimated ? "~" : ""}${fmt(d.steps)}</td><td class="n">${fmtSleep(d.sleep_min)}</td>
       <td class="n">${d.weight_kg != null ? fmt(d.weight_kg, 1) : "–"}</td><td class="n">${d.body_fat_pct != null ? `${fmt(d.body_fat_pct, 1)} %` : "–"}</td>
       <td>${d.mood != null ? `<span title="${esc(moodLabel(d.mood))}">${MOOD_EMOJI[d.mood]} ${esc(moodLabel(d.mood))}</span>` : ""}</td>
     </tr>`

@@ -972,6 +972,10 @@ class StepsBurn(BaseModel):
     """What a day's steps add to burned kcal and active time: only the steps that its
     logged on-foot activities don't already account for, counted as easy walking."""
 
+    total: int | None = Field(
+        None, description="The day's steps: logged, or what its on-foot activities take if more"
+    )
+    estimated: bool = Field(False, description="total comes from the on-foot activities")
     steps: float = Field(0, description="Steps not covered by logged activities")
     min: float = 0
     kcal: float = 0
@@ -1000,7 +1004,10 @@ class HistoryDay(Macros):
     burned_kcal: float = Field(0, description="Activities plus the steps they don't cover")
     active_min: float = Field(0, description="Activities plus the steps they don't cover")
     entry_count: int = 0
-    steps: int | None = None
+    steps: int | None = Field(
+        None, description="Logged, or what the on-foot activities take if more"
+    )
+    steps_estimated: bool = Field(False, description="steps comes from the on-foot activities")
     sleep_min: float | None = None
     mood: int | None = None
     weight_kg: float | None = None

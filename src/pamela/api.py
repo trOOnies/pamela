@@ -2256,7 +2256,9 @@ def read_history(
                 burned_kcal=(a["kcal"] if a else 0) + steps["kcal"],
                 active_min=(a["mins"] if a else 0) + steps["min"],
                 **({k: f[k] for k in MACRO_FIELDS} if f else {}),
-                **({k: m[k] for k in METRIC_FIELDS} if m else {}),
+                **({k: m[k] for k in METRIC_FIELDS if k != "steps"} if m else {}),
+                steps=steps["total"],
+                steps_estimated=steps["estimated"],
                 has_note=iso in noted,
                 targets=_targets_on(periods, iso),
             )

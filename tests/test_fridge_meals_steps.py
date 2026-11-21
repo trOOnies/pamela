@@ -434,7 +434,9 @@ def test_more_logged_on_foot_than_steps_adds_nothing(client):
         "/api/activities", json={"day": day, "type": "Running", "duration_min": 30, "kcal": 300}
     )
     d = client.get(f"/api/days/{day}").json()
-    assert d["steps_burn"] == {"steps": 0, "min": 0, "kcal": 0}
+    assert d["steps_burn"] == {
+        "total": 4800, "estimated": True, "steps": 0, "min": 0, "kcal": 0
+    }
     assert d["burned_kcal"] == 300 and d["active_min"] == 30
 
 
@@ -489,3 +491,28 @@ def test_recently_ran_out(client, oats):
         ("Milk", D[2], "Door", "🚪"),
         ("Rolled oats", D[4], None, ""),
     ]
+
+
+def test_on_foot_activities_count_towards_steps(client):
+    day = D[1]
+    walk = {"day": day, "type": "Walking", "duration_min": 20, "kcal": 90}  # 100 steps/min
+    client.post("/api/activities", json=walk)
+    d = client.get(f"/api/days/{day}").json()
+    assert d["metrics"]["steps"] is None  # what was typed stays as it was
+    assert (d["steps_burn"]["total"], d["steps_burn"]["estimated"]) == (2000, True)
+    h = client.get("/api/history", params={"start": day, "end": day}).json()[0]
+    assert (h["steps"], h["steps_estimated"]) == (2000, True)
+
+    # a step counter counts the walk too: more logged steps aren't added to it
+    client.put(f"/api/days/{day}/metrics", json={"steps": 6000})
+    d = client.get(f"/api/days/{day}").json()
+    assert (d["steps_burn"]["total"], d["steps_burn"]["estimated"]) == (6000, False)
+    h = client.get("/api/history", params={"start": day, "end": day}).json()[0]
+    assert (h["steps"], h["steps_estimated"]) == (6000, False)
+
+    # nothing on foot, nothing logged: no steps
+    other = D[2]
+    yoga = {"day": other, "type": "Yoga", "duration_min": 30, "kcal": 80}
+    client.post("/api/activities", json=yoga)
+    h = client.get("/api/history", params={"start": other, "end": other}).json()[0]
+    assert (h["steps"], h["steps_estimated"]) == (None, False)

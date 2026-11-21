@@ -46,7 +46,12 @@ def steps_burn(
     only the rest counts, so a logged walk isn't counted twice."""
     extra = max((steps or 0) - covered, 0)
     minutes = extra / STEP_CADENCE
+    # The day's step count: a step counter counts a logged walk's steps too, so it's
+    # the larger of the two; the activities' when they're more (or nothing's logged).
+    estimated = round(covered) > (steps or 0)
     return {
+        "total": round(covered) if estimated else steps,
+        "estimated": estimated,
         "steps": extra,
         "min": minutes,
         "kcal": estimate_kcal(STEP_MET, weight_kg, minutes),
