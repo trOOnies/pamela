@@ -660,8 +660,8 @@ def list_saved_meals(conn: Conn) -> list[dict]:
 @router.post("/saved-meals", response_model=SavedMeal, status_code=status.HTTP_201_CREATED)
 def create_saved_meal(meal: SavedMealIn, conn: Conn) -> dict:
     cur = conn.execute(
-        "INSERT INTO saved_meals (name, default_meals, recipe) VALUES (?, ?, ?)",
-        (meal.name, json.dumps(meal.default_meals), meal.recipe),
+        "INSERT INTO saved_meals (name, default_meals, recipe, place) VALUES (?, ?, ?, ?)",
+        (meal.name, json.dumps(meal.default_meals), meal.recipe, meal.place),
     )
     _store_items(conn, cur.lastrowid, meal)
     return _saved_meal(conn, cur.lastrowid)
@@ -675,9 +675,9 @@ def read_saved_meal(saved_meal_id: int, conn: Conn) -> dict:
 @router.put("/saved-meals/{saved_meal_id}", response_model=SavedMeal)
 def update_saved_meal(saved_meal_id: int, meal: SavedMealIn, conn: Conn) -> dict:
     cur = conn.execute(
-        "UPDATE saved_meals SET name = ?, default_meals = ?, recipe = ?, "
+        "UPDATE saved_meals SET name = ?, default_meals = ?, recipe = ?, place = ?, "
         "updated_at = datetime('now') WHERE id = ?",
-        (meal.name, json.dumps(meal.default_meals), meal.recipe, saved_meal_id),
+        (meal.name, json.dumps(meal.default_meals), meal.recipe, meal.place, saved_meal_id),
     )
     if cur.rowcount == 0:
         raise _not_found("saved meal")
@@ -932,13 +932,18 @@ def create_entry(entry: EntryIn, conn: Conn, config: Config) -> dict:
 @router.post("/entries/batch", response_model=list[Entry], status_code=status.HTTP_201_CREATED)
 def create_entries(batch: EntryBatchIn, conn: Conn, config: Config) -> list[dict]:
     """Log several foods into one meal, all or nothing. Logged from a saved meal, they
-    are grouped under a new meal log, which the Day tab shows (and deletes) as one."""
+    are grouped under a new meal log, which the Day tab shows (and deletes) as one. A
+    homemade saved meal can't be logged as eaten out, nor one eaten out as homemade."""
     sm_id = batch.saved_meal_id
     sm = None
     if sm_id is not None:
-        sm = conn.execute("SELECT name FROM saved_meals WHERE id = ?", (sm_id,)).fetchone()
+        sm = conn.execute("SELECT name, place FROM saved_meals WHERE id = ?", (sm_id,)).fetchone()
         if sm is None:
             raise HTTPException(UNPROCESSABLE, "saved meal not found")
+        if sm["place"] == "home" and batch.eaten_out:
+            raise HTTPException(UNPROCESSABLE, f"“{sm['name']}” is homemade: it can't be eaten out")
+        if sm["place"] == "out" and not batch.eaten_out:
+            raise HTTPException(UNPROCESSABLE, f"“{sm['name']}” is always eaten out")
     log_position = _next_food_position(conn, batch.day.isoformat(), batch.meal)
     ids = [
         _insert_entry(

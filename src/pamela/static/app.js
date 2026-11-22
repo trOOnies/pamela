@@ -1159,6 +1159,8 @@ async function saveMealAsSaved(meal) {
       name: name.trim(),
       default_meals: [meal],
       items: rows.map((e) => ({ food_id: e.food_id, quantity: e.quantity })),
+      // eaten out like these foods were; logged either way, it can be both
+      place: rows.every((e) => e.eaten_out) ? "out" : rows.some((e) => e.eaten_out) ? "both" : "home",
     });
     await loadSavedMeals();
     toast(`Saved “${name.trim()}”`);
@@ -1520,10 +1522,11 @@ function setEntryMode(mode) {
   if (mode === "saved") fillSavedPick();
 }
 
-/** Is what's being logged eaten out? Then it isn't compared with, nor taken from,
- * Groceries. Quick adds never are, so it doesn't apply to them. */
+/** Is the food being logged eaten out? Then it isn't compared with, nor taken from,
+ * Groceries. Only for a food from the catalog: quick adds never are, and a saved meal's
+ * draft says so itself (draftOut). */
 function eatenOut() {
-  return $("#entry-out").checked && entryMode() !== "quick";
+  return $("#entry-out").checked && entryMode() === "catalog";
 }
 
 function setEatenOut(on) {
@@ -1535,6 +1538,93 @@ function onEatenOutChange() {
   updatePreview();
   if (state.draft) draftTable.render();
   updateDraftCommit();
+}
+
+/** Where a saved meal is eaten, as shown in Meals, the meal picker and its draft. */
+const PLACES = {
+  home: { emoji: "🏠", label: "Homemade", title: "Homemade: never logged as eaten out" },
+  out: { emoji: "🍽️", label: "Eaten out", title: "Eaten out: always logged as eaten out" },
+  both: { emoji: "🏠/🍽️", label: "Both", title: "Homemade or eaten out: you choose each time" },
+};
+
+/** Is the saved meal being drafted eaten out? Set by the meal (in Catalog › Meals), or
+ * chosen in the draft for a meal that can be both: null until then. */
+function draftOut() {
+  const d = state.draft;
+  if (!d) return false;
+  return d.place === "both" ? d.out : d.place === "out";
+}
+
+/** The draft's Homemade / Eaten out row: just what it is for a meal that's always one of
+ * them, a choice to make for one that can be both. */
+/** How many servings of the saved meal the draft can be scaled to (the meal is one). */
+const SERVINGS = [[0.25, "¼"], [1 / 3, "⅓"], [0.5, "½"], [0.75, "¾"], [1, "1"], [1.5, "1½"], [2, "2"], [3, "3"]];
+
+/** An item's amount at ``f`` servings: the meal's own amount for one, else rounded so it
+ * reads well but stays close (30.94 g, 0.0833 whole). */
+function servingQty(it, f) {
+  const q = it.base * f;
+  if (Math.abs(f - 1) < 1e-9) return Number(q.toPrecision(12));
+  return q >= 1 ? Math.round(q * 100) / 100 : Number(q.toPrecision(3));
+}
+/** Is the item at exactly the draft's servings (not changed by hand since)? */
+const atServings = (it, d) => it.base != null && Math.abs(servingQty(it, d.servings) - it.quantity) < 1e-9;
+
+/** Every draft item's amount for one serving (``base``), as the draft stands: an item
+ * added or changed by hand since the last scaling counts at the draft's servings. */
+function draftBases() {
+  const d = state.draft;
+  for (const it of d.items) {
+    if (!atServings(it, d)) {
+      it.base = it.quantity / d.servings;
+    }
+  }
+}
+
+/** The servings chips: pressed when the draft is exactly that many servings. */
+function renderDraftServings() {
+  const d = state.draft;
+  const box = $("#draft-servings");
+  if (!d || !d.items.length) return box.replaceChildren();
+  const exact = d.items.every((it) => atServings(it, d));
+  const base = (it) => (exact ? it.base : it.quantity / d.servings);
+  box.innerHTML = SERVINGS.map(([f, label]) => {
+    const kcal = d.items.reduce((a, it) => a + (it.per?.kcal ?? 0) * base(it) * f, 0);
+    const name = f < 1 || f === 1 ? `${label} serving` : `${label} servings`;
+    return `<button type="button" class="chip" data-servings="${f}" aria-pressed="${exact && Math.abs(d.servings - f) < 1e-9}">${name} <small>${fmt(kcal)} kcal</small></button>`;
+  }).join("");
+}
+
+/** "½ serving", "2 servings": the draft's servings when it's exactly that many and not
+ * one, else "". */
+function draftServingsLabel() {
+  const d = state.draft;
+  if (!d || Math.abs(d.servings - 1) < 1e-9 || !d.items.every((it) => atServings(it, d))) return "";
+  const label = SERVINGS.find(([f]) => Math.abs(f - d.servings) < 1e-9)?.[1] ?? fmt(d.servings);
+  return d.servings < 1 ? `${label} serving` : `${label} servings`;
+}
+
+/** Scales the whole draft to ``f`` servings of the saved meal. */
+function scaleDraft(f) {
+  const d = state.draft;
+  if (!d) return;
+  draftBases();
+  d.servings = f;
+  for (const it of d.items) it.quantity = servingQty(it, f);
+  draftTable.render();
+  updateDraftCommit();
+}
+
+function renderDraftPlace() {
+  const d = state.draft;
+  if (!d) return;
+  const both = d.place === "both";
+  $("#draft-place").hidden = !both;
+  for (const r of $$("#draft-place input")) r.checked = d.out != null && r.value === (d.out ? "out" : "home");
+  $(".draft-place").classList.toggle("undecided", both && d.out == null);
+  $("#draft-place-note").textContent = both
+    ? d.out == null ? "Homemade or eaten out? Choose before logging it." : ""
+    : `${PLACES[d.place].emoji} ${PLACES[d.place].label} meal${d.place === "out" ? ": not taken from your stock" : ""} (set in Catalog › Meals)`;
 }
 
 function portionOptions(f) {
@@ -1601,8 +1691,8 @@ function stockLeft(f) {
 /** The foods that ``items`` ({food_id, name, unit, quantity, stock}) eat more of than is
  * left in stock, added up per food (a food listed twice shares what's left). Nothing for
  * food eaten out, nor for foods never bought. */
-function stockShortfalls(items) {
-  if (eatenOut()) return [];
+function stockShortfalls(items, out = eatenOut()) {
+  if (out) return [];
   const byFood = new Map();
   for (const it of items) {
     if (it.food_id == null || it.stock == null || !(it.quantity > 0)) continue;
@@ -1618,7 +1708,7 @@ function stockShortfalls(items) {
 function draftLeft(i) {
   const items = state.draft?.items ?? [];
   const it = items[i];
-  if (!it || eatenOut() || it.food_id == null || it.stock == null) return null;
+  if (!it || draftOut() || it.food_id == null || it.stock == null) return null;
   const others = items.reduce((a, x, j) => a + (j !== i && x.food_id === it.food_id && x.quantity > 0 ? x.quantity : 0), 0);
   return Math.max(it.stock - others, 0);
 }
@@ -1756,7 +1846,7 @@ let draftTable;
 function fillSavedPick() {
   const sel = $("#saved-pick");
   const prev = sel.value;
-  const opt = (sm) => `<option value="${sm.id}">${sm.favorite ? "♥ " : ""}${esc(sm.name)} · ${fmt(sm.totals.kcal)} kcal${sm.default_meals.length ? ` · ${esc(sm.default_meals.join(" / "))}` : ""}</option>`;
+  const opt = (sm) => `<option value="${sm.id}">${sm.favorite ? "♥ " : ""}${esc(sm.name)} · ${PLACES[sm.place].emoji} · ${fmt(sm.totals.kcal)} kcal${sm.default_meals.length ? ` · ${esc(sm.default_meals.join(" / "))}` : ""}</option>`;
   const favs = state.savedMeals.filter((sm) => sm.favorite);
   const rest = state.savedMeals.filter((sm) => !sm.favorite);
   sel.innerHTML =
@@ -1771,7 +1861,8 @@ function fillSavedPick() {
 }
 
 function startDraft(sm) {
-  state.draft = { id: sm.id, name: sm.name, items: sm.items.map(itemToLog) };
+  const items = sm.items.map((it) => ({ ...itemToLog(it), base: it.quantity }));
+  state.draft = { id: sm.id, name: sm.name, items, place: sm.place, out: null, servings: 1 };
   const usual = usualMeals(sm);
   if (usual.length && !usual.includes($("#entry-meal").value)) $("#entry-meal").value = usual[0];
   renderDraft();
@@ -1783,6 +1874,7 @@ function renderDraft() {
   $("#draft").hidden = !d;
   if (!d) return;
   $("#draft-h").textContent = `Draft: ${d.name}`;
+  renderDraftPlace();
   draftTable.render();
   updateDraftCommit();
 }
@@ -1791,9 +1883,11 @@ function updateDraftCommit() {
   if (!state.draft) return;
   const n = state.draft.items.length;
   const btn = $("#draft-commit");
-  btn.textContent = `Log ${n} ${n === 1 ? "food" : "foods"} to ${$("#entry-meal").value} · ${fmtDay(state.day)}${eatenOut() ? " · 🍽️ eaten out" : ""}`;
+  renderDraftServings(); // amounts may have changed: by hand, or a food added or removed
+  const sv = draftServingsLabel();
+  btn.textContent = `Log ${n} ${n === 1 ? "food" : "foods"}${sv ? ` (${sv})` : ""} to ${$("#entry-meal").value} · ${fmtDay(state.day)}${draftOut() ? " · 🍽️ eaten out" : ""}`;
   btn.disabled = !n;
-  const short = stockShortfalls(state.draft.items);
+  const short = stockShortfalls(state.draft.items, draftOut());
   const warn = $("#draft-warn");
   warn.hidden = !short.length;
   warn.innerHTML = short.length ? `⚠️ More than you have in stock:${shortfallList(short)}` : "";
@@ -1825,7 +1919,12 @@ async function commitDraft() {
     $(`#draft-body [data-pick-i="${unpicked}"]`)?.focus();
     return;
   }
-  if (!(await confirmShortfalls(stockShortfalls(d.items)))) return;
+  if (d.place === "both" && d.out == null) {
+    toast(`Was “${d.name}” homemade or eaten out? Choose above its foods`, true);
+    $("#draft-place input")?.focus();
+    return;
+  }
+  if (!(await confirmShortfalls(stockShortfalls(d.items, draftOut())))) return;
   const meal = $("#entry-meal").value;
   try {
     await api("POST", "/entries/batch", {
@@ -1833,9 +1932,10 @@ async function commitDraft() {
       meal,
       items: d.items.map((it) => ({ food_id: it.food_id, quantity: it.quantity })),
       saved_meal_id: state.savedMeals.some((sm) => sm.id === d.id) ? d.id : null,
-      eaten_out: eatenOut(),
+      eaten_out: draftOut(),
     });
-    toast(`Logged “${d.name}” to ${meal}`);
+    const sv = draftServingsLabel();
+    toast(`Logged ${sv ? `${sv} of ` : ""}“${d.name}” to ${meal}`);
     discardDraft();
     await Promise.all([loadDay(), loadSavedMeals()]); // what's left of their foods changed
   } catch (err) {
@@ -3824,7 +3924,7 @@ function renderSavedMeals() {
       };
       return `<article class="sm-card${sm.id === state.editingSavedMealId ? " editing" : ""}" id="sm-card-${sm.id}">
         <div class="sm-top">
-          <h3>${favButton("sm", sm)}${esc(sm.name)}</h3>
+          <h3>${favButton("sm", sm)}${esc(sm.name)} <span class="sm-place" title="${PLACES[sm.place].title}">${PLACES[sm.place].emoji} ${PLACES[sm.place].label}</span></h3>
           ${usualMeals(sm).length ? `<span class="sm-fors">${usualMeals(sm).map((m) => `<span class="sm-for">${esc(mealLabel(m))}</span>`).join("")}</span>` : ""}
         </div>
         ${tagPills(sm.tags)}
@@ -3896,6 +3996,7 @@ function editSavedMeal(id) {
   const el = $("#sm-form").elements;
   el.name.value = sm.name;
   setUsualMeals(sm.default_meals);
+  el.place.value = sm.place;
   el.recipe.value = sm.recipe || "";
   $("#sm-form-h").textContent = "Edit meal";
   $("#sm-submit").textContent = "Update meal";
@@ -3923,6 +4024,7 @@ async function submitSavedMeal(ev) {
     default_meals: usualMealsTicked(),
     items: state.smItems.map((it) => ({ food_id: it.food_id, quantity: it.quantity })),
     recipe: (v.recipe || "").trim(),
+    place: v.place || "home",
   };
   try {
     if (state.editingSavedMealId) {
@@ -5412,6 +5514,11 @@ function wire() {
   $("#entry-qty").addEventListener("input", updatePreview);
   $("#entry-meal").addEventListener("change", updateDraftCommit);
   $("#entry-out").addEventListener("change", onEatenOutChange);
+  for (const r of $$("#draft-place input")) r.addEventListener("change", () => {
+    if (state.draft?.place !== "both") return;
+    state.draft.out = r.value === "out";
+    renderDraft(); // stock checks and the Log button follow the choice
+  });
   foodCombo({
     input: $("#food-search"),
     showStock: () => !eatenOut(),
@@ -5470,7 +5577,7 @@ function wire() {
   });
   foodCombo({
     input: $("#draft-search"),
-    showStock: () => !eatenOut(),
+    showStock: () => !draftOut(),
     list: $("#draft-suggest"),
     onPick: (f) => {
       state.draft.items.push(itemFromFood(f));
@@ -5479,6 +5586,10 @@ function wire() {
       updateDraftCommit();
       $(`#draft-body [data-qty-i="${state.draft.items.length - 1}"]`)?.select();
     },
+  });
+  $("#draft-servings").addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-servings]");
+    if (chip) scaleDraft(Number(chip.dataset.servings));
   });
   $("#draft-discard").addEventListener("click", discardDraft);
   $("#draft-commit").addEventListener("click", commitDraft);

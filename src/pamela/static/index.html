@@ -80,7 +80,7 @@
             <span>Meal</span>
             <select name="meal" id="entry-meal"></select>
           </label>
-          <label class="not-quick field check eaten-out" title="Eaten at a restaurant, at a friend's…: it's logged as usual, but not taken from your stock">
+          <label class="catalog-only field check eaten-out" title="Eaten at a restaurant, at a friend's…: it's logged as usual, but not taken from your stock">
             <input type="checkbox" name="eaten_out" id="entry-out"><span>🍽️ Eaten out</span></label>
 
           <div class="catalog-only field food-field">
@@ -122,6 +122,14 @@
             <h3 id="draft-h"></h3>
             <span class="draft-note">Not logged yet. Change amounts, remove or add foods; the saved meal itself stays as it is.</span>
           </div>
+          <div class="draft-place">
+            <div class="seg" role="radiogroup" aria-label="Where you ate it" id="draft-place">
+              <label><input type="radio" name="draft-place" value="home"><span>🏠 Homemade</span></label>
+              <label><input type="radio" name="draft-place" value="out"><span>🍽️ Eaten out</span></label>
+            </div>
+            <span class="draft-place-note" id="draft-place-note"></span>
+          </div>
+          <div class="chips draft-servings" id="draft-servings" role="group" aria-label="Servings: scales every food in the draft"></div>
           <table class="draft-table">
             <thead><tr><th>Food</th><th class="n">Amount</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="n">Fib</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
             <tbody id="draft-body"></tbody>
@@ -483,6 +491,14 @@
           <fieldset class="tag-picks meal-picks" id="sm-default-meals">
             <legend>Usually for <small>(any that apply; none = any meal)</small></legend>
           </fieldset>
+          <fieldset class="tag-picks place-picks">
+            <legend>Eaten <small>(whether it’s logged as eaten out)</small></legend>
+            <div class="seg" role="radiogroup" aria-label="Where it's eaten">
+              <label title="Made at home: never logged as eaten out"><input type="radio" name="place" value="home" checked><span>🏠 Homemade</span></label>
+              <label title="At a restaurant, at a friend's…: always logged as eaten out"><input type="radio" name="place" value="out"><span>🍽️ Eaten out</span></label>
+              <label title="Either: you choose each time you log it"><input type="radio" name="place" value="both"><span>🏠 / 🍽️ Both</span></label>
+            </div>
+          </fieldset>
           <table class="draft-table sm-items">
             <thead><tr><th>Food</th><th class="n">Amount</th><th class="n">kcal</th><th class="n">P</th><th class="n">C</th><th class="n">F</th><th class="act"><span class="sr">Actions</span></th></tr></thead>
             <tbody id="sm-body"></tbody>
@@ -810,14 +826,22 @@
           <p>🆕 Not in your foods yet? Pick <i>Create</i> (or <i>Look up barcode</i>) at the end of
             the list, and the Food items tab opens with it filled in.</p>
           <p>🍽️ <b>Eaten out?</b> At a restaurant or at a friend's, the food didn't come from home.
-            Tick <b>Eaten out</b> and whatever you log (a food or a saved meal) counts toward your
+            Tick <b>Eaten out</b> next to a food and it counts toward your
             day as usual, but isn't taken from your stock nor compared with it. Those entries show
             <i>🍽️ out</i> in the log. The tick stays while you log more, and clears on another day.</p>
+          <p>🏠 <b>Homemade or eaten out meals.</b> A saved meal says itself where it's eaten (set
+            in <b>Catalog › Meals</b>), so its draft has no tick: a <i>Homemade</i> one is never
+            eaten out, an <i>Eaten out</i> one always is, and for one that's <i>Both</i> you
+            choose <i>🏠 Homemade</i> or <i>🍽️ Eaten out</i> above its foods each time, before
+            logging it.</p>
 
           <h3 id="help-day-saved">⭐ Saved meals</h3>
           <p>Switch to <b>Saved meal</b> and pick one. Its foods show up as a <i>draft</i>:
             change amounts, remove things, add extras. Nothing is logged until you press <b>Log</b>,
             and the saved meal itself stays exactly as it was.</p>
+          <p>½ <b>Servings.</b> The saved meal is one serving. The chips above its foods (<i>¼</i>,
+            <i>½</i>, <i>1½</i>, <i>2</i>…) scale every food in the draft at once, with the calories
+            each would come to. Amounts you changed by hand keep their change: they're scaled too.</p>
           <p>Once logged, it shows in the log as one group: ⭐ its name, how many foods, and their
             totals, with its foods under it. <b>▾</b> folds them away, and <b>✕</b> on the group
             deletes the whole meal at once (after asking), putting back what it took from your

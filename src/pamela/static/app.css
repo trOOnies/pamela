@@ -513,6 +513,13 @@ th[aria-sort] { color: var(--text); }
 .sm-fields { display: flex; flex-wrap: wrap; gap: 10px; }
 .sm-fields select { width: 150px; }
 .meal-pick { --tb: var(--accent-soft); --tc: var(--accent); }
+.place-picks .seg { flex-wrap: wrap; }
+.sm-place { font-size: .78rem; font-weight: 400; color: var(--text-2); white-space: nowrap; cursor: help; margin-left: 6px; }
+.draft-servings { margin-bottom: 8px; }
+.draft-place { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 8px; }
+.draft-place-note { color: var(--text-2); font-size: .85rem; }
+.draft-place.undecided .seg { border-color: var(--warn); }
+.draft-place.undecided .draft-place-note { color: var(--warn); }
 .sm-fors { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .sm-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .sm-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }

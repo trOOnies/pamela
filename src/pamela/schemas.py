@@ -354,6 +354,9 @@ class SavedMealItemIn(_In):
 
 RECIPE_MAX = 10_000
 
+MealPlace = Literal["home", "out", "both"]
+PLACE_DESC = "Where it's eaten: 'home' (homemade), 'out' (eaten out) or 'both' (asked each time)"
+
 
 class SavedMealIn(_In):
     name: str = Field(min_length=1, max_length=200)
@@ -367,6 +370,7 @@ class SavedMealIn(_In):
         return list(dict.fromkeys(v))
     items: list[SavedMealItemIn] = Field(min_length=1, max_length=100)
     recipe: str = Field("", max_length=RECIPE_MAX, description="How to make it, as free text")
+    place: MealPlace = Field("home", description=PLACE_DESC)
 
 
 class SavedMealItem(Macros):
@@ -399,6 +403,7 @@ class SavedMeal(BaseModel):
     totals: Macros
     tags: list[str] = Field(description="Diet tags shared by every item")
     recipe: str = ""
+    place: MealPlace = Field("both", description=PLACE_DESC)
     can_make: bool = Field(description="Groceries hold enough of every item")
     favorite: bool = Field(False, description="Listed first wherever meals are listed")
 

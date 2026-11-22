@@ -670,6 +670,13 @@ MIGRATIONS: list[str] = [
     ALTER TABLE meal_logs ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE activities ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
     """,
+    # 33: where a saved meal is eaten: 'home' (homemade: never eaten out), 'out' (always
+    # eaten out) or 'both' (asked each time it's logged). Meals already saved could be
+    # either, as before.
+    """
+    ALTER TABLE saved_meals ADD COLUMN place TEXT NOT NULL DEFAULT 'both'
+        CHECK (place IN ('home', 'out', 'both'));
+    """,
 ]
 
 # Shown for an exercise type without an emoji of its own.
